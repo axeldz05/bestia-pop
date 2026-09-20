@@ -5,13 +5,13 @@ import com.bestiapop.android.data.model.Song
 enum class PlaybackChangeHint {
     AUTO,
     METADATA_UPDATE,
-    NEW_PLAYBACK
+    NEW_PLAYBACK,
 }
 
 enum class PlaybackTrackChange {
     STOPPED,
     METADATA_UPDATE,
-    NEW_PLAYBACK
+    NEW_PLAYBACK,
 }
 
 /**
@@ -24,7 +24,7 @@ object PlaybackTrackChangePolicy {
     fun resolve(
         previous: Song?,
         current: Song?,
-        hint: PlaybackChangeHint = PlaybackChangeHint.AUTO
+        hint: PlaybackChangeHint = PlaybackChangeHint.AUTO,
     ): PlaybackTrackChange {
         if (current == null) return PlaybackTrackChange.STOPPED
         if (previous == null || hint == PlaybackChangeHint.NEW_PLAYBACK) {
@@ -37,7 +37,10 @@ object PlaybackTrackChangePolicy {
         }
     }
 
-    fun sameIdentity(first: Song, second: Song): Boolean {
+    fun sameIdentity(
+        first: Song,
+        second: Song,
+    ): Boolean {
         if (first.id > 0L && second.id > 0L) return first.id == second.id
         val firstUri = first.uriString.trim()
         val secondUri = second.uriString.trim()

@@ -3,8 +3,8 @@ package com.bestiapop.android.service
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioDeviceInfo
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
@@ -23,7 +23,6 @@ import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.PcmWavFixture
 import com.bestiapop.android.testutil.PlaybackDeviceProbe
 import com.bestiapop.android.testutil.SideloadPlaybackAppOps
-import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +32,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /**
  * Real Media3 interruption handling. The synthetic WAV is muted at the player, so the tests exercise
@@ -41,7 +41,6 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class PlaybackAudioInterruptionFunctionalTest {
-
     @get:Rule
     val deviceAwakeRule = DeviceAwakeRule()
 
@@ -57,12 +56,12 @@ class PlaybackAudioInterruptionFunctionalTest {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             listOf(
                 Manifest.permission.READ_MEDIA_AUDIO,
-                Manifest.permission.POST_NOTIFICATIONS
+                Manifest.permission.POST_NOTIFICATIONS,
             ).forEach { permission ->
                 if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_DENIED) {
                     instrumentation.uiAutomation.grantRuntimePermission(
                         context.packageName,
-                        permission
+                        permission,
                     )
                 }
             }
@@ -80,20 +79,22 @@ class PlaybackAudioInterruptionFunctionalTest {
     fun transientAudioFocusLoss_suppressesThenResumesPlayback() {
         withPlayingFixture { controller ->
             val audioManager = context.getSystemService(AudioManager::class.java)
-            val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
-                .setOnAudioFocusChangeListener { }
-                .build()
+            val focusRequest =
+                AudioFocusRequest
+                    .Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(
+                        AudioAttributes
+                            .Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build(),
+                    ).setOnAudioFocusChangeListener { }
+                    .build()
 
             try {
                 assertEquals(
                     AudioManager.AUDIOFOCUS_REQUEST_GRANTED,
-                    audioManager.requestAudioFocus(focusRequest)
+                    audioManager.requestAudioFocus(focusRequest),
                 )
                 await("Media3 pauses under transient audio-focus loss") {
                     onMain {
@@ -121,26 +122,29 @@ class PlaybackAudioInterruptionFunctionalTest {
     @Test
     fun audioBecomingNoisy_shellProtectedBroadcast_pausesPlayback() {
         val audioManager = context.getSystemService(AudioManager::class.java)
-        val hasDisconnectableOutput = audioManager
-            .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            .any { device ->
-                device.type in setOf(
-                    AudioDeviceInfo.TYPE_WIRED_HEADSET,
-                    AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
-                    AudioDeviceInfo.TYPE_USB_HEADSET,
-                    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-                    AudioDeviceInfo.TYPE_BLE_HEADSET
-                )
-            }
+        val hasDisconnectableOutput =
+            audioManager
+                .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                .any { device ->
+                    device.type in
+                        setOf(
+                            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+                            AudioDeviceInfo.TYPE_USB_HEADSET,
+                            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                            AudioDeviceInfo.TYPE_BLE_HEADSET,
+                        )
+                }
         assumeTrue(
             "AUDIO_BECOMING_NOISY is meaningful only with a disconnectable output route",
-            hasDisconnectableOutput
+            hasDisconnectableOutput,
         )
         withPlayingFixture { controller ->
-            val output = executeShell(
-                "am broadcast --user current --receiver-registered-only " +
-                    "-a ${AudioManager.ACTION_AUDIO_BECOMING_NOISY}"
-            )
+            val output =
+                executeShell(
+                    "am broadcast --user current --receiver-registered-only " +
+                        "-a ${AudioManager.ACTION_AUDIO_BECOMING_NOISY}",
+                )
             assertFalse("Protected noisy broadcast was rejected: $output", "SecurityException" in output)
 
             await("Media3 pauses after simulated wired-output unplug") {
@@ -158,20 +162,22 @@ class PlaybackAudioInterruptionFunctionalTest {
         try {
             check(fixtureDir.mkdirs()) { "Could not create $fixtureDir" }
             PcmWavFixture.write(wav, durationMs = PLAYBACK_DURATION_MS)
-            scenario = ActivityScenario.launch(MainActivity::class.java).also {
-                it.moveToState(Lifecycle.State.RESUMED)
-            }
+            scenario =
+                ActivityScenario.launch(MainActivity::class.java).also {
+                    it.moveToState(Lifecycle.State.RESUMED)
+                }
             val connected = connectController()
             controller = connected
-            val playable = PlayableItem.Local(
-                Song(
-                    id = System.nanoTime(),
-                    uriString = wav.absolutePath,
-                    title = "Muted audio-interruption fixture",
-                    artist = "BestiaPop instrumentation",
-                    durationMs = PLAYBACK_DURATION_MS.toLong()
+            val playable =
+                PlayableItem.Local(
+                    Song(
+                        id = System.nanoTime(),
+                        uriString = wav.absolutePath,
+                        title = "Muted audio-interruption fixture",
+                        artist = "BestiaPop instrumentation",
+                        durationMs = PLAYBACK_DURATION_MS.toLong(),
+                    ),
                 )
-            )
             onMain {
                 connected.volume = 0f
                 (context.applicationContext as BestiaPopApplication)
@@ -208,8 +214,10 @@ class PlaybackAudioInterruptionFunctionalTest {
 
     private fun executeShell(command: String): String = deviceProbe.executeShell(command)
 
-    private fun await(description: String, condition: () -> Boolean) =
-        deviceProbe.await(description, ASYNC_TIMEOUT_MS, POLL_INTERVAL_MS, condition)
+    private fun await(
+        description: String,
+        condition: () -> Boolean,
+    ) = deviceProbe.await(description, ASYNC_TIMEOUT_MS, POLL_INTERVAL_MS, condition)
 
     private fun <T> onMain(block: () -> T): T = deviceProbe.onMain(block)
 

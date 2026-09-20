@@ -2,8 +2,8 @@ package com.bestiapop.android.ui.screens.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,27 +14,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,11 +45,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.AlbumHeader
 import com.bestiapop.android.ui.components.AlbumHeaderActions
@@ -66,9 +70,6 @@ import com.bestiapop.android.ui.components.SongItemActions
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongOptionsMenu
 import com.bestiapop.android.ui.components.SortEmphasizedTexts
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import com.bestiapop.android.ui.components.preloadArtworkSuspend
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryListModel
@@ -76,8 +77,6 @@ import com.bestiapop.android.ui.theme.ListDensity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
-
-import com.bestiapop.android.data.preferences.FastScrollSettings
 
 /** Level 2: High-level LibrarySongList accepting bundled [LibrarySongListActions]. */
 @Composable
@@ -98,11 +97,12 @@ fun LibrarySongList(
     onSongLongClick: (Song) -> Unit = actions.onToggleSelect,
     currentSongIdFlow: StateFlow<Long?>? = null,
     listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val visible = remember(list, collapsedAlbumNames) {
-        list.collapsed(collapsedAlbumNames)
-    }
+    val visible =
+        remember(list, collapsedAlbumNames) {
+            list.collapsed(collapsedAlbumNames)
+        }
     if (visible.isEmpty) {
         if (loading) {
             Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -112,7 +112,7 @@ fun LibrarySongList(
             EmptyListHint(
                 text = emptyText,
                 subtitle = emptySubtitle,
-                modifier = modifier.fillMaxSize()
+                modifier = modifier.fillMaxSize(),
             )
         }
         return
@@ -137,9 +137,10 @@ fun LibrarySongList(
 
     val context = LocalContext.current
     val density = LocalDensity.current
-    val sizePx = remember(density) {
-        with(density) { ListDensity.artworkSong.roundToPx().coerceAtLeast(1) }
-    }
+    val sizePx =
+        remember(density) {
+            with(density) { ListDensity.artworkSong.roundToPx().coerceAtLeast(1) }
+        }
 
     LaunchedEffect(visible, sizePx) {
         if (visible.isEmpty) return@LaunchedEffect
@@ -180,21 +181,22 @@ fun LibrarySongList(
             }
     }
 
-    val sections = remember(visible, sortOption, emphasizeLastPlayed) {
-        FastScrollSections.fromLibraryList(visible, sortOption, emphasizeLastPlayed)
-    }
+    val sections =
+        remember(visible, sortOption, emphasizeLastPlayed) {
+            FastScrollSections.fromLibraryList(visible, sortOption, emphasizeLastPlayed)
+        }
 
     FastScrollContainer(
         sections = sections,
         listState = listState,
         settings = fastScrollSettings,
-        modifier = modifier.fillMaxSize()
+        modifier = modifier.fillMaxSize(),
     ) { listModifier ->
         LazyColumn(state = listState, modifier = listModifier) {
             items(
                 count = visible.size,
                 key = { visible.keyAt(it) },
-                contentType = { visible.contentTypeAt(it) }
+                contentType = { visible.contentTypeAt(it) },
             ) { index ->
                 when (val item = visible.itemAt(index)) {
                     is LibraryListItem.AlbumHeader -> {
@@ -203,7 +205,7 @@ fun LibrarySongList(
                             selectedSongIds = selectedSongIds,
                             isSelectionMode = isSelectionMode,
                             collapsedAlbumNames = collapsedAlbumNames,
-                            albumActionsState = rememberUpdatedState(actionsState.value.albumActions)
+                            albumActionsState = rememberUpdatedState(actionsState.value.albumActions),
                         )
                     }
 
@@ -223,7 +225,7 @@ fun LibrarySongList(
                             onClick = { onSongClickState.value(song, item.index) },
                             onLongClick = { onSongLongClickState.value(song) },
                             onToggleSelect = { actionsState.value.onToggleSelect(song) },
-                            onOptionsClick = { onOpenSongMenu(song) }
+                            onOptionsClick = { onOpenSongMenu(song) },
                         )
                     }
                 }
@@ -236,7 +238,7 @@ fun LibrarySongList(
         SongOptionsMenu(
             song = currentMenuSong,
             actions = actionsState.value.songActions,
-            onDismiss = { menuSong = null }
+            onDismiss = { menuSong = null },
         )
     }
 }
@@ -277,35 +279,50 @@ fun LibrarySongList(
     onOpenAlbum: (String) -> Unit = {},
     currentSongIdFlow: StateFlow<Long?>? = null,
     listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val actions = remember(
-        onToggleSelect, onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist,
-        onEditMetadata, onEditLyrics, onIdentify, onDeleteSong,
-        onPlayAlbum, onShuffleAlbum, onToggleSelectAlbum, onAlbumLongClick,
-        onToggleCollapseAlbum, onEditAlbum, onChangeAlbumCover, onIdentifyAlbum, onOpenAlbum
-    ) {
-        LibrarySongListActions(
-            onToggleSelect = onToggleSelect,
-            onPlayNext = onPlayNext,
-            onAddToQueue = onAddToQueue,
-            onStartRadio = onStartRadio,
-            onAddToPlaylist = onAddToPlaylist,
-            onEditMetadata = onEditMetadata,
-            onEditLyrics = onEditLyrics,
-            onIdentify = onIdentify,
-            onDeleteSong = onDeleteSong,
-            onPlayAlbum = onPlayAlbum,
-            onShuffleAlbum = onShuffleAlbum,
-            onToggleSelectAlbum = onToggleSelectAlbum,
-            onAlbumLongClick = onAlbumLongClick,
-            onToggleCollapseAlbum = onToggleCollapseAlbum,
-            onEditAlbum = onEditAlbum,
-            onChangeAlbumCover = onChangeAlbumCover,
-            onIdentifyAlbum = onIdentifyAlbum,
-            onOpenAlbum = onOpenAlbum
-        )
-    }
+    val actions =
+        remember(
+            onToggleSelect,
+            onPlayNext,
+            onAddToQueue,
+            onStartRadio,
+            onAddToPlaylist,
+            onEditMetadata,
+            onEditLyrics,
+            onIdentify,
+            onDeleteSong,
+            onPlayAlbum,
+            onShuffleAlbum,
+            onToggleSelectAlbum,
+            onAlbumLongClick,
+            onToggleCollapseAlbum,
+            onEditAlbum,
+            onChangeAlbumCover,
+            onIdentifyAlbum,
+            onOpenAlbum,
+        ) {
+            LibrarySongListActions(
+                onToggleSelect = onToggleSelect,
+                onPlayNext = onPlayNext,
+                onAddToQueue = onAddToQueue,
+                onStartRadio = onStartRadio,
+                onAddToPlaylist = onAddToPlaylist,
+                onEditMetadata = onEditMetadata,
+                onEditLyrics = onEditLyrics,
+                onIdentify = onIdentify,
+                onDeleteSong = onDeleteSong,
+                onPlayAlbum = onPlayAlbum,
+                onShuffleAlbum = onShuffleAlbum,
+                onToggleSelectAlbum = onToggleSelectAlbum,
+                onAlbumLongClick = onAlbumLongClick,
+                onToggleCollapseAlbum = onToggleCollapseAlbum,
+                onEditAlbum = onEditAlbum,
+                onChangeAlbumCover = onChangeAlbumCover,
+                onIdentifyAlbum = onIdentifyAlbum,
+                onOpenAlbum = onOpenAlbum,
+            )
+        }
     LibrarySongList(
         list = list,
         currentSongId = currentSongId,
@@ -323,7 +340,7 @@ fun LibrarySongList(
         onSongLongClick = onSongLongClick,
         currentSongIdFlow = currentSongIdFlow,
         listState = listState,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -333,32 +350,35 @@ private fun LibraryAlbumHeaderRow(
     selectedSongIds: Set<Long>,
     isSelectionMode: Boolean,
     collapsedAlbumNames: Set<String>,
-    albumActionsState: State<LibraryAlbumGroupActions>
+    albumActionsState: State<LibraryAlbumGroupActions>,
 ) {
     val groupingKey = item.groupingKey
-    val selectionState = if (isSelectionMode) {
-        remember(groupingKey, selectedSongIds) {
-            albumHeaderSelectionState(item.songIds, selectedSongIds, true)
-        }
-    } else {
-        AlbumHeaderSelectionState.NONE
-    }
-    val headerActions = remember(groupingKey, albumActionsState) {
-        AlbumHeaderActions(
-            onPlay = { albumActionsState.value.onPlayAlbum(item.albumName, item.songIds) },
-            onShuffle = { albumActionsState.value.onShuffleAlbum(item.albumName, item.songIds) },
-            onOpen = { albumActionsState.value.onOpenAlbum(item.albumName) },
-            onEdit = { albumActionsState.value.onEditAlbum(item.albumName) },
-            onChangeCover = { albumActionsState.value.onChangeAlbumCover(item.albumName) },
-            onIdentify = { albumActionsState.value.onIdentifyAlbum(item.albumName) },
-            onToggleSelect = { albumActionsState.value.onToggleSelectAlbum(item.songIds) },
-            onLongClick = { albumActionsState.value.onAlbumLongClick(item.songIds) },
-            onToggleCollapse = { albumActionsState.value.onToggleCollapseAlbum(item.albumName) },
-            onSwipeAction = albumActionsState.value.onSwipeAction?.let { action ->
-                { action(item.albumName, item.songIds) }
+    val selectionState =
+        if (isSelectionMode) {
+            remember(groupingKey, selectedSongIds) {
+                albumHeaderSelectionState(item.songIds, selectedSongIds, true)
             }
-        )
-    }
+        } else {
+            AlbumHeaderSelectionState.NONE
+        }
+    val headerActions =
+        remember(groupingKey, albumActionsState) {
+            AlbumHeaderActions(
+                onPlay = { albumActionsState.value.onPlayAlbum(item.albumName, item.songIds) },
+                onShuffle = { albumActionsState.value.onShuffleAlbum(item.albumName, item.songIds) },
+                onOpen = { albumActionsState.value.onOpenAlbum(item.albumName) },
+                onEdit = { albumActionsState.value.onEditAlbum(item.albumName) },
+                onChangeCover = { albumActionsState.value.onChangeAlbumCover(item.albumName) },
+                onIdentify = { albumActionsState.value.onIdentifyAlbum(item.albumName) },
+                onToggleSelect = { albumActionsState.value.onToggleSelectAlbum(item.songIds) },
+                onLongClick = { albumActionsState.value.onAlbumLongClick(item.songIds) },
+                onToggleCollapse = { albumActionsState.value.onToggleCollapseAlbum(item.albumName) },
+                onSwipeAction =
+                    albumActionsState.value.onSwipeAction?.let { action ->
+                        { action(item.albumName, item.songIds) }
+                    },
+            )
+        }
     AlbumHeader(
         title = item.displayName,
         artistName = item.artistName,
@@ -369,13 +389,13 @@ private fun LibraryAlbumHeaderRow(
         isCollapsed = item.matchesCollapsed(collapsedAlbumNames),
         isSelectionMode = isSelectionMode,
         selectionState = selectionState,
-        actions = headerActions
+        actions = headerActions,
     )
 }
 
 internal fun filterCollapsedAlbumSongs(
     items: List<LibraryListItem>,
-    collapsedAlbumNames: Set<String>
+    collapsedAlbumNames: Set<String>,
 ): List<LibraryListItem> {
     if (collapsedAlbumNames.isEmpty()) return items
     val result = ArrayList<LibraryListItem>(items.size)
@@ -386,6 +406,7 @@ internal fun filterCollapsedAlbumSongs(
                 hiding = item.matchesCollapsed(collapsedAlbumNames)
                 result += item
             }
+
             is LibraryListItem.SongRow -> {
                 if (!hiding) result += item
             }
@@ -400,7 +421,7 @@ internal fun LibraryListItem.AlbumHeader.matchesCollapsed(collapsed: Set<String>
 internal fun albumHeaderSelectionState(
     albumIds: List<Long>,
     selectedSongIds: Set<Long>,
-    isSelectionMode: Boolean
+    isSelectionMode: Boolean,
 ): AlbumHeaderSelectionState {
     if (!isSelectionMode || albumIds.isEmpty()) return AlbumHeaderSelectionState.NONE
     var any = false
@@ -415,6 +436,5 @@ internal fun albumHeaderSelectionState(
 enum class AlbumHeaderSelectionState {
     NONE,
     PARTIAL,
-    ALL
+    ALL,
 }
-

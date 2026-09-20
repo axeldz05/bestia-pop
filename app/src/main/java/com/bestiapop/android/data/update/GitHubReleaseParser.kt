@@ -6,7 +6,6 @@ import org.json.JSONObject
 import java.time.Instant
 
 object GitHubReleaseParser {
-
     private val VERSION_CODE_LINE = Regex("""(?im)^\s*versionCode\s*:\s*(\d+)\s*$""")
 
     /**
@@ -37,19 +36,25 @@ object GitHubReleaseParser {
             tag = obj.optNullableString("tag_name")?.trim().orEmpty(),
             notes = stripVersionCodeLine(releaseBody).ifBlank { null },
             htmlUrl = obj.optNullableString("html_url"),
-            publishedAtMs = parseTimestampMs(
-                obj.optNullableString("published_at") ?: obj.optNullableString("created_at")
-            ),
-            apkUrl = findApkUrl(obj)
+            publishedAtMs =
+                parseTimestampMs(
+                    obj.optNullableString("published_at") ?: obj.optNullableString("created_at"),
+                ),
+            apkUrl = findApkUrl(obj),
         )
     }
 
     fun parseVersionCode(releaseBody: String): Int? =
-        VERSION_CODE_LINE.find(releaseBody)?.groupValues?.get(1)?.toIntOrNull()
+        VERSION_CODE_LINE
+            .find(releaseBody)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
 
     /** Drop machine `versionCode: N` lines before showing changelog to users. */
     fun stripVersionCodeLine(releaseBody: String): String =
-        VERSION_CODE_LINE.replace(releaseBody, "")
+        VERSION_CODE_LINE
+            .replace(releaseBody, "")
             .replace(Regex("""\n{3,}"""), "\n\n")
             .trim()
 
@@ -59,13 +64,16 @@ object GitHubReleaseParser {
     }
 
     private fun versionNameFrom(obj: JSONObject): String? {
-        val tag = obj.optNullableString("tag_name")
-            ?.removePrefix("v")
-            ?.removePrefix("V")
-            ?.trim()
-            .orEmpty()
+        val tag =
+            obj
+                .optNullableString("tag_name")
+                ?.removePrefix("v")
+                ?.removePrefix("V")
+                ?.trim()
+                .orEmpty()
         if (tag.isNotEmpty()) return tag
-        return obj.optNullableString("name")
+        return obj
+            .optNullableString("name")
             ?.removePrefix("BestiaPop")
             ?.trim()
             ?.trimStart('-', ' ')

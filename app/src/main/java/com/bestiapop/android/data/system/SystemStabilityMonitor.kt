@@ -9,11 +9,25 @@ import androidx.core.content.edit
 import com.bestiapop.android.data.preferences.TelemetryPreferencesRepository
 import com.bestiapop.android.data.util.CrashReporter
 
-open class SystemProcessKilledException(message: String) : Exception(message)
-class LowMemoryKillException(message: String) : SystemProcessKilledException(message)
-class ExcessiveResourceUsageException(message: String) : SystemProcessKilledException(message)
-class ApplicationNotRespondingException(message: String) : SystemProcessKilledException(message)
-class NativeCrashKillException(message: String) : SystemProcessKilledException(message)
+open class SystemProcessKilledException(
+    message: String,
+) : Exception(message)
+
+class LowMemoryKillException(
+    message: String,
+) : SystemProcessKilledException(message)
+
+class ExcessiveResourceUsageException(
+    message: String,
+) : SystemProcessKilledException(message)
+
+class ApplicationNotRespondingException(
+    message: String,
+) : SystemProcessKilledException(message)
+
+class NativeCrashKillException(
+    message: String,
+) : SystemProcessKilledException(message)
 
 /**
  * Event-driven stability monitor capturing critical OS pressure events and unexpected process terminations:
@@ -23,7 +37,6 @@ class NativeCrashKillException(message: String) : SystemProcessKilledException(m
  *    critical levels and [ComponentCallbacks2.onLowMemory]) as breadcrumbs and custom keys.
  */
 object SystemStabilityMonitor {
-
     private const val PREFS_NAME = "system_stability_prefs"
     private const val KEY_LAST_REPORTED_EXIT_MS = "last_reported_exit_timestamp_ms"
     private const val KEY_BB_APP_STATE = "bb_app_state"
@@ -41,15 +54,16 @@ object SystemStabilityMonitor {
         context: Context,
         reporter: (Throwable, Map<String, String>) -> Unit = { throwable, keys ->
             CrashReporter.recordNonFatal(throwable, keys)
-        }
+        },
     ) {
         if (!TelemetryPreferencesRepository.isTelemetryEnabledSync(context)) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
 
         val activityManager = context.getSystemService(ActivityManager::class.java) ?: return
-        val exits = runCatching {
-            activityManager.getHistoricalProcessExitReasons(context.packageName, 0, 5)
-        }.getOrNull().orEmpty()
+        val exits =
+            runCatching {
+                activityManager.getHistoricalProcessExitReasons(context.packageName, 0, 5)
+            }.getOrNull().orEmpty()
 
         if (exits.isEmpty()) return
 
@@ -82,7 +96,11 @@ object SystemStabilityMonitor {
     /**
      * Updates foreground/background tracking for forensic correlation on unexpected process exit.
      */
-    fun updateAppForegroundState(context: Context, isForeground: Boolean, screenName: String? = null) {
+    fun updateAppForegroundState(
+        context: Context,
+        isForeground: Boolean,
+        screenName: String? = null,
+    ) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit {
             if (isForeground) {
@@ -103,19 +121,21 @@ object SystemStabilityMonitor {
         context: Context,
         isPlaying: Boolean,
         playWhenReady: Boolean,
-        trackKind: com.bestiapop.android.data.util.TrackKind = com.bestiapop.android.data.util.TrackKind.NONE
+        trackKind: com.bestiapop.android.data.util.TrackKind = com.bestiapop.android.data.util.TrackKind.NONE,
     ) {
-        val status = when {
-            isPlaying -> "PLAYING"
-            playWhenReady -> "PREPARING"
-            trackKind != com.bestiapop.android.data.util.TrackKind.NONE -> "PAUSED"
-            else -> "IDLE"
-        }
-        val fullStatus = if (trackKind != com.bestiapop.android.data.util.TrackKind.NONE && status != "IDLE") {
-            "$status($trackKind)"
-        } else {
-            status
-        }
+        val status =
+            when {
+                isPlaying -> "PLAYING"
+                playWhenReady -> "PREPARING"
+                trackKind != com.bestiapop.android.data.util.TrackKind.NONE -> "PAUSED"
+                else -> "IDLE"
+            }
+        val fullStatus =
+            if (trackKind != com.bestiapop.android.data.util.TrackKind.NONE && status != "IDLE") {
+                "$status($trackKind)"
+            } else {
+                status
+            }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit {
             putString(KEY_BB_LAST_PLAYBACK, fullStatus)
@@ -127,12 +147,14 @@ object SystemStabilityMonitor {
         context: Context,
         isPlaying: Boolean,
         playWhenReady: Boolean,
-        trackDescription: String?
+        trackDescription: String?,
     ) = updatePlaybackState(
         context = context,
         isPlaying = isPlaying,
         playWhenReady = playWhenReady,
-        trackKind = com.bestiapop.android.data.util.TrackKind.from(trackDescription)
+        trackKind =
+            com.bestiapop.android.data.util.TrackKind
+                .from(trackDescription),
     )
 
     /**
@@ -141,7 +163,10 @@ object SystemStabilityMonitor {
      */
     fun recordMemoryTrim(level: Int) = recordMemoryTrim(context = null, level = level)
 
-    fun recordMemoryTrim(context: Context?, level: Int) {
+    fun recordMemoryTrim(
+        context: Context?,
+        level: Int,
+    ) {
         val label = formatTrimMemoryLevel(level) ?: return
         val now = System.currentTimeMillis()
         if (CrashReporter.isEnabled) {
@@ -185,13 +210,15 @@ object SystemStabilityMonitor {
             val playback = prefs.getString(KEY_BB_LAST_PLAYBACK, null)
             val trim = prefs.getString(KEY_BB_LAST_TRIM, null)
 
-            val summary = buildString {
-                append("last_app_state=").append(appState)
-                playback?.let { append(",last_playback=").append(it) }
-                trim?.let { append(",last_memory_trim=").append(it) }
-            }
+            val summary =
+                buildString {
+                    append("last_app_state=").append(appState)
+                    playback?.let { append(",last_playback=").append(it) }
+                    trim?.let { append(",last_memory_trim=").append(it) }
+                }
             runCatching {
-                context.getSystemService(ActivityManager::class.java)
+                context
+                    .getSystemService(ActivityManager::class.java)
                     ?.setProcessStateSummary(summary.toByteArray(Charsets.UTF_8))
             }
         }
@@ -205,7 +232,7 @@ object SystemStabilityMonitor {
 
     internal fun createExceptionForExitReason(
         exit: ApplicationExitInfo,
-        metadata: Map<String, String> = emptyMap()
+        metadata: Map<String, String> = emptyMap(),
     ): SystemProcessKilledException? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || isBenignProcessExit(exit)) return null
 
@@ -214,45 +241,56 @@ object SystemStabilityMonitor {
         val pssMb = exit.pss / 1024L
         val rssMb = exit.rss / 1024L
 
-        val contextDetails = buildString {
-            append("state=").append(importanceLabel)
-            append(", rss=").append(rssMb).append("MB")
-            append(", pss=").append(pssMb).append("MB")
-            metadata["seconds_in_background"]?.let {
-                append(", bg=").append(it).append("s")
+        val contextDetails =
+            buildString {
+                append("state=").append(importanceLabel)
+                append(", rss=").append(rssMb).append("MB")
+                append(", pss=").append(pssMb).append("MB")
+                metadata["seconds_in_background"]?.let {
+                    append(", bg=").append(it).append("s")
+                }
+                metadata["last_playback"]?.let {
+                    append(", play=").append(it)
+                }
+                metadata["last_memory_trim"]?.let {
+                    append(", trim=").append(it)
+                }
+                if (exit.status != 0) {
+                    append(", status=").append(exit.status)
+                }
             }
-            metadata["last_playback"]?.let {
-                append(", play=").append(it)
-            }
-            metadata["last_memory_trim"]?.let {
-                append(", trim=").append(it)
-            }
-            if (exit.status != 0) {
-                append(", status=").append(exit.status)
-            }
-        }
 
         return when (exit.reason) {
-            ApplicationExitInfo.REASON_LOW_MEMORY ->
+            ApplicationExitInfo.REASON_LOW_MEMORY -> {
                 LowMemoryKillException("LMK kill [$contextDetails]: $description")
+            }
 
-            ApplicationExitInfo.REASON_OTHER ->
+            ApplicationExitInfo.REASON_OTHER -> {
                 LowMemoryKillException("System kill [$contextDetails]: $description")
+            }
 
-            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE ->
+            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> {
                 ExcessiveResourceUsageException("Resource kill [$contextDetails]: $description")
+            }
 
-            ApplicationExitInfo.REASON_ANR ->
+            ApplicationExitInfo.REASON_ANR -> {
                 ApplicationNotRespondingException("ANR kill [$contextDetails]: $description")
+            }
 
-            ApplicationExitInfo.REASON_CRASH_NATIVE ->
+            ApplicationExitInfo.REASON_CRASH_NATIVE -> {
                 NativeCrashKillException("Native crash kill [$contextDetails]: $description")
+            }
 
-            else -> null
+            else -> {
+                null
+            }
         }
     }
 
-    internal fun buildExitMetadata(context: Context?, exit: ApplicationExitInfo): Map<String, String> {
+    internal fun buildExitMetadata(
+        context: Context?,
+        exit: ApplicationExitInfo,
+    ): Map<String, String> {
         val metadata = mutableMapOf<String, String>()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return metadata
 
@@ -319,40 +357,47 @@ object SystemStabilityMonitor {
         return metadata
     }
 
-    internal fun formatReason(reason: Int): String = when (reason) {
-        ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
-        ApplicationExitInfo.REASON_OTHER -> "OTHER"
-        ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
-        ApplicationExitInfo.REASON_ANR -> "ANR"
-        ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
-        ApplicationExitInfo.REASON_CRASH -> "CRASH"
-        ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
-        ApplicationExitInfo.REASON_USER_STOPPED -> "USER_STOPPED"
-        ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
-        ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
-        ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
-        ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "PERMISSION_CHANGE"
-        ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "PACKAGE_UPDATED"
-        ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
-        else -> "UNKNOWN_$reason"
-    }
+    internal fun formatReason(reason: Int): String =
+        when (reason) {
+            ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
+            ApplicationExitInfo.REASON_OTHER -> "OTHER"
+            ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
+            ApplicationExitInfo.REASON_ANR -> "ANR"
+            ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
+            ApplicationExitInfo.REASON_CRASH -> "CRASH"
+            ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
+            ApplicationExitInfo.REASON_USER_STOPPED -> "USER_STOPPED"
+            ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
+            ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
+            ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
+            ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "PERMISSION_CHANGE"
+            ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "PACKAGE_UPDATED"
+            ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
+            else -> "UNKNOWN_$reason"
+        }
 
-    internal fun formatImportance(importance: Int): String = when (importance) {
-        ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND -> "FOREGROUND"
-        ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE -> "FOREGROUND_SERVICE"
-        ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE -> "VISIBLE"
-        ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE -> "SERVICE"
-        ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED -> "CACHED"
-        ActivityManager.RunningAppProcessInfo.IMPORTANCE_GONE -> "GONE"
-        else -> "IMPORTANCE_$importance"
-    }
+    internal fun formatImportance(importance: Int): String =
+        when (importance) {
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND -> "FOREGROUND"
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE -> "FOREGROUND_SERVICE"
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE -> "VISIBLE"
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE -> "SERVICE"
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED -> "CACHED"
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_GONE -> "GONE"
+            else -> "IMPORTANCE_$importance"
+        }
 
-    internal fun formatTrimMemoryLevel(level: Int): String? = when (level) {
-        // ComponentCallbacks2 levels: RUNNING_CRITICAL (15), RUNNING_LOW (10), COMPLETE (80), MODERATE (60)
-        15 -> "RUNNING_CRITICAL"
-        10 -> "RUNNING_LOW"
-        80 -> "COMPLETE"
-        60 -> "MODERATE"
-        else -> null
-    }
+    internal fun formatTrimMemoryLevel(level: Int): String? =
+        when (level) {
+            // ComponentCallbacks2 levels: RUNNING_CRITICAL (15), RUNNING_LOW (10), COMPLETE (80), MODERATE (60)
+            15 -> "RUNNING_CRITICAL"
+
+            10 -> "RUNNING_LOW"
+
+            80 -> "COMPLETE"
+
+            60 -> "MODERATE"
+
+            else -> null
+        }
 }

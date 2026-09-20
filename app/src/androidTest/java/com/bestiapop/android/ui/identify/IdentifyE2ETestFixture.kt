@@ -22,9 +22,6 @@ import com.bestiapop.android.data.preferences.PersistedIdentifyReviewQueue
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.testutil.PcmWavFixture
 import com.bestiapop.android.ui.MusicPlayerViewModel
-import java.io.File
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -33,6 +30,9 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 internal object IdentifyE2ETestContract {
     const val SEARCH_FILTER = "BestiaPop Identify E2E"
@@ -89,24 +89,28 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
         server.start()
 
         val localBaseUrl = server.url("/").toString()
-        val localClient = OkHttpClient.Builder()
-            .connectTimeout(2, TimeUnit.SECONDS)
-            .readTimeout(3, TimeUnit.SECONDS)
-            .callTimeout(5, TimeUnit.SECONDS)
-            .build()
+        val localClient =
+            OkHttpClient
+                .Builder()
+                .connectTimeout(2, TimeUnit.SECONDS)
+                .readTimeout(3, TimeUnit.SECONDS)
+                .callTimeout(5, TimeUnit.SECONDS)
+                .build()
         MetadataFetcher.configureForTest(
             http = localClient,
-            endpoints = MetadataFetcherEndpoints(
-                deezerBaseUrl = localBaseUrl,
-                itunesBaseUrl = localBaseUrl,
-                lyricsBaseUrl = localBaseUrl
-            )
+            endpoints =
+                MetadataFetcherEndpoints(
+                    deezerBaseUrl = localBaseUrl,
+                    itunesBaseUrl = localBaseUrl,
+                    lyricsBaseUrl = localBaseUrl,
+                ),
         )
         ListenBrainzClient.configureForTest(
             http = localClient,
-            endpoints = ListenBrainzEndpoints(
-                apiBaseUrl = server.url("/1").toString().trimEnd('/')
-            )
+            endpoints =
+                ListenBrainzEndpoints(
+                    apiBaseUrl = server.url("/1").toString().trimEnd('/'),
+                ),
         )
 
         runBlocking {
@@ -117,9 +121,10 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
 
                 val staleRows = fixtureRows()
                 val staleIds = staleRows.map(Song::id).toSet()
-                previousReviewQueue = reviewStore.load().let { queue ->
-                    queue.copy(proposals = queue.proposals.filterNot { it.songId in staleIds })
-                }
+                previousReviewQueue =
+                    reviewStore.load().let { queue ->
+                        queue.copy(proposals = queue.proposals.filterNot { it.songId in staleIds })
+                    }
                 deleteFixtureRows(staleRows)
                 deleteFixtureFiles()
                 reviewStore.save(PersistedIdentifyReviewQueue())
@@ -137,9 +142,10 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
 
     fun launchMainActivity() {
         check(scenario == null) { "MainActivity fixture scenario is already running" }
-        scenario = ActivityScenario.launch(MainActivity::class.java).also {
-            it.moveToState(Lifecycle.State.RESUMED)
-        }
+        scenario =
+            ActivityScenario.launch(MainActivity::class.java).also {
+                it.moveToState(Lifecycle.State.RESUMED)
+            }
     }
 
     /** Closes the Activity/ViewModel, then launches a fresh production graph consumer. */
@@ -197,17 +203,23 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
                 persisted.durationMs == IdentifyE2ETestContract.LOCAL_DURATION_MS
         } == true
 
-    fun mediumReviewIsPersisted(): Boolean = runBlocking {
-        val queue = reviewStore.load()
-        queue.proposals.size == 1 &&
-            queue.proposals.single().songId == mediumSongId &&
-            queue.proposals.single().candidates.firstOrNull()?.title ==
-            IdentifyE2ETestContract.MEDIUM_CANDIDATE_TITLE
-    }
+    fun mediumReviewIsPersisted(): Boolean =
+        runBlocking {
+            val queue = reviewStore.load()
+            queue.proposals.size == 1 &&
+                queue.proposals.single().songId == mediumSongId &&
+                queue.proposals
+                    .single()
+                    .candidates
+                    .firstOrNull()
+                    ?.title ==
+                IdentifyE2ETestContract.MEDIUM_CANDIDATE_TITLE
+        }
 
-    fun reviewQueueIsEmpty(): Boolean = runBlocking {
-        reviewStore.load().proposals.isEmpty()
-    }
+    fun reviewQueueIsEmpty(): Boolean =
+        runBlocking {
+            reviewStore.load().proposals.isEmpty()
+        }
 
     fun assertPersistedIdentities() {
         check(highIdentityWasAutoApplied()) {
@@ -219,25 +231,31 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
     }
 
     fun diagnostic(): String {
-        val rows = runCatching {
-            runBlocking {
-                fixtureRows().joinToString {
-                    "${it.id}:${it.artist}|${it.title}|${it.album}|${it.durationMs}|${it.trackNumber}"
+        val rows =
+            runCatching {
+                runBlocking {
+                    fixtureRows().joinToString {
+                        "${it.id}:${it.artist}|${it.title}|${it.album}|${it.durationMs}|${it.trackNumber}"
+                    }
                 }
-            }
-        }.getOrElse { "Room diagnostic failed: ${it.message}" }
-        val queue = runCatching {
-            runBlocking { reviewStore.load().proposals.map { it.songId } }
-        }.getOrElse { listOf("review diagnostic failed: ${it.message}") }
+            }.getOrElse { "Room diagnostic failed: ${it.message}" }
+        val queue =
+            runCatching {
+                runBlocking { reviewStore.load().proposals.map { it.songId } }
+            }.getOrElse { listOf("review diagnostic failed: ${it.message}") }
         return "fixtureRows=[$rows], reviewSongIds=$queue, dir=${fixtureDir.absolutePath}"
     }
 
     override fun close() {
         var firstFailure: Throwable? = null
+
         fun cleanup(block: () -> Unit) {
             runCatching(block).exceptionOrNull()?.let { failure ->
-                if (firstFailure == null) firstFailure = failure
-                else firstFailure?.addSuppressed(failure)
+                if (firstFailure == null) {
+                    firstFailure = failure
+                } else {
+                    firstFailure?.addSuppressed(failure)
+                }
             }
         }
 
@@ -258,7 +276,7 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
                         libraryPreferences.setSortOptionName(settings.sortOptionName)
                         libraryPreferences.setSortDirectionName(
                             settings.sortDirectionName,
-                            settings.sortOptionName
+                            settings.sortOptionName,
                         )
                         libraryPreferences.setViewModeName(settings.viewModeName)
                     }
@@ -280,37 +298,44 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
         PcmWavFixture.write(
             file = highFile,
             durationMs = IdentifyE2ETestContract.LOCAL_DURATION_MS.toInt(),
-            toneHz = 330.0
+            toneHz = 330.0,
         )
         PcmWavFixture.write(
             file = mediumFile,
             durationMs = IdentifyE2ETestContract.LOCAL_DURATION_MS.toInt(),
-            toneHz = 440.0
+            toneHz = 440.0,
         )
 
-        highSongId = persistFixtureSong(
-            file = highFile,
-            title = IdentifyE2ETestContract.HIGH_SOURCE_TITLE,
-            artist = IdentifyE2ETestContract.HIGH_ARTIST
-        )
-        mediumSongId = persistFixtureSong(
-            file = mediumFile,
-            title = IdentifyE2ETestContract.MEDIUM_SOURCE_TITLE,
-            artist = IdentifyE2ETestContract.MEDIUM_ARTIST
-        )
+        highSongId =
+            persistFixtureSong(
+                file = highFile,
+                title = IdentifyE2ETestContract.HIGH_SOURCE_TITLE,
+                artist = IdentifyE2ETestContract.HIGH_ARTIST,
+            )
+        mediumSongId =
+            persistFixtureSong(
+                file = mediumFile,
+                title = IdentifyE2ETestContract.MEDIUM_SOURCE_TITLE,
+                artist = IdentifyE2ETestContract.MEDIUM_ARTIST,
+            )
     }
 
-    private suspend fun persistFixtureSong(file: File, title: String, artist: String): Long {
-        val id = repository.saveUploadedSong(
-            Song(
-                uriString = file.absolutePath,
-                title = title,
-                artist = artist,
-                album = IdentifyE2ETestContract.WEAK_ALBUM,
-                durationMs = IdentifyE2ETestContract.LOCAL_DURATION_MS,
-                folderPath = fixtureDir.absolutePath
+    private suspend fun persistFixtureSong(
+        file: File,
+        title: String,
+        artist: String,
+    ): Long {
+        val id =
+            repository.saveUploadedSong(
+                Song(
+                    uriString = file.absolutePath,
+                    title = title,
+                    artist = artist,
+                    album = IdentifyE2ETestContract.WEAK_ALBUM,
+                    durationMs = IdentifyE2ETestContract.LOCAL_DURATION_MS,
+                    folderPath = fixtureDir.absolutePath,
+                ),
             )
-        )
         check(id > 0L) { "Could not persist identify fixture $title (id=$id)" }
         val persisted = checkNotNull(dao.getSongById(id)) { "Fixture row $id disappeared" }
         check(persisted.album == IdentifyE2ETestContract.WEAK_ALBUM)
@@ -341,11 +366,12 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
     }
 
     private fun grantStartupPermissions() {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            listOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+        val permissions =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                listOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
         permissions.forEach { permission ->
             if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_DENIED) {
                 instrumentation.uiAutomation.grantRuntimePermission(context.packageName, permission)
@@ -357,15 +383,28 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
         override fun dispatch(request: RecordedRequest): MockResponse {
             val path = request.requestUrl?.encodedPath.orEmpty()
             return when (path) {
-                "/search" -> catalogSearchResponse(request)
-                "/search/album", "/search/playlist", "/search/artist", "/search/track" ->
+                "/search" -> {
+                    catalogSearchResponse(request)
+                }
+
+                "/search/album", "/search/playlist", "/search/artist", "/search/track" -> {
                     jsonResponse("""{"data":[]}""")
-                "/api/get" -> MockResponse().setResponseCode(404)
-                "/api/search" -> jsonResponse("[]")
-                else -> if (path.startsWith("/1/")) {
-                    jsonResponse("""{"error":"identify fixture has no ListenBrainz match"}""", 503)
-                } else {
+                }
+
+                "/api/get" -> {
                     MockResponse().setResponseCode(404)
+                }
+
+                "/api/search" -> {
+                    jsonResponse("[]")
+                }
+
+                else -> {
+                    if (path.startsWith("/1/")) {
+                        jsonResponse("""{"error":"identify fixture has no ListenBrainz match"}""", 503)
+                    } else {
+                        MockResponse().setResponseCode(404)
+                    }
                 }
             }
         }
@@ -373,28 +412,36 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
         private fun catalogSearchResponse(request: RecordedRequest): MockResponse {
             searchEntered?.countDown()
             searchGate?.await(STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            val query = request.requestUrl?.queryParameter("q")
-                ?: request.requestUrl?.queryParameter("term")
-                ?: ""
-            val body = when {
-                query.contains(IdentifyE2ETestContract.HIGH_SOURCE_TITLE, ignoreCase = true) ->
-                    catalogJson(
-                        id = 7001,
-                        title = IdentifyE2ETestContract.HIGH_SOURCE_TITLE,
-                        artist = IdentifyE2ETestContract.HIGH_ARTIST,
-                        album = IdentifyE2ETestContract.HIGH_ALBUM,
-                        trackNumber = IdentifyE2ETestContract.HIGH_TRACK_NUMBER
-                    )
-                query.contains(IdentifyE2ETestContract.MEDIUM_SOURCE_TITLE, ignoreCase = true) ->
-                    catalogJson(
-                        id = 7002,
-                        title = IdentifyE2ETestContract.MEDIUM_CANDIDATE_TITLE,
-                        artist = IdentifyE2ETestContract.MEDIUM_ARTIST,
-                        album = IdentifyE2ETestContract.MEDIUM_ALBUM,
-                        trackNumber = IdentifyE2ETestContract.MEDIUM_TRACK_NUMBER
-                    )
-                else -> """{"data":[]}"""
-            }
+            val query =
+                request.requestUrl?.queryParameter("q")
+                    ?: request.requestUrl?.queryParameter("term")
+                    ?: ""
+            val body =
+                when {
+                    query.contains(IdentifyE2ETestContract.HIGH_SOURCE_TITLE, ignoreCase = true) -> {
+                        catalogJson(
+                            id = 7001,
+                            title = IdentifyE2ETestContract.HIGH_SOURCE_TITLE,
+                            artist = IdentifyE2ETestContract.HIGH_ARTIST,
+                            album = IdentifyE2ETestContract.HIGH_ALBUM,
+                            trackNumber = IdentifyE2ETestContract.HIGH_TRACK_NUMBER,
+                        )
+                    }
+
+                    query.contains(IdentifyE2ETestContract.MEDIUM_SOURCE_TITLE, ignoreCase = true) -> {
+                        catalogJson(
+                            id = 7002,
+                            title = IdentifyE2ETestContract.MEDIUM_CANDIDATE_TITLE,
+                            artist = IdentifyE2ETestContract.MEDIUM_ARTIST,
+                            album = IdentifyE2ETestContract.MEDIUM_ALBUM,
+                            trackNumber = IdentifyE2ETestContract.MEDIUM_TRACK_NUMBER,
+                        )
+                    }
+
+                    else -> {
+                        """{"data":[]}"""
+                    }
+                }
             return jsonResponse(body)
         }
 
@@ -403,8 +450,9 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
             title: String,
             artist: String,
             album: String,
-            trackNumber: Int
-        ): String = """
+            trackNumber: Int,
+        ): String =
+            """
             {
               "data": [{
                 "id": $id,
@@ -415,12 +463,16 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
                 "album": {"title": "$album"}
               }]
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        private fun jsonResponse(body: String, code: Int = 200): MockResponse = MockResponse()
-            .setResponseCode(code)
-            .setHeader("Content-Type", "application/json")
-            .setBody(body)
+        private fun jsonResponse(
+            body: String,
+            code: Int = 200,
+        ): MockResponse =
+            MockResponse()
+                .setResponseCode(code)
+                .setHeader("Content-Type", "application/json")
+                .setBody(body)
     }
 
     private companion object {

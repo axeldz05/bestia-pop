@@ -19,30 +19,45 @@ import java.util.Locale
  * - Accents and diacritics are normalized (Á -> A, etc.) so accented titles sort under their base letter.
  */
 object NaturalTextOrder {
-
     enum class SectionType {
         LETTER,
         NUMBER,
-        SYMBOL
+        SYMBOL,
     }
 
     data class SectionDescriptor(
         val type: SectionType,
         val label: String,
-        val popupLabel: String
+        val popupLabel: String,
     )
 
     private val PARENTHESIS_REGEX = Regex("""[\(\[\{]([^\)\]\}]+)[\)\]\}]""")
     private val COMBINING_MARKS = Regex("\\p{Mn}+")
-    private val LEADING_QUOTE_AND_BRACKET_CHARS = charArrayOf(
-        '"', '\'', '(', '[', '{', '<', '¿', '¡', '“', '”', '‘', '’', '`', '´', ' '
-    )
+    private val LEADING_QUOTE_AND_BRACKET_CHARS =
+        charArrayOf(
+            '"',
+            '\'',
+            '(',
+            '[',
+            '{',
+            '<',
+            '¿',
+            '¡',
+            '“',
+            '”',
+            '‘',
+            '’',
+            '`',
+            '´',
+            ' ',
+        )
 
     private val icuTransliteratorPair by lazy {
-        val classNames = listOf(
-            "android.icu.text.Transliterator",
-            "com.ibm.icu.text.Transliterator"
-        )
+        val classNames =
+            listOf(
+                "android.icu.text.Transliterator",
+                "com.ibm.icu.text.Transliterator",
+            )
         classNames.firstNotNullOfOrNull { className ->
             try {
                 val clazz = Class.forName(className)
@@ -69,8 +84,7 @@ object NaturalTextOrder {
         }
     }
 
-    private fun Char.isLatinLetter(): Boolean =
-        this in 'A'..'Z' || this in 'a'..'z'
+    private fun Char.isLatinLetter(): Boolean = this in 'A'..'Z' || this in 'a'..'z'
 
     /**
      * Extracts the romanized or parsed Latin candidate from a title if one exists,
@@ -139,8 +153,10 @@ object NaturalTextOrder {
         if (isAscii) {
             return text.uppercase(Locale.ROOT)
         }
-        val unaccented = Normalizer.normalize(text, Normalizer.Form.NFD)
-            .replace(COMBINING_MARKS, "")
+        val unaccented =
+            Normalizer
+                .normalize(text, Normalizer.Form.NFD)
+                .replace(COMBINING_MARKS, "")
         return unaccented.uppercase(Locale.ROOT)
     }
 
@@ -178,7 +194,7 @@ object NaturalTextOrder {
     data class NaturalSortKey(
         val type: SectionType,
         val normalized: String,
-        val original: String
+        val original: String,
     ) : Comparable<NaturalSortKey> {
         override fun compareTo(other: NaturalSortKey): Int {
             val typeCmp = type.compareTo(other.type)
@@ -195,11 +211,12 @@ object NaturalTextOrder {
         }
         val parsed = extractRomanizedOrParsed(raw)
         val normalized = normalizeToLatinBase(parsed)
-        val type = when (normalized.firstOrNull()) {
-            in 'A'..'Z' -> SectionType.LETTER
-            in '0'..'9' -> SectionType.NUMBER
-            else -> SectionType.SYMBOL
-        }
+        val type =
+            when (normalized.firstOrNull()) {
+                in 'A'..'Z' -> SectionType.LETTER
+                in '0'..'9' -> SectionType.NUMBER
+                else -> SectionType.SYMBOL
+            }
         return NaturalSortKey(type, normalized, raw)
     }
 
@@ -209,13 +226,14 @@ object NaturalTextOrder {
      */
     fun <T> comparator(
         ascending: Boolean = true,
-        selector: (T) -> String?
+        selector: (T) -> String?,
     ): Comparator<T> {
-        val baseCmp = Comparator<T> { a, b ->
-            val keyA = toSortKey(selector(a))
-            val keyB = toSortKey(selector(b))
-            keyA.compareTo(keyB)
-        }
+        val baseCmp =
+            Comparator<T> { a, b ->
+                val keyA = toSortKey(selector(a))
+                val keyB = toSortKey(selector(b))
+                keyA.compareTo(keyB)
+            }
         return if (ascending) baseCmp else baseCmp.reversed()
     }
 }
@@ -225,17 +243,18 @@ object NaturalTextOrder {
  */
 fun <T> List<T>.sortedWithNaturalOrder(
     ascending: Boolean = true,
-    selector: (T) -> String?
+    selector: (T) -> String?,
 ): List<T> {
     if (size <= 1) return this
     val n = size
     val keys = Array(n) { i -> NaturalTextOrder.toSortKey(selector(this[i])) }
     val indices = Array(n) { it }
-    val cmp = if (ascending) {
-        Comparator<Int> { i, j -> keys[i].compareTo(keys[j]) }
-    } else {
-        Comparator<Int> { i, j -> keys[j].compareTo(keys[i]) }
-    }
+    val cmp =
+        if (ascending) {
+            Comparator<Int> { i, j -> keys[i].compareTo(keys[j]) }
+        } else {
+            Comparator<Int> { i, j -> keys[j].compareTo(keys[i]) }
+        }
     indices.sortWith(cmp)
     return List(n) { i -> this[indices[i]] }
 }

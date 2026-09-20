@@ -13,7 +13,6 @@ import com.bestiapop.android.data.preferences.ActiveDownloadsStore
 import com.bestiapop.android.data.preferences.DownloadPreferencesRepository
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.domain.util.TrackMatchKeys
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,25 +21,27 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 internal interface ActiveDownloadsPersistence {
     suspend fun load(): List<ActiveDownload>
+
     suspend fun save(downloads: List<ActiveDownload>)
 }
 
 private class ActiveDownloadsStorePersistence(
-    private val store: ActiveDownloadsStore
+    private val store: ActiveDownloadsStore,
 ) : ActiveDownloadsPersistence {
     override suspend fun load(): List<ActiveDownload> = store.load()
 
@@ -52,9 +53,12 @@ private class ActiveDownloadsStorePersistence(
 internal sealed interface CoordinatedDownloadResult {
     data class Completed(
         val result: Result<Song>,
-        val incompletePlaylistTargets: List<DownloadPlaylistDestination> = emptyList()
+        val incompletePlaylistTargets: List<DownloadPlaylistDestination> = emptyList(),
     ) : CoordinatedDownloadResult
-    data class AlreadyRunning(val downloadId: String) : CoordinatedDownloadResult
+
+    data class AlreadyRunning(
+        val downloadId: String,
+    ) : CoordinatedDownloadResult
 }
 
 /**
@@ -69,12 +73,12 @@ internal class ProcessDownloadCoordinator(
     maxConcurrentDownloads: Int = MAX_CONCURRENT_DOWNLOADS,
     private val onDownloadCompleted: suspend (Song) -> Unit = {},
     private val onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit = { _, _ -> },
-    private val progressPersistDelayMs: Long = PROGRESS_PERSIST_DELAY_MS
+    private val progressPersistDelayMs: Long = PROGRESS_PERSIST_DELAY_MS,
 ) {
     private class Claim(
         val downloadId: String,
         val job: Job,
-        val aliases: Set<String>
+        val aliases: Set<String>,
     ) {
         val pendingPlaylistTargets = linkedSetOf<DownloadPlaylistDestination>()
         val reservedPlaylistTargets = mutableSetOf<DownloadPlaylistDestination>()
@@ -94,11 +98,12 @@ internal class ProcessDownloadCoordinator(
         require(maxConcurrentDownloads > 0) { "maxConcurrentDownloads must be positive" }
         require(progressPersistDelayMs >= 0L) { "Progress persist delay must not be negative" }
         scope.launch(Dispatchers.IO) {
-            val restored = try {
-                persistence.load()
-            } catch (_: Exception) {
-                emptyList()
-            }
+            val restored =
+                try {
+                    persistence.load()
+                } catch (_: Exception) {
+                    emptyList()
+                }
             var hadLiveRows = false
             _downloads.update { live ->
                 hadLiveRows = live.isNotEmpty()
@@ -120,13 +125,14 @@ internal class ProcessDownloadCoordinator(
         playlistTarget: DownloadPlaylistDestination? = null,
         onRegistered: () -> Unit = {},
         beforePermit: suspend () -> Unit = {},
-        block: suspend () -> Result<Song>
+        block: suspend () -> Result<Song>,
     ): CoordinatedDownloadResult {
         hydrated.await()
         val aliases = aliasesFor(downloadId, artist, title)
         require(aliases.isNotEmpty()) { "Download identity is blank" }
-        val job = currentCoroutineContext()[Job]
-            ?: error("A coordinated download requires a coroutine Job")
+        val job =
+            currentCoroutineContext()[Job]
+                ?: error("A coordinated download requires a coroutine Job")
         val claim = Claim(downloadId = downloadId, job = job, aliases = aliases)
         var running: Claim? = null
 
@@ -157,19 +163,29 @@ internal class ProcessDownloadCoordinator(
         return try {
             beforePermit()
             val result = permits.withPermit { block() }
-            val incompleteTargets = result.getOrNull()?.let { song ->
-                completePlaylistTargets(claim, song)
-            }.orEmpty()
+            val incompleteTargets =
+                result
+                    .getOrNull()
+                    ?.let { song ->
+                        completePlaylistTargets(claim, song)
+                    }.orEmpty()
             CoordinatedDownloadResult.Completed(result, incompleteTargets)
         } finally {
             unregister(claim)
         }
     }
 
-    fun isRunning(downloadId: String, artist: String, title: String): Boolean =
-        runningDownloadId(downloadId, artist, title) != null
+    fun isRunning(
+        downloadId: String,
+        artist: String,
+        title: String,
+    ): Boolean = runningDownloadId(downloadId, artist, title) != null
 
-    fun runningDownloadId(downloadId: String, artist: String, title: String): String? {
+    fun runningDownloadId(
+        downloadId: String,
+        artist: String,
+        title: String,
+    ): String? {
         val aliases = aliasesFor(downloadId, artist, title)
         if (aliases.isEmpty()) return null
         return synchronized(claimsLock) {
@@ -177,7 +193,11 @@ internal class ProcessDownloadCoordinator(
         }
     }
 
-    fun findByTrack(downloadId: String, artist: String, title: String): ActiveDownload? {
+    fun findByTrack(
+        downloadId: String,
+        artist: String,
+        title: String,
+    ): ActiveDownload? {
         val aliases = aliasesFor(downloadId, artist, title)
         val rows = downloads.value
         aliases.forEach { alias ->
@@ -192,15 +212,18 @@ internal class ProcessDownloadCoordinator(
     fun upsert(download: ActiveDownload) {
         _downloads.update { rows ->
             val index = rows.indexOfFirst { it.id == download.id }
-            if (index < 0) listOf(download) + rows
-            else rows.toMutableList().apply { set(index, download) }
+            if (index < 0) {
+                listOf(download) + rows
+            } else {
+                rows.toMutableList().apply { set(index, download) }
+            }
         }
         schedulePersist()
     }
 
     fun update(
         id: String,
-        transform: (ActiveDownload) -> ActiveDownload
+        transform: (ActiveDownload) -> ActiveDownload,
     ): Boolean {
         val changed = updateRow(id, transform)
         if (changed) schedulePersist()
@@ -209,7 +232,7 @@ internal class ProcessDownloadCoordinator(
 
     fun updateProgress(
         id: String,
-        transform: (ActiveDownload) -> ActiveDownload
+        transform: (ActiveDownload) -> ActiveDownload,
     ): Boolean {
         val changed = updateRow(id, transform)
         if (changed) scheduleProgressPersist()
@@ -218,7 +241,7 @@ internal class ProcessDownloadCoordinator(
 
     private fun updateRow(
         id: String,
-        transform: (ActiveDownload) -> ActiveDownload
+        transform: (ActiveDownload) -> ActiveDownload,
     ): Boolean {
         var changed = false
         _downloads.update { rows ->
@@ -248,24 +271,28 @@ internal class ProcessDownloadCoordinator(
         downloadId: String,
         artist: String,
         title: String,
-        target: DownloadPlaylistDestination
+        target: DownloadPlaylistDestination,
     ): Boolean {
         val aliases = aliasesFor(downloadId, artist, title)
         if (aliases.isEmpty()) return false
-        val owner = synchronized(claimsLock) {
-            findRunningClaimLocked(aliases)?.also { claim ->
-                registerPlaylistTargetLocked(claim, target)
-            }
-        } ?: return false
+        val owner =
+            synchronized(claimsLock) {
+                findRunningClaimLocked(aliases)?.also { claim ->
+                    registerPlaylistTargetLocked(claim, target)
+                }
+            } ?: return false
         preservePlaylistTarget(owner.downloadId, target)
         return true
     }
 
-    private fun preservePlaylistTarget(downloadId: String, target: DownloadPlaylistDestination) {
+    private fun preservePlaylistTarget(
+        downloadId: String,
+        target: DownloadPlaylistDestination,
+    ) {
         update(downloadId) { row ->
             row.copy(
                 targetPlaylistId = row.targetPlaylistId ?: target.playlistId,
-                playlistTargets = (row.playlistTargets + target).distinct()
+                playlistTargets = (row.playlistTargets + target).distinct(),
             )
         }
     }
@@ -285,9 +312,10 @@ internal class ProcessDownloadCoordinator(
     }
 
     fun dismissAll() {
-        val jobs = synchronized(claimsLock) {
-            claimsByAlias.values.distinctBy { it.job }.map { it.job }
-        }
+        val jobs =
+            synchronized(claimsLock) {
+                claimsByAlias.values.distinctBy { it.job }.map { it.job }
+            }
         jobs.forEach { it.cancel() }
         if (_downloads.value.isNotEmpty()) {
             _downloads.value = emptyList()
@@ -308,12 +336,14 @@ internal class ProcessDownloadCoordinator(
     }
 
     fun dismissRunning(lane: DownloadLane) {
-        val ids = _downloads.value
-            .filter { it.matchesLane(lane) }
-            .mapTo(mutableSetOf()) { it.id }
-        val claims = synchronized(claimsLock) {
-            claimsByAlias.values.distinctBy { it.job }.filter { it.downloadId in ids }
-        }
+        val ids =
+            _downloads.value
+                .filter { it.matchesLane(lane) }
+                .mapTo(mutableSetOf()) { it.id }
+        val claims =
+            synchronized(claimsLock) {
+                claimsByAlias.values.distinctBy { it.job }.filter { it.downloadId in ids }
+            }
         claims.forEach { it.job.cancel() }
         val claimedIds = claims.mapTo(mutableSetOf()) { it.downloadId }
         if (claimedIds.isNotEmpty()) {
@@ -358,22 +388,23 @@ internal class ProcessDownloadCoordinator(
      */
     private suspend fun completePlaylistTargets(
         claim: Claim,
-        song: Song
+        song: Song,
     ): List<DownloadPlaylistDestination> {
         val incomplete = mutableListOf<DownloadPlaylistDestination>()
         withContext(NonCancellable) {
             while (true) {
-                val target = synchronized(claimsLock) {
-                    val next = claim.pendingPlaylistTargets.firstOrNull()
-                    if (next == null) {
-                        unregisterLocked(claim)
-                        null
-                    } else {
-                        claim.pendingPlaylistTargets.remove(next)
-                        claim.reservedPlaylistTargets += next
-                        next
-                    }
-                } ?: return@withContext
+                val target =
+                    synchronized(claimsLock) {
+                        val next = claim.pendingPlaylistTargets.firstOrNull()
+                        if (next == null) {
+                            unregisterLocked(claim)
+                            null
+                        } else {
+                            claim.pendingPlaylistTargets.remove(next)
+                            claim.reservedPlaylistTargets += next
+                            next
+                        }
+                    } ?: return@withContext
                 try {
                     onPlaylistTargetCompleted(target, song)
                 } catch (_: Exception) {
@@ -386,7 +417,10 @@ internal class ProcessDownloadCoordinator(
         return incomplete
     }
 
-    private fun registerPlaylistTargetLocked(claim: Claim, target: DownloadPlaylistDestination) {
+    private fun registerPlaylistTargetLocked(
+        claim: Claim,
+        target: DownloadPlaylistDestination,
+    ) {
         if (target !in claim.reservedPlaylistTargets) {
             claim.pendingPlaylistTargets += target
         }
@@ -413,7 +447,11 @@ internal class ProcessDownloadCoordinator(
         return null
     }
 
-    private fun aliasesFor(downloadId: String, artist: String, title: String): Set<String> =
+    private fun aliasesFor(
+        downloadId: String,
+        artist: String,
+        title: String,
+    ): Set<String> =
         buildSet {
             downloadId.takeIf { it.isNotBlank() }?.let(::add)
             addAll(TrackMatchKeys.downloadIdVariantsFor(artist, title))
@@ -430,11 +468,12 @@ internal class ProcessDownloadCoordinator(
     private fun scheduleProgressPersist() {
         synchronized(persistScheduleLock) {
             if (progressPersistJob?.isActive == true) return
-            progressPersistJob = scope.launch(Dispatchers.IO) {
-                delay(progressPersistDelayMs)
-                hydrated.await()
-                persistLatest()
-            }
+            progressPersistJob =
+                scope.launch(Dispatchers.IO) {
+                    delay(progressPersistDelayMs)
+                    hydrated.await()
+                    persistLatest()
+                }
         }
     }
 
@@ -445,9 +484,10 @@ internal class ProcessDownloadCoordinator(
         }
     }
 
-    private fun runningJobs(): List<Job> = synchronized(claimsLock) {
-        claimsByAlias.values.distinctBy { it.job }.map { it.job }
-    }
+    private fun runningJobs(): List<Job> =
+        synchronized(claimsLock) {
+            claimsByAlias.values.distinctBy { it.job }.map { it.job }
+        }
 
     private fun markRunningRowsInterrupted() {
         markRowsInterrupted { true }
@@ -455,11 +495,13 @@ internal class ProcessDownloadCoordinator(
 
     private fun interruptMatchingRows(predicate: (ActiveDownload) -> Boolean) {
         val ids = _downloads.value.filter(predicate).mapTo(mutableSetOf()) { it.id }
-        val jobs = synchronized(claimsLock) {
-            claimsByAlias.values.distinctBy { it.job }
-                .filter { it.downloadId in ids }
-                .map { it.job }
-        }
+        val jobs =
+            synchronized(claimsLock) {
+                claimsByAlias.values
+                    .distinctBy { it.job }
+                    .filter { it.downloadId in ids }
+                    .map { it.job }
+            }
         jobs.forEach { it.cancel() }
         markRowsInterrupted(predicate)
     }
@@ -491,13 +533,14 @@ internal class ProcessDownloadCoordinator(
 
     private fun mergeById(
         preferred: List<ActiveDownload>,
-        fallback: List<ActiveDownload>
-    ): List<ActiveDownload> = buildList(preferred.size + fallback.size) {
-        val seen = mutableSetOf<String>()
-        (preferred + fallback).forEach { row ->
-            if (seen.add(row.id)) add(row)
+        fallback: List<ActiveDownload>,
+    ): List<ActiveDownload> =
+        buildList(preferred.size + fallback.size) {
+            val seen = mutableSetOf<String>()
+            (preferred + fallback).forEach { row ->
+                if (seen.add(row.id)) add(row)
+            }
         }
-    }
 
     companion object {
         const val MAX_CONCURRENT_DOWNLOADS = 3
@@ -506,7 +549,7 @@ internal class ProcessDownloadCoordinator(
         fun create(
             context: Context,
             scope: CoroutineScope,
-            onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit
+            onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit,
         ): ProcessDownloadCoordinator {
             val preferences = DownloadPreferencesRepository(context)
             val connectivity = ConnectivityObserver(context)
@@ -514,18 +557,20 @@ internal class ProcessDownloadCoordinator(
                 scope = scope,
                 persistence = ActiveDownloadsStorePersistence(ActiveDownloadsStore(context)),
                 onDownloadCompleted = { song ->
-                    val bytes = runCatching {
-                        SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
-                            ?.let { java.io.File(it) }
-                            ?.takeIf { it.isFile }
-                            ?.length()
-                    }.getOrNull() ?: 0L
+                    val bytes =
+                        runCatching {
+                            SongPathNormalizer
+                                .resolveFilePath(song.uriString, song.folderPath)
+                                ?.let { java.io.File(it) }
+                                ?.takeIf { it.isFile }
+                                ?.length()
+                        }.getOrNull() ?: 0L
                     preferences.addDownloadedBytes(
                         byteCount = bytes,
-                        metered = connectivity.isMetered()
+                        metered = connectivity.isMetered(),
                     )
                 },
-                onPlaylistTargetCompleted = onPlaylistTargetCompleted
+                onPlaylistTargetCompleted = onPlaylistTargetCompleted,
             )
         }
     }

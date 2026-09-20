@@ -4,26 +4,25 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.util.LruCache
-import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.drawable.toBitmap
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.size.Precision
 import com.bestiapop.android.data.model.ColorSchemeData
 import com.bestiapop.android.data.model.CustomTheme
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.roundToInt
-
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.scan
+import kotlinx.coroutines.withContext
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Engine that extracts harmonious, high-contrast, visually comfortable color palettes
@@ -33,7 +32,6 @@ import kotlinx.coroutines.flow.scan
  * when covers are monochromatic or muddy.
  */
 object DynamicThemeEngine {
-
     private const val THUMBNAIL_SIZE_PX = 64
     private const val CACHE_MAX_SIZE = 50
 
@@ -54,7 +52,7 @@ object DynamicThemeEngine {
      */
     data class DynamicThemeState(
         val theme: CustomTheme,
-        val artworkUri: String? = null
+        val artworkUri: String? = null,
     )
 
     /**
@@ -66,7 +64,7 @@ object DynamicThemeEngine {
         context: Context,
         artworkUri: String?,
         isDark: Boolean = true,
-        fallback: CustomTheme? = null
+        fallback: CustomTheme? = null,
     ): CustomTheme {
         if (artworkUri.isNullOrBlank()) {
             return fallback ?: fallbackTheme(isDark)
@@ -75,18 +73,19 @@ object DynamicThemeEngine {
         val cacheKey = "${artworkUri}_${if (isDark) "dark" else "light"}"
         themeCache.get(cacheKey)?.let { return it }
 
-        val theme = withContext(Dispatchers.IO) {
-            val bitmap = loadThumbnailBitmap(context, artworkUri)
-            if (bitmap != null) {
-                try {
-                    deriveThemeFromBitmap(bitmap, artworkUri, isDark)
-                } finally {
-                    bitmap.recycle()
+        val theme =
+            withContext(Dispatchers.IO) {
+                val bitmap = loadThumbnailBitmap(context, artworkUri)
+                if (bitmap != null) {
+                    try {
+                        deriveThemeFromBitmap(bitmap, artworkUri, isDark)
+                    } finally {
+                        bitmap.recycle()
+                    }
+                } else {
+                    fallback ?: fallbackTheme(isDark)
                 }
-            } else {
-                fallback ?: fallbackTheme(isDark)
             }
-        }
 
         themeCache.put(cacheKey, theme)
         return theme
@@ -101,18 +100,19 @@ object DynamicThemeEngine {
         context: Context,
         artworkUri: String?,
         currentState: DynamicThemeState,
-        isDark: Boolean = true
+        isDark: Boolean = true,
     ): DynamicThemeState {
         val trimmedUri = artworkUri?.takeIf { it.isNotBlank() }
         if (trimmedUri == null || trimmedUri == currentState.artworkUri) {
             return currentState
         }
-        val newTheme = extractDynamicTheme(
-            context = context,
-            artworkUri = trimmedUri,
-            isDark = isDark,
-            fallback = currentState.theme
-        )
+        val newTheme =
+            extractDynamicTheme(
+                context = context,
+                artworkUri = trimmedUri,
+                isDark = isDark,
+                fallback = currentState.theme,
+            )
         return DynamicThemeState(theme = newTheme, artworkUri = trimmedUri)
     }
 
@@ -126,30 +126,34 @@ object DynamicThemeEngine {
         artworkUriFlow: Flow<String?>,
         initialState: DynamicThemeState,
         isDark: Boolean = true,
-        onThemeChanged: (suspend (DynamicThemeState) -> Unit)? = null
-    ): Flow<CustomTheme> = artworkUriFlow
-        .scan(initialState) { state, currentUri ->
-            resolveNextTheme(
-                context = context,
-                artworkUri = currentUri,
-                currentState = state,
-                isDark = isDark
-            )
-        }
-        .distinctUntilChangedBy { it.theme.colors }
-        .onEach { state ->
-            onThemeChanged?.invoke(state)
-        }
-        .map { it.theme }
+        onThemeChanged: (suspend (DynamicThemeState) -> Unit)? = null,
+    ): Flow<CustomTheme> =
+        artworkUriFlow
+            .scan(initialState) { state, currentUri ->
+                resolveNextTheme(
+                    context = context,
+                    artworkUri = currentUri,
+                    currentState = state,
+                    isDark = isDark,
+                )
+            }.distinctUntilChangedBy { it.theme.colors }
+            .onEach { state ->
+                onThemeChanged?.invoke(state)
+            }.map { it.theme }
 
-    private suspend fun loadThumbnailBitmap(context: Context, uri: String): Bitmap? {
+    private suspend fun loadThumbnailBitmap(
+        context: Context,
+        uri: String,
+    ): Bitmap? {
         return try {
-            val request = ImageRequest.Builder(context)
-                .data(uri)
-                .size(THUMBNAIL_SIZE_PX, THUMBNAIL_SIZE_PX)
-                .precision(Precision.EXACT)
-                .allowHardware(false) // Software bitmap for pixel access
-                .build()
+            val request =
+                ImageRequest
+                    .Builder(context)
+                    .data(uri)
+                    .size(THUMBNAIL_SIZE_PX, THUMBNAIL_SIZE_PX)
+                    .precision(Precision.EXACT)
+                    .allowHardware(false) // Software bitmap for pixel access
+                    .build()
 
             val result = context.imageLoader.execute(request)
             val drawable = result.drawable ?: return null
@@ -157,7 +161,7 @@ object DynamicThemeEngine {
             drawable.toBitmap(
                 width = THUMBNAIL_SIZE_PX,
                 height = THUMBNAIL_SIZE_PX,
-                config = Bitmap.Config.ARGB_8888
+                config = Bitmap.Config.ARGB_8888,
             )
         } catch (_: Exception) {
             null
@@ -171,7 +175,7 @@ object DynamicThemeEngine {
     internal fun deriveThemeFromBitmap(
         bitmap: Bitmap,
         artworkUri: String,
-        isDark: Boolean
+        isDark: Boolean,
     ): CustomTheme {
         val width = bitmap.width
         val height = bitmap.height
@@ -235,12 +239,13 @@ object DynamicThemeEngine {
         if (isMonochromeOrMuddy) {
             // SAFE CONGRUENT FALLBACK: Select a harmonious, comfortable accent color
             // based on the luminance temperature of the monochromatic cover
-            val safeColor = when {
-                avgLuminance > 0.65f -> SAFE_CONGRUENT_CYAN
-                avgLuminance > 0.40f -> SAFE_CONGRUENT_PURPLE
-                avgLuminance > 0.25f -> SAFE_CONGRUENT_AMBER
-                else -> SAFE_CONGRUENT_CORAL
-            }
+            val safeColor =
+                when {
+                    avgLuminance > 0.65f -> SAFE_CONGRUENT_CYAN
+                    avgLuminance > 0.40f -> SAFE_CONGRUENT_PURPLE
+                    avgLuminance > 0.25f -> SAFE_CONGRUENT_AMBER
+                    else -> SAFE_CONGRUENT_CORAL
+                }
             val safeHsl = ThemeHarmonizer.rgbToHsl(safeColor)
             baseHue = safeHsl[0]
             primaryColor = safeColor
@@ -282,11 +287,12 @@ object DynamicThemeEngine {
             baseHue = primaryHue
             primaryColor = ThemeHarmonizer.hslToColor(primaryHue, primarySat, primaryLum)
 
-            val secondaryHue = if (secondScore > 0f) {
-                (secondBucket * bucketHueStep + bucketHueStep / 2f) % 360f
-            } else {
-                (primaryHue + 35f) % 360f
-            }
+            val secondaryHue =
+                if (secondScore > 0f) {
+                    (secondBucket * bucketHueStep + bucketHueStep / 2f) % 360f
+                } else {
+                    (primaryHue + 35f) % 360f
+                }
             secondaryColor = ThemeHarmonizer.hslToColor(secondaryHue, 0.65f, if (isDark) 0.60f else 0.48f)
             accentColor = ThemeHarmonizer.hslToColor((primaryHue + 180f) % 360f, 0.75f, if (isDark) 0.70f else 0.45f)
         }
@@ -307,56 +313,59 @@ object DynamicThemeEngine {
         }
 
         // Apply strict WCAG contrast guardrail
-        val adjustedPrimary = ThemeHarmonizer.ensureContrast(
-            color = primaryColor,
-            background = background,
-            minRatio = 4.5f,
-            isDarkTheme = isDark
-        )
+        val adjustedPrimary =
+            ThemeHarmonizer.ensureContrast(
+                color = primaryColor,
+                background = background,
+                minRatio = 4.5f,
+                isDarkTheme = isDark,
+            )
 
-        val adjustedSecondary = ThemeHarmonizer.ensureContrast(
-            color = secondaryColor,
-            background = background,
-            minRatio = 3.5f,
-            isDarkTheme = isDark
-        )
+        val adjustedSecondary =
+            ThemeHarmonizer.ensureContrast(
+                color = secondaryColor,
+                background = background,
+                minRatio = 3.5f,
+                isDarkTheme = isDark,
+            )
 
-        val adjustedAccent = ThemeHarmonizer.ensureContrast(
-            color = accentColor,
-            background = background,
-            minRatio = 3.5f,
-            isDarkTheme = isDark
-        )
+        val adjustedAccent =
+            ThemeHarmonizer.ensureContrast(
+                color = accentColor,
+                background = background,
+                minRatio = 3.5f,
+                isDarkTheme = isDark,
+            )
 
-        val colorData = ColorSchemeData(
-            primary = adjustedPrimary.toArgb().toLong(),
-            onPrimary = ThemeHarmonizer.bestOnColor(adjustedPrimary).toArgb().toLong(),
-            secondary = adjustedSecondary.toArgb().toLong(),
-            background = background.toArgb().toLong(),
-            surface = surface.toArgb().toLong(),
-            surfaceVariant = surfaceVariant.toArgb().toLong(),
-            accent = adjustedAccent.toArgb().toLong()
-        )
+        val colorData =
+            ColorSchemeData(
+                primary = adjustedPrimary.toArgb().toLong(),
+                onPrimary = ThemeHarmonizer.bestOnColor(adjustedPrimary).toArgb().toLong(),
+                secondary = adjustedSecondary.toArgb().toLong(),
+                background = background.toArgb().toLong(),
+                surface = surface.toArgb().toLong(),
+                surfaceVariant = surfaceVariant.toArgb().toLong(),
+                accent = adjustedAccent.toArgb().toLong(),
+            )
 
         return CustomTheme(
             id = ThemePresets.DYNAMIC_THEME_ID,
             name = "Dinámico por Canción",
             colors = colorData,
-            isDark = isDark
+            isDark = isDark,
         )
     }
 
-    private fun fallbackTheme(isDark: Boolean): CustomTheme {
-        return if (isDark) {
+    private fun fallbackTheme(isDark: Boolean): CustomTheme =
+        if (isDark) {
             ThemePresets.MidnightDark.copy(
                 id = ThemePresets.DYNAMIC_THEME_ID,
-                name = "Dinámico por Canción"
+                name = "Dinámico por Canción",
             )
         } else {
             ThemePresets.CleanLight.copy(
                 id = ThemePresets.DYNAMIC_THEME_ID,
-                name = "Dinámico por Canción"
+                name = "Dinámico por Canción",
             )
         }
-    }
 }

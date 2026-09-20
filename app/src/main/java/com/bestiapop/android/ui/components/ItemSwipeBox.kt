@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +44,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.staticCompositionLocalOf
 import com.bestiapop.android.data.preferences.SubmenuGestureSettings
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.theme.ListDensity
@@ -61,14 +61,15 @@ val LocalSubmenuGestureSettings = staticCompositionLocalOf { SubmenuGestureSetti
 /**
  * Short label for compact item swipe indicator.
  */
-fun SubmenuSwipeAction.shortLabel(): String = when (this) {
-    SubmenuSwipeAction.ENQUEUE_ALL -> "Encolar"
-    SubmenuSwipeAction.PLAY_NEXT -> "Siguiente"
-    SubmenuSwipeAction.START_RADIO -> "Radio"
-    SubmenuSwipeAction.SEARCH_SIMILAR -> "Buscar"
-    SubmenuSwipeAction.ADD_TO_PLAYLIST -> "Playlist"
-    SubmenuSwipeAction.DISABLED -> ""
-}
+fun SubmenuSwipeAction.shortLabel(): String =
+    when (this) {
+        SubmenuSwipeAction.ENQUEUE_ALL -> "Encolar"
+        SubmenuSwipeAction.PLAY_NEXT -> "Siguiente"
+        SubmenuSwipeAction.START_RADIO -> "Radio"
+        SubmenuSwipeAction.SEARCH_SIMILAR -> "Buscar"
+        SubmenuSwipeAction.ADD_TO_PLAYLIST -> "Playlist"
+        SubmenuSwipeAction.DISABLED -> ""
+    }
 
 /**
  * Level 2: High-level compressed wrapper binding directly to [SubmenuSwipeAction].
@@ -81,7 +82,7 @@ fun ItemSwipeBox(
     enabled: Boolean = true,
     shape: Shape = RoundedCornerShape(ListDensity.corner),
     contentBackgroundColor: Color = MaterialTheme.colorScheme.surface,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     val isEnabled = enabled && action != SubmenuSwipeAction.DISABLED
     ItemSwipeBox(
@@ -92,7 +93,7 @@ fun ItemSwipeBox(
         enabled = isEnabled,
         shape = shape,
         contentBackgroundColor = contentBackgroundColor,
-        content = content
+        content = content,
     )
 }
 
@@ -119,7 +120,7 @@ fun ItemSwipeBox(
     rightContainerColor: Color = MaterialTheme.colorScheme.primaryContainer,
     rightContentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     contentBackgroundColor: Color = MaterialTheme.colorScheme.surface,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     val canSwipeLeft = enabled && onSwipeLeft != null
     val canSwipeRight = enabled && onSwipeRight != null
@@ -143,100 +144,112 @@ fun ItemSwipeBox(
     val effectiveOffset = if (isAnimating) animOffset.value else dragOffsetX
 
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .pointerInput(canSwipeLeft, canSwipeRight, thresholdPx, maxDragPx) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    var overSlopTotal = 0f
-                    var hasTickedThreshold = false
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .pointerInput(canSwipeLeft, canSwipeRight, thresholdPx, maxDragPx) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var overSlopTotal = 0f
+                        var hasTickedThreshold = false
 
-                    val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
-                        val shouldConsume = (overSlop < 0f && canSwipeLeft) || (overSlop > 0f && canSwipeRight)
-                        if (shouldConsume) {
-                            overSlopTotal = overSlop
-                            change.consume()
-                        }
-                    }
-
-                    val isLeftValid = drag != null && overSlopTotal < 0f && canSwipeLeft
-                    val isRightValid = drag != null && overSlopTotal > 0f && canSwipeRight
-
-                    if (isLeftValid || isRightValid) {
-                        dragOffsetX = overSlopTotal
-
-                        val success = horizontalDrag(drag.id) { change ->
-                            val amount = change.positionChange().x
-                            val candidate = dragOffsetX + amount
-                            val bounded = when {
-                                candidate < 0f && !canSwipeLeft -> 0f
-                                candidate > 0f && !canSwipeRight -> 0f
-                                else -> candidate
+                        val drag =
+                            awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
+                                val shouldConsume = (overSlop < 0f && canSwipeLeft) || (overSlop > 0f && canSwipeRight)
+                                if (shouldConsume) {
+                                    overSlopTotal = overSlop
+                                    change.consume()
+                                }
                             }
-                            dragOffsetX = bounded.coerceIn(-maxDragPx, maxDragPx)
-                            change.consume()
 
-                            val reached = (canSwipeLeft && dragOffsetX <= -thresholdPx) ||
-                                (canSwipeRight && dragOffsetX >= thresholdPx)
-                            if (reached && !hasTickedThreshold) {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                hasTickedThreshold = true
-                            } else if (!reached && hasTickedThreshold) {
-                                hasTickedThreshold = false
+                        val isLeftValid = drag != null && overSlopTotal < 0f && canSwipeLeft
+                        val isRightValid = drag != null && overSlopTotal > 0f && canSwipeRight
+
+                        if (isLeftValid || isRightValid) {
+                            dragOffsetX = overSlopTotal
+
+                            val success =
+                                horizontalDrag(drag.id) { change ->
+                                    val amount = change.positionChange().x
+                                    val candidate = dragOffsetX + amount
+                                    val bounded =
+                                        when {
+                                            candidate < 0f && !canSwipeLeft -> 0f
+                                            candidate > 0f && !canSwipeRight -> 0f
+                                            else -> candidate
+                                        }
+                                    dragOffsetX = bounded.coerceIn(-maxDragPx, maxDragPx)
+                                    change.consume()
+
+                                    val reached =
+                                        (canSwipeLeft && dragOffsetX <= -thresholdPx) ||
+                                            (canSwipeRight && dragOffsetX >= thresholdPx)
+                                    if (reached && !hasTickedThreshold) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        hasTickedThreshold = true
+                                    } else if (!reached && hasTickedThreshold) {
+                                        hasTickedThreshold = false
+                                    }
+                                }
+
+                            val finalOffset = dragOffsetX
+                            val triggered =
+                                (canSwipeLeft && finalOffset <= -thresholdPx) ||
+                                    (canSwipeRight && finalOffset >= thresholdPx)
+
+                            if (triggered) {
+                                if (finalOffset < 0f) {
+                                    onSwipeLeft?.invoke()
+                                } else {
+                                    onSwipeRight?.invoke()
+                                }
                             }
-                        }
 
-                        val finalOffset = dragOffsetX
-                        val triggered = (canSwipeLeft && finalOffset <= -thresholdPx) ||
-                            (canSwipeRight && finalOffset >= thresholdPx)
-
-                        if (triggered) {
-                            if (finalOffset < 0f) onSwipeLeft?.invoke()
-                            else onSwipeRight?.invoke()
-                        }
-
-                        coroutineScope.launch {
-                            animOffset.snapTo(finalOffset)
-                            isAnimating = true
-                            animOffset.animateTo(
-                                targetValue = 0f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
+                            coroutineScope.launch {
+                                animOffset.snapTo(finalOffset)
+                                isAnimating = true
+                                animOffset.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec =
+                                        spring(
+                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                            stiffness = Spring.StiffnessMedium,
+                                        ),
                                 )
-                            )
-                            dragOffsetX = 0f
-                            isAnimating = false
+                                dragOffsetX = 0f
+                                isAnimating = false
+                            }
                         }
                     }
-                }
-            }
+                },
     ) {
         // Background indicator revealed under the sliding item
         if (effectiveOffset < -1f && canSwipeLeft) {
             val progress = (-effectiveOffset / thresholdPx).coerceIn(0f, 1f)
             Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(shape)
-                    .background(leftContainerColor),
-                contentAlignment = Alignment.CenterEnd
+                modifier =
+                    Modifier
+                        .matchParentSize()
+                        .clip(shape)
+                        .background(leftContainerColor),
+                contentAlignment = Alignment.CenterEnd,
             ) {
                 Row(
-                    modifier = Modifier
-                        .padding(end = 16.dp)
-                        .graphicsLayer {
-                            alpha = progress
-                            scaleX = 0.75f + (0.25f * progress)
-                            scaleY = 0.75f + (0.25f * progress)
-                        },
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier =
+                        Modifier
+                            .padding(end = 16.dp)
+                            .graphicsLayer {
+                                alpha = progress
+                                scaleX = 0.75f + (0.25f * progress)
+                                scaleY = 0.75f + (0.25f * progress)
+                            },
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (!leftLabel.isNullOrBlank()) {
                         Text(
                             text = leftLabel,
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = leftContentColor
+                            color = leftContentColor,
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                     }
@@ -245,7 +258,7 @@ fun ItemSwipeBox(
                             imageVector = leftIcon,
                             contentDescription = leftLabel,
                             tint = leftContentColor,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
@@ -253,28 +266,30 @@ fun ItemSwipeBox(
         } else if (effectiveOffset > 1f && canSwipeRight) {
             val progress = (effectiveOffset / thresholdPx).coerceIn(0f, 1f)
             Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(shape)
-                    .background(rightContainerColor),
-                contentAlignment = Alignment.CenterStart
+                modifier =
+                    Modifier
+                        .matchParentSize()
+                        .clip(shape)
+                        .background(rightContainerColor),
+                contentAlignment = Alignment.CenterStart,
             ) {
                 Row(
-                    modifier = Modifier
-                        .padding(start = 16.dp)
-                        .graphicsLayer {
-                            alpha = progress
-                            scaleX = 0.75f + (0.25f * progress)
-                            scaleY = 0.75f + (0.25f * progress)
-                        },
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier =
+                        Modifier
+                            .padding(start = 16.dp)
+                            .graphicsLayer {
+                                alpha = progress
+                                scaleX = 0.75f + (0.25f * progress)
+                                scaleY = 0.75f + (0.25f * progress)
+                            },
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (rightIcon != null) {
                         Icon(
                             imageVector = rightIcon,
                             contentDescription = rightLabel,
                             tint = rightContentColor,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                     if (!rightLabel.isNullOrBlank()) {
@@ -282,7 +297,7 @@ fun ItemSwipeBox(
                         Text(
                             text = rightLabel,
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = rightContentColor
+                            color = rightContentColor,
                         )
                     }
                 }
@@ -291,18 +306,19 @@ fun ItemSwipeBox(
 
         // Foreground content sliding horizontally
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .offset { IntOffset(effectiveOffset.roundToInt(), 0) }
-                .then(
-                    if (effectiveOffset != 0f) {
-                        Modifier
-                            .clip(shape)
-                            .background(contentBackgroundColor)
-                    } else {
-                        Modifier
-                    }
-                )
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .offset { IntOffset(effectiveOffset.roundToInt(), 0) }
+                    .then(
+                        if (effectiveOffset != 0f) {
+                            Modifier
+                                .clip(shape)
+                                .background(contentBackgroundColor)
+                        } else {
+                            Modifier
+                        },
+                    ),
         ) {
             content()
         }

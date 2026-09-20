@@ -16,7 +16,7 @@ data class BackgroundExecutionStatus(
     val backgroundRestricted: Boolean = false,
     val ignoringBatteryOptimizations: Boolean = false,
     val runAnyInBackgroundIgnored: Boolean = false,
-    val oemScreenOffCleanupEnabled: Boolean? = null
+    val oemScreenOffCleanupEnabled: Boolean? = null,
 ) {
     val blocksBackgroundPlayback: Boolean
         get() = backgroundRestricted && runAnyInBackgroundIgnored
@@ -27,26 +27,32 @@ data class BackgroundExecutionStatus(
 
 data class BackgroundRestrictionGuidance(
     val title: String,
-    val body: String
+    val body: String,
 )
 
-internal fun backgroundRestrictionGuidance(
-    manufacturer: String
-): BackgroundRestrictionGuidance {
+internal fun backgroundRestrictionGuidance(manufacturer: String): BackgroundRestrictionGuidance {
     val brand = manufacturer.lowercase()
-    val body = when {
-        "motorola" in brand || "lenovo" in brand ->
-            "Este teléfono puede cortar la reproducción al ir al inicio. Fijá BestiaPop en Recientes para que no la limpie."
-        "samsung" in brand ->
-            "Samsung puede poner la app en reposo y cortar la reproducción. En Ajustes de batería, agregá BestiaPop a las apps que nunca duermen."
-        "xiaomi" in brand || "redmi" in brand || "poco" in brand || "blackshark" in brand ->
-            "Este teléfono puede cortar la reproducción en segundo plano. Activá el inicio automático y desactivá las restricciones de batería para BestiaPop."
-        else ->
-            "Android restringió la actividad en segundo plano. En la ficha de BestiaPop, poné el uso de batería en Sin restricciones."
-    }
+    val body =
+        when {
+            "motorola" in brand || "lenovo" in brand -> {
+                "Este teléfono puede cortar la reproducción al ir al inicio. Fijá BestiaPop en Recientes para que no la limpie."
+            }
+
+            "samsung" in brand -> {
+                "Samsung puede poner la app en reposo y cortar la reproducción. En Ajustes de batería, agregá BestiaPop a las apps que nunca duermen."
+            }
+
+            "xiaomi" in brand || "redmi" in brand || "poco" in brand || "blackshark" in brand -> {
+                "Este teléfono puede cortar la reproducción en segundo plano. Activá el inicio automático y desactivá las restricciones de batería para BestiaPop."
+            }
+
+            else -> {
+                "Android restringió la actividad en segundo plano. En la ficha de BestiaPop, poné el uso de batería en Sin restricciones."
+            }
+        }
     return BackgroundRestrictionGuidance(
         title = "Segundo plano restringido",
-        body = body
+        body = body,
     )
 }
 
@@ -81,12 +87,14 @@ object BackgroundExecutionProbe {
             runAnyInBackgroundIgnored = { runAnyInBackgroundIgnored(appContext) },
             oemScreenOffCleanupEnabled = {
                 oemScreenOffCleanupEnabledFromSettings(appContext.contentResolver)
-            }
+            },
         )
     }
 
-    fun applicationDetailsIntent(context: Context, newTask: Boolean = false): Intent =
-        applicationDetailsSettingsIntent(context.packageName, newTask)
+    fun applicationDetailsIntent(
+        context: Context,
+        newTask: Boolean = false,
+    ): Intent = applicationDetailsSettingsIntent(context.packageName, newTask)
 
     fun restrictionGuidance(manufacturer: String = Build.MANUFACTURER): BackgroundRestrictionGuidance =
         backgroundRestrictionGuidance(manufacturer)
@@ -122,20 +130,23 @@ object BackgroundExecutionProbe {
     private fun runAnyInBackgroundIgnored(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
         val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
-        val mode = runCatching { runAnyInBackgroundMode(appOps, context) }
-            .getOrDefault(AppOpsManager.MODE_ALLOWED)
+        val mode =
+            runCatching { runAnyInBackgroundMode(appOps, context) }
+                .getOrDefault(AppOpsManager.MODE_ALLOWED)
         return isRunAnyInBackgroundBlocked(mode)
     }
 }
 
-internal fun applicationDetailsSettingsIntent(packageName: String, newTask: Boolean = false): Intent =
+internal fun applicationDetailsSettingsIntent(
+    packageName: String,
+    newTask: Boolean = false,
+): Intent =
     Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
         data = Uri.fromParts("package", packageName, null)
         if (newTask) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
-internal fun isRunAnyInBackgroundBlocked(mode: Int): Boolean =
-    mode == AppOpsManager.MODE_IGNORED
+internal fun isRunAnyInBackgroundBlocked(mode: Int): Boolean = mode == AppOpsManager.MODE_IGNORED
 
 internal fun parseOemScreenOffCleanupEnabled(raw: String?): Boolean? {
     val value = raw?.trim()?.lowercase() ?: return null
@@ -157,29 +168,37 @@ internal fun resolveBackgroundExecutionStatus(
     backgroundRestricted: () -> Boolean,
     ignoringBatteryOptimizations: () -> Boolean,
     runAnyInBackgroundIgnored: () -> Boolean = { false },
-    oemScreenOffCleanupEnabled: () -> Boolean? = { null }
-): BackgroundExecutionStatus = BackgroundExecutionStatus(
-    backgroundRestricted =
-        sdkInt >= Build.VERSION_CODES.P && backgroundRestricted(),
-    ignoringBatteryOptimizations = ignoringBatteryOptimizations(),
-    runAnyInBackgroundIgnored =
-        sdkInt >= Build.VERSION_CODES.P && runAnyInBackgroundIgnored(),
-    oemScreenOffCleanupEnabled = oemScreenOffCleanupEnabled()
-)
+    oemScreenOffCleanupEnabled: () -> Boolean? = { null },
+): BackgroundExecutionStatus =
+    BackgroundExecutionStatus(
+        backgroundRestricted =
+            sdkInt >= Build.VERSION_CODES.P && backgroundRestricted(),
+        ignoringBatteryOptimizations = ignoringBatteryOptimizations(),
+        runAnyInBackgroundIgnored =
+            sdkInt >= Build.VERSION_CODES.P && runAnyInBackgroundIgnored(),
+        oemScreenOffCleanupEnabled = oemScreenOffCleanupEnabled(),
+    )
 
-private fun runAnyInBackgroundMode(appOps: AppOpsManager, context: Context): Int =
+private fun runAnyInBackgroundMode(
+    appOps: AppOpsManager,
+    context: Context,
+): Int =
     appOps.checkOpNoThrow(
         OPSTR_RUN_ANY_IN_BACKGROUND,
         Process.myUid(),
-        context.packageName
+        context.packageName,
     )
 
-private fun firstPresentSetting(resolver: ContentResolver, key: String): String? {
-    val readers = listOf(
-        { Settings.System.getString(resolver, key) },
-        { Settings.Global.getString(resolver, key) },
-        { Settings.Secure.getString(resolver, key) }
-    )
+private fun firstPresentSetting(
+    resolver: ContentResolver,
+    key: String,
+): String? {
+    val readers =
+        listOf(
+            { Settings.System.getString(resolver, key) },
+            { Settings.Global.getString(resolver, key) },
+            { Settings.Secure.getString(resolver, key) },
+        )
     for (read in readers) {
         val value = runCatching { read() }.getOrNull()
         if (!value.isNullOrBlank()) return value

@@ -6,7 +6,10 @@ import com.bestiapop.android.data.model.Song
  * MediaStore-compatible album track encoding: `disc * 1000 + track` when disc > 1,
  * otherwise just [track]. Unknown / missing → 0.
  */
-fun encodeAlbumTrack(track: Int, disc: Int = 0): Int {
+fun encodeAlbumTrack(
+    track: Int,
+    disc: Int = 0,
+): Int {
     val t = track.coerceAtLeast(0)
     if (t <= 0) return 0
     val d = disc.coerceAtLeast(0)
@@ -21,8 +24,7 @@ fun albumTrackDisplayNumber(encoded: Int): Int {
 }
 
 /** Disc index from MediaStore encoding; 0 when unset / single-disc. */
-fun albumDiscNumber(encoded: Int): Int =
-    if (encoded >= 1000) encoded / 1000 else 0
+fun albumDiscNumber(encoded: Int): Int = if (encoded >= 1000) encoded / 1000 else 0
 
 /**
  * Sort key so disc1-track5 stored as `5` or `1005` collate together,
@@ -38,7 +40,10 @@ fun albumTrackSortKey(encoded: Int): Int {
 private val DISC_TRACK_FORMAT = Regex("""^(\d{1,2})[-.](\d{1,2})$""")
 
 /** Parse MMR `METADATA_KEY_CD_TRACK_NUMBER` / `DISC_NUMBER` (`"3/12"`, `"3"`, `"1-03"`). */
-fun parseCdTrackNumber(cdTrack: String?, disc: String?): Int {
+fun parseCdTrackNumber(
+    cdTrack: String?,
+    disc: String?,
+): Int {
     val rawTrack = cdTrack?.substringBefore('/')?.trim().orEmpty()
     var discNum = disc?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
     var track = rawTrack.toIntOrNull() ?: 0
@@ -59,7 +64,10 @@ fun parseCdTrackNumber(cdTrack: String?, disc: String?): Int {
  * Standard album track comparison: disc + track number ascending (missing last),
  * breaking ties by song title.
  */
-fun compareSongsWithinAlbum(a: Song, b: Song): Int {
+fun compareSongsWithinAlbum(
+    a: Song,
+    b: Song,
+): Int {
     val byTrack = albumTrackSortKey(a.trackNumber).compareTo(albumTrackSortKey(b.trackNumber))
     if (byTrack != 0) return byTrack
     return a.title.compareTo(b.title, ignoreCase = true)

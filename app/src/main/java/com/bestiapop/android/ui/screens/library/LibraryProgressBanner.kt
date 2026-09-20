@@ -33,37 +33,40 @@ import com.bestiapop.android.data.model.LibraryJobProgress
 fun LibraryProgressBanner(
     progress: LibraryJobProgress,
     modifier: Modifier = Modifier,
-    onCancel: (() -> Unit)? = null
+    onCancel: (() -> Unit)? = null,
 ) {
-    val verb = when (progress.kind) {
-        LibraryJobKind.IMPORT -> "Importando"
-        LibraryJobKind.IDENTIFY -> "Identificando"
-        LibraryJobKind.TAG_WRITE -> "Escribiendo tags"
-    }
-    val countLabel = when {
-        progress.total > 0 -> "$verb ${progress.done}/${progress.total}"
-        progress.done > 0 -> "$verb · ${progress.done} archivos"
-        else -> verb
-    }
+    val verb =
+        when (progress.kind) {
+            LibraryJobKind.IMPORT -> "Importando"
+            LibraryJobKind.IDENTIFY -> "Identificando"
+            LibraryJobKind.TAG_WRITE -> "Escribiendo tags"
+        }
+    val countLabel =
+        when {
+            progress.total > 0 -> "$verb ${progress.done}/${progress.total}"
+            progress.done > 0 -> "$verb · ${progress.done} archivos"
+            else -> verb
+        }
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
-        tonalElevation = 2.dp
+        tonalElevation = 2.dp,
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = countLabel,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                     if (progress.label.isNotBlank()) {
                         Spacer(modifier = Modifier.height(2.dp))
@@ -72,7 +75,7 @@ fun LibraryProgressBanner(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -82,21 +85,22 @@ fun LibraryProgressBanner(
                         onClick = onCancel,
                         modifier = Modifier.height(32.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
-                        ),
-                        shape = RoundedCornerShape(8.dp)
+                        colors =
+                            ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            ),
+                        shape = RoundedCornerShape(8.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Abortar",
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "Abortar",
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.labelMedium,
                         )
                     }
                 }
@@ -118,31 +122,32 @@ fun LibraryProgressBanner(
 fun IdentifyPendingBanner(
     pendingCount: Int,
     onReview: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     if (pendingCount <= 0) return
     val label = if (pendingCount == 1) "1 por revisar" else "$pendingCount por revisar"
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .clickable(onClick = onReview),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .clickable(onClick = onReview),
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.tertiaryContainer,
-        tonalElevation = 2.dp
+        tonalElevation = 2.dp,
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "Tocá para retomar la revisión de identidad",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
+                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f),
             )
         }
     }

@@ -24,9 +24,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bestiapop.android.data.model.OfflineMessages
-import com.bestiapop.android.ui.components.OfflineNoticeBanner
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,9 +36,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bestiapop.android.data.model.OfflineMessages
 import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.components.OfflineNoticeBanner
 import com.bestiapop.android.ui.components.SettingsScrollColumn
 import com.bestiapop.android.ui.components.SettingsSwitchRow
 import com.bestiapop.android.ui.state.LoadPhase
@@ -60,7 +60,7 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
     var showToken by remember { mutableStateOf(false) }
 
     SettingsScrollColumn(
-        intro = "Registrá lo que escuchás en ListenBrainz y configurá las fuentes de recomendación para la pestaña Descubrir."
+        intro = "Registrá lo que escuchás en ListenBrainz y configurá las fuentes de recomendación para la pestaña Descubrir.",
     ) {
         if (isOfflineMode) {
             OfflineNoticeBanner(text = OfflineMessages.listenBrainzPausedBanner)
@@ -70,19 +70,23 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
         Surface(
             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
             shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
                     text = "Motor de Recomendaciones en Descubrir",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "• Con ListenBrainz conectado: Descubrir usará tus recomendaciones CF (Collaborative Filtering) y pistas similares personalizadas de ListenBrainz.\n• Sin conexión o sin token: Descubrir usará automáticamente el catálogo de Deezer basándose en las canciones y artistas más escuchados en tu biblioteca local.",
+                    text =
+                        "• Con ListenBrainz conectado: Descubrir usará tus recomendaciones CF " +
+                            "(Collaborative Filtering) y pistas similares personalizadas de ListenBrainz.\n" +
+                            "• Sin conexión o sin token: Descubrir usará automáticamente el catálogo " +
+                            "de Deezer basándose en las canciones y artistas más escuchados en tu biblioteca local.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                 )
             }
         }
@@ -93,7 +97,7 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
             title = "Registrar escuchas",
             subtitle = if (settings.enabled) "Activo" else "Desactivado",
             checked = settings.enabled,
-            onCheckedChange = { viewModel.setListenBrainzEnabled(it) }
+            onCheckedChange = { viewModel.setListenBrainzEnabled(it) },
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -101,13 +105,13 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
         Text(
             text = "Token de usuario",
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = "Copialo desde listenbrainz.org/settings/",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -118,32 +122,34 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             placeholder = { Text("Pegá tu token aquí") },
-            visualTransformation = if (showToken) {
-                VisualTransformation.None
-            } else {
-                PasswordVisualTransformation()
-            },
+            visualTransformation =
+                if (showToken) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             trailingIcon = {
                 IconButton(onClick = { showToken = !showToken }) {
                     Icon(
                         imageVector = if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (showToken) "Ocultar token" else "Mostrar token"
+                        contentDescription = if (showToken) "Ocultar token" else "Mostrar token",
                     )
                 }
             },
             shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-            )
+            colors =
+                OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                ),
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Button(
                 onClick = {
@@ -152,12 +158,13 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
                 },
                 enabled = tokenDraft.isNotBlank() && !validationState.isLoading,
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                    ),
             ) {
                 Text(
-                    text = if (validationState.isLoading) "Validando…" else "Validar"
+                    text = if (validationState.isLoading) "Validando…" else "Validar",
                 )
             }
             if (settings.userToken.isNotBlank() || settings.username != null) {
@@ -174,7 +181,7 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         ConnectionStatusBlock(
             settingsUsername = settings.username,
-            validationState = validationState
+            validationState = validationState,
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -185,17 +192,19 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
             subtitle = "Daily/Weekly Jams y otras playlists Discover de tu cuenta en la pestaña Descubrir.",
             checked = settings.discoverEnabled,
             onCheckedChange = { viewModel.setListenBrainzDiscoverEnabled(it) },
-            enabled = canEnableDiscover
+            enabled = canEnableDiscover,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         SettingsSwitchRow(
             title = "Guardar al escuchar",
-            subtitle = "Descargar a la biblioteca en segundo plano los temas en stream (Para Ti / Radio) al alcanzar un porcentaje de reproducción.",
+            subtitle =
+                "Descargar a la biblioteca en segundo plano los temas en stream " +
+                    "(Para Ti / Radio) al alcanzar un porcentaje de reproducción.",
             checked = settings.saveWhileListening,
             onCheckedChange = { viewModel.setListenBrainzSaveWhileListening(it) },
-            enabled = canEnableDiscover
+            enabled = canEnableDiscover,
         )
 
         if (settings.saveWhileListening) {
@@ -203,7 +212,7 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
             SaveWhileListeningPercentSlider(
                 percent = settings.saveWhileListeningPercent,
                 enabled = canEnableDiscover,
-                onPercentChange = { viewModel.setListenBrainzSaveWhileListeningPercent(it) }
+                onPercentChange = { viewModel.setListenBrainzSaveWhileListeningPercent(it) },
             )
         }
 
@@ -212,24 +221,25 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
         Text(
             text = "Cola offline",
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = when {
-                pendingCount == 0 -> "No hay escuchas pendientes."
-                pendingCount == 1 -> "1 escucha pendiente de envío."
-                else -> "$pendingCount escuchas pendientes de envío."
-            },
+            text =
+                when {
+                    pendingCount == 0 -> "No hay escuchas pendientes."
+                    pendingCount == 1 -> "1 escucha pendiente de envío."
+                    else -> "$pendingCount escuchas pendientes de envío."
+                },
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         settings.lastSyncAt?.let { syncAt ->
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Último sync: ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(syncAt))}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -239,7 +249,7 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
 private fun SaveWhileListeningPercentSlider(
     percent: Int,
     enabled: Boolean,
-    onPercentChange: (Int) -> Unit
+    onPercentChange: (Int) -> Unit,
 ) {
     val min = MIN_SAVE_WHILE_LISTENING_PERCENT.toFloat()
     val max = MAX_SAVE_WHILE_LISTENING_PERCENT.toFloat()
@@ -249,17 +259,17 @@ private fun SaveWhileListeningPercentSlider(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "Empezar a descargar al",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
                 text = "${sliderValue.toInt()}%",
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
         Spacer(modifier = Modifier.height(4.dp))
@@ -271,12 +281,12 @@ private fun SaveWhileListeningPercentSlider(
             enabled = enabled,
             onValueChangeFinished = {
                 onPercentChange(sliderValue.toInt())
-            }
+            },
         )
         Text(
             text = "Porcentaje del tema reproducido antes de guardar en biblioteca. Al terminar el tema también se guarda.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -284,28 +294,34 @@ private fun SaveWhileListeningPercentSlider(
 @Composable
 private fun ConnectionStatusBlock(
     settingsUsername: String?,
-    validationState: LoadableUiState<String?>
+    validationState: LoadableUiState<String?>,
 ) {
-    val (label, color) = when (val phase = validationState.phase) {
-        LoadPhase.Idle -> {
-            if (settingsUsername != null) {
-                "Conectado como $settingsUsername" to MaterialTheme.colorScheme.primary
-            } else {
-                "Sin validar" to MaterialTheme.colorScheme.onSurfaceVariant
+    val (label, color) =
+        when (val phase = validationState.phase) {
+            LoadPhase.Idle -> {
+                if (settingsUsername != null) {
+                    "Conectado como $settingsUsername" to MaterialTheme.colorScheme.primary
+                } else {
+                    "Sin validar" to MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            }
+
+            LoadPhase.Loading -> {
+                "Validando token…" to MaterialTheme.colorScheme.onSurfaceVariant
+            }
+
+            LoadPhase.Loaded -> {
+                "Conectado como ${validationState.data}" to MaterialTheme.colorScheme.primary
+            }
+
+            is LoadPhase.Error -> {
+                phase.message to MaterialTheme.colorScheme.error
             }
         }
-        LoadPhase.Loading ->
-            "Validando token…" to MaterialTheme.colorScheme.onSurfaceVariant
-        LoadPhase.Loaded ->
-            "Conectado como ${validationState.data}" to MaterialTheme.colorScheme.primary
-        is LoadPhase.Error ->
-            phase.message to MaterialTheme.colorScheme.error
-    }
 
     Text(
         text = label,
         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-        color = color
+        color = color,
     )
 }
-

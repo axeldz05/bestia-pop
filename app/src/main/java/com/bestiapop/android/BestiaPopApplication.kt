@@ -1,35 +1,37 @@
 package com.bestiapop.android
 
-import android.app.Application
 import android.app.ActivityManager
+import android.app.Application
 import android.app.ApplicationExitInfo
 import android.content.ComponentCallbacks2
 import android.os.Build
 import coil.ImageLoader
 import coil.ImageLoaderFactory
-import coil.imageLoader
 import coil.disk.DiskCache
+import coil.imageLoader
 import coil.memory.MemoryCache
 import com.bestiapop.android.data.db.AppDatabase
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.PlaybackDiagnostics
-import com.bestiapop.android.ui.theme.DynamicThemeEngine
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.createBestiaPopRadioEngine
-import com.bestiapop.android.service.PlaybackRuntime
 import com.bestiapop.android.service.IdentifyExecutionLauncher
 import com.bestiapop.android.service.OnlineDownloadServiceLauncher
+import com.bestiapop.android.service.PlaybackRuntime
 import com.bestiapop.android.service.ProcessDownloadCoordinator
 import com.bestiapop.android.service.ProcessDownloadRuntime
 import com.bestiapop.android.service.ProcessIdentifyRuntime
 import com.bestiapop.android.service.ProcessSaveWhileListeningCoordinator
+import com.bestiapop.android.ui.theme.DynamicThemeEngine
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
-class BestiaPopApplication : Application(), ImageLoaderFactory {
+class BestiaPopApplication :
+    Application(),
+    ImageLoaderFactory {
     private val processScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val musicRepository: MusicRepository by lazy {
@@ -47,9 +49,9 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
                 musicRepository.removePlaylistPendingTrack(
                     playlistId = target.playlistId,
                     artist = target.identity.artist,
-                    title = target.identity.title
+                    title = target.identity.title,
                 )
-            }
+            },
         )
     }
 
@@ -61,7 +63,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
             processDownloads = processDownloads,
             acquireExecutionLease = { source ->
                 OnlineDownloadServiceLauncher.acquire(this, source)
-            }
+            },
         )
     }
 
@@ -73,7 +75,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
             acquireExecutionLease = { IdentifyExecutionLauncher.acquire(this) },
             isPlaybackActive = { playbackRuntime.isPlaybackActive },
             isResolvingStream = { playbackRuntime.resolvingRemote.value },
-            isSongActiveInPlayback = { songId -> playbackRuntime.isSongActiveInPlayback(songId) }
+            isSongActiveInPlayback = { songId -> playbackRuntime.isSongActiveInPlayback(songId) },
         )
     }
 
@@ -82,72 +84,111 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
             true
         } else {
             val manager = getSystemService(ActivityManager::class.java)
-            manager.getHistoricalProcessExitReasons(packageName, 0, 1)
+            manager
+                .getHistoricalProcessExitReasons(packageName, 0, 1)
                 .firstOrNull()
                 ?.reason != ApplicationExitInfo.REASON_USER_REQUESTED
         }
     }
 
     val playbackRuntime: PlaybackRuntime by lazy {
-        val saveWhileListeningDownloads = ProcessSaveWhileListeningCoordinator(
-            scope = processScope,
-            runtime = processDownloadRuntime
-        )
+        val saveWhileListeningDownloads =
+            ProcessSaveWhileListeningCoordinator(
+                scope = processScope,
+                runtime = processDownloadRuntime,
+            )
         PlaybackRuntime.create(
             context = this,
             repository = musicRepository,
             radioEngine = radioEngine,
             pendingListenDao = AppDatabase.getDatabase(this).pendingListenDao(),
-            saveDownloads = saveWhileListeningDownloads
+            saveDownloads = saveWhileListeningDownloads,
         )
     }
 
     override fun onCreate() {
         super.onCreate()
-        com.bestiapop.android.data.network.HttpClients.initialize(this)
+        com.bestiapop.android.data.network.HttpClients
+            .initialize(this)
         com.bestiapop.android.data.network.HttpClients.isOfflineMode = {
-            com.bestiapop.android.data.preferences.NetworkPreferencesRepository.isOfflineModeSync(this)
+            com.bestiapop.android.data.preferences.NetworkPreferencesRepository
+                .isOfflineModeSync(this)
         }
         PlaybackDiagnostics.init(this)
         // Collect crashes/non-fatals on release/beta builds only when telemetry is enabled by user and not in offline mode.
-        val isOffline = com.bestiapop.android.data.preferences.NetworkPreferencesRepository.isOfflineModeSync(this)
-        val telemetryPermitted = !isOffline && com.bestiapop.android.data.preferences.TelemetryPreferencesRepository.isTelemetryEnabledSync(this)
+        val isOffline =
+            com.bestiapop.android.data.preferences.NetworkPreferencesRepository
+                .isOfflineModeSync(this)
+        val telemetryPermitted =
+            !isOffline &&
+                com.bestiapop.android.data.preferences.TelemetryPreferencesRepository
+                    .isTelemetryEnabledSync(this)
         CrashReporter.isEnabled = telemetryPermitted
         FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(telemetryPermitted && !BuildConfig.DEBUG)
         if (telemetryPermitted) {
-            com.bestiapop.android.data.system.SystemStabilityMonitor.checkHistoricalExitReasons(this)
+            com.bestiapop.android.data.system.SystemStabilityMonitor
+                .checkHistoricalExitReasons(this)
         }
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onCreate version=${BuildConfig.VERSION_NAME}")
-        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
-            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {
-                PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onCreate(savedInstanceState=${savedInstanceState != null})")
-            }
-            override fun onActivityStarted(activity: android.app.Activity) {
-                PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onStart()")
-            }
-            override fun onActivityResumed(activity: android.app.Activity) {
-                PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onResume() [UI in FOREGROUND]")
-                com.bestiapop.android.data.system.SystemStabilityMonitor.updateAppForegroundState(
-                    this@BestiaPopApplication,
-                    isForeground = true,
-                    screenName = activity.javaClass.simpleName
-                )
-            }
-            override fun onActivityPaused(activity: android.app.Activity) {
-                PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onPause() [UI losing focus]")
-            }
-            override fun onActivityStopped(activity: android.app.Activity) {
-                PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onStop() [UI in BACKGROUND]")
-                com.bestiapop.android.data.system.SystemStabilityMonitor.updateAppForegroundState(
-                    this@BestiaPopApplication,
-                    isForeground = false
-                )
-            }
-            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) = Unit
-            override fun onActivityDestroyed(activity: android.app.Activity) {
-                PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onDestroy(isFinishing=${activity.isFinishing})")
-            }
-        })
+        registerActivityLifecycleCallbacks(
+            object : ActivityLifecycleCallbacks {
+                override fun onActivityCreated(
+                    activity: android.app.Activity,
+                    savedInstanceState: android.os.Bundle?,
+                ) {
+                    PlaybackDiagnostics.log(
+                        PlaybackDiagnostics.TAG_LIFECYCLE,
+                        "${activity.javaClass.simpleName}.onCreate(savedInstanceState=${savedInstanceState != null})",
+                    )
+                }
+
+                override fun onActivityStarted(activity: android.app.Activity) {
+                    PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onStart()")
+                }
+
+                override fun onActivityResumed(activity: android.app.Activity) {
+                    PlaybackDiagnostics.log(
+                        PlaybackDiagnostics.TAG_LIFECYCLE,
+                        "${activity.javaClass.simpleName}.onResume() [UI in FOREGROUND]",
+                    )
+                    com.bestiapop.android.data.system.SystemStabilityMonitor.updateAppForegroundState(
+                        this@BestiaPopApplication,
+                        isForeground = true,
+                        screenName = activity.javaClass.simpleName,
+                    )
+                }
+
+                override fun onActivityPaused(activity: android.app.Activity) {
+                    PlaybackDiagnostics.log(
+                        PlaybackDiagnostics.TAG_LIFECYCLE,
+                        "${activity.javaClass.simpleName}.onPause() [UI losing focus]",
+                    )
+                }
+
+                override fun onActivityStopped(activity: android.app.Activity) {
+                    PlaybackDiagnostics.log(
+                        PlaybackDiagnostics.TAG_LIFECYCLE,
+                        "${activity.javaClass.simpleName}.onStop() [UI in BACKGROUND]",
+                    )
+                    com.bestiapop.android.data.system.SystemStabilityMonitor.updateAppForegroundState(
+                        this@BestiaPopApplication,
+                        isForeground = false,
+                    )
+                }
+
+                override fun onActivitySaveInstanceState(
+                    activity: android.app.Activity,
+                    outState: android.os.Bundle,
+                ) = Unit
+
+                override fun onActivityDestroyed(activity: android.app.Activity) {
+                    PlaybackDiagnostics.log(
+                        PlaybackDiagnostics.TAG_LIFECYCLE,
+                        "${activity.javaClass.simpleName}.onDestroy(isFinishing=${activity.isFinishing})",
+                    )
+                }
+            },
+        )
     }
 
     override fun newImageLoader(): ImageLoader {
@@ -155,20 +196,21 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
         val isLowRam = activityManager?.isLowRamDevice == true
         val maxMemoryPercent = if (isLowRam) 0.10 else 0.15
 
-        return ImageLoader.Builder(this)
+        return ImageLoader
+            .Builder(this)
             .okHttpClient { com.bestiapop.android.data.network.HttpClients.transfer }
             .memoryCache {
-                MemoryCache.Builder(this)
+                MemoryCache
+                    .Builder(this)
                     .maxSizePercent(maxMemoryPercent)
                     .build()
-            }
-            .diskCache {
-                DiskCache.Builder()
+            }.diskCache {
+                DiskCache
+                    .Builder()
                     .directory(cacheDir.resolve("image_cache"))
                     .maxSizeBytes(100L * 1024 * 1024)
                     .build()
-            }
-            .crossfade(true)
+            }.crossfade(true)
             .allowHardware(true)
             .allowRgb565(true)
             .decoderDispatcher(Dispatchers.IO.limitedParallelism(4))
@@ -179,7 +221,8 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onTrimMemory(level=$level)")
-        com.bestiapop.android.data.system.SystemStabilityMonitor.recordMemoryTrim(this, level)
+        com.bestiapop.android.data.system.SystemStabilityMonitor
+            .recordMemoryTrim(this, level)
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             trimCaches()
         }
@@ -188,7 +231,8 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     override fun onLowMemory() {
         super.onLowMemory()
         PlaybackDiagnostics.warn(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onLowMemory() received")
-        com.bestiapop.android.data.system.SystemStabilityMonitor.recordLowMemory(this)
+        com.bestiapop.android.data.system.SystemStabilityMonitor
+            .recordLowMemory(this)
         trimCaches()
     }
 
@@ -198,6 +242,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
         } catch (_: Exception) {
         }
         DynamicThemeEngine.clearCache()
-        com.bestiapop.android.data.network.HttpClients.evictIdleConnections()
+        com.bestiapop.android.data.network.HttpClients
+            .evictIdleConnections()
     }
 }

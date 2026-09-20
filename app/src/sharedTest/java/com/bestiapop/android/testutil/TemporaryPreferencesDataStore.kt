@@ -4,13 +4,13 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import java.io.File
-import java.util.UUID
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import java.io.File
+import java.util.UUID
 
 /**
  * Owns an isolated on-disk Preferences DataStore that can be closed and reopened to model a
@@ -18,12 +18,13 @@ import kotlinx.coroutines.cancelAndJoin
  */
 class TemporaryPreferencesDataStore(
     context: Context,
-    name: String = "preferences"
+    name: String = "preferences",
 ) {
-    private val directory = File(
-        context.cacheDir,
-        "$name-${UUID.randomUUID()}"
-    ).apply { check(mkdirs()) }
+    private val directory =
+        File(
+            context.cacheDir,
+            "$name-${UUID.randomUUID()}",
+        ).apply { check(mkdirs()) }
     private val file = File(directory, "$name.preferences_pb")
     private var job: CompletableJob = SupervisorJob()
 
@@ -46,6 +47,6 @@ class TemporaryPreferencesDataStore(
     private fun create(): DataStore<Preferences> =
         PreferenceDataStoreFactory.create(
             scope = CoroutineScope(job + Dispatchers.IO),
-            produceFile = { file }
+            produceFile = { file },
         )
 }

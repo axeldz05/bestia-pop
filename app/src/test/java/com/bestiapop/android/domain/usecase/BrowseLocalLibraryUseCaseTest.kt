@@ -7,53 +7,55 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class BrowseLocalLibraryUseCaseTest {
-
     private val useCase = BrowseLocalLibraryUseCase()
-    private val songs = listOf(
-        Song(
-            id = 1L,
-            uriString = "/music/second.mp3",
-            title = "Segunda",
-            artist = "Björk",
-            album = "Original",
-            trackNumber = 2
-        ),
-        Song(
-            id = 2L,
-            uriString = "/music/first.mp3",
-            title = "Árbol",
-            artist = "Björk",
-            album = "Original",
-            trackNumber = 1
-        ),
-        Song(
-            id = 3L,
-            uriString = "/music/other.mp3",
-            title = "Otra",
-            artist = "Otro",
-            album = "Álbum B"
+    private val songs =
+        listOf(
+            Song(
+                id = 1L,
+                uriString = "/music/second.mp3",
+                title = "Segunda",
+                artist = "Björk",
+                album = "Original",
+                trackNumber = 2,
+            ),
+            Song(
+                id = 2L,
+                uriString = "/music/first.mp3",
+                title = "Árbol",
+                artist = "Björk",
+                album = "Original",
+                trackNumber = 1,
+            ),
+            Song(
+                id = 3L,
+                uriString = "/music/other.mp3",
+                title = "Otra",
+                artist = "Otro",
+                album = "Álbum B",
+            ),
         )
-    )
 
     @Test
     fun snapshot_appliesAlbumOverrideAndStableOrdering() {
-        val snapshot = useCase.snapshot(
-            songs = songs,
-            overrides = listOf(AlbumOverride("Original", "Nombre visible")),
-            playlists = listOf(
-                Playlist(id = 2L, name = "Zeta"),
-                Playlist(id = 1L, name = "Alfa")
+        val snapshot =
+            useCase.snapshot(
+                songs = songs,
+                overrides = listOf(AlbumOverride("Original", "Nombre visible")),
+                playlists =
+                    listOf(
+                        Playlist(id = 2L, name = "Zeta"),
+                        Playlist(id = 1L, name = "Alfa"),
+                    ),
             )
-        )
 
         assertEquals(
             "Nombre visible",
-            snapshot.albums.first { it.name == "Original" }.displayName
+            snapshot.albums.first { it.name == "Original" }.displayName,
         )
         assertEquals(listOf("Alfa", "Zeta"), snapshot.playlists.map(Playlist::name))
         assertEquals(
             listOf("Árbol", "Segunda"),
-            useCase.songsForAlbum(snapshot, "Original").map(Song::title)
+            useCase.songsForAlbum(snapshot, "Original").map(Song::title),
         )
     }
 

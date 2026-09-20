@@ -20,31 +20,33 @@ import kotlinx.coroutines.withContext
 internal class PlaylistRepositoryOperator(
     private val musicDao: MusicDao,
     private val metadataSource: RepositoryMetadataSource,
-    private val savePlaylistCoverImage: (String?) -> String?
+    private val savePlaylistCoverImage: (String?) -> String?,
 ) {
-    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> =
-        musicDao.getPlaylistSongsOrderedFlow(playlistId)
+    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> = musicDao.getPlaylistSongsOrderedFlow(playlistId)
 
     fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> =
         combine(
             musicDao.getPlaylistByIdFlow(playlistId),
             musicDao.getPlaylistSongsOrderedFlow(playlistId),
-            musicDao.getPlaylistPendingTracksFlow(playlistId)
+            musicDao.getPlaylistPendingTracksFlow(playlistId),
         ) { entity, songs, pendingEntities ->
-            if (entity == null) null
-            else {
+            if (entity == null) {
+                null
+            } else {
                 val pending = pendingEntities.map { it.toPendingTrack() }
-                val effectiveCover = entity.coverUri?.takeIf(String::isNotBlank)
-                    ?: songs.firstArtworkUri()
-                    ?: pending.firstArtworkUri()
-                val playlist = Playlist(
-                    id = entity.playlistId,
-                    name = entity.name,
-                    description = entity.description,
-                    coverUri = effectiveCover,
-                    songCount = songs.size + pending.size,
-                    createdAt = entity.createdAt
-                )
+                val effectiveCover =
+                    entity.coverUri?.takeIf(String::isNotBlank)
+                        ?: songs.firstArtworkUri()
+                        ?: pending.firstArtworkUri()
+                val playlist =
+                    Playlist(
+                        id = entity.playlistId,
+                        name = entity.name,
+                        description = entity.description,
+                        coverUri = effectiveCover,
+                        songCount = songs.size + pending.size,
+                        createdAt = entity.createdAt,
+                    )
                 Pair(playlist, songs)
             }
         }
@@ -54,68 +56,94 @@ internal class PlaylistRepositoryOperator(
             musicDao.getPlaylistSongsOrdered(playlistId)
         }
 
-    suspend fun createPlaylist(name: String, description: String?, coverUri: String?): Long =
+    suspend fun createPlaylist(
+        name: String,
+        description: String?,
+        coverUri: String?,
+    ): Long =
         withContext(Dispatchers.IO) {
             val savedCover = savePlaylistCoverImage(coverUri)
             musicDao.insertPlaylist(
                 PlaylistEntity(
                     name = name,
                     description = description?.ifBlank { null },
-                    coverUri = savedCover
-                )
+                    coverUri = savedCover,
+                ),
             )
         }
 
-    suspend fun updatePlaylist(id: Long, name: String, description: String?, coverUri: String?) =
-        withContext(Dispatchers.IO) {
-            val existing = musicDao.getPlaylistById(id) ?: return@withContext
-            val savedCover = if (!coverUri.isNullOrEmpty() && coverUri != existing.coverUri) {
+    suspend fun updatePlaylist(
+        id: Long,
+        name: String,
+        description: String?,
+        coverUri: String?,
+    ) = withContext(Dispatchers.IO) {
+        val existing = musicDao.getPlaylistById(id) ?: return@withContext
+        val savedCover =
+            if (!coverUri.isNullOrEmpty() && coverUri != existing.coverUri) {
                 savePlaylistCoverImage(coverUri)
             } else {
                 coverUri
             }
-            val updated = existing.copy(
+        val updated =
+            existing.copy(
                 name = name,
                 description = description?.ifBlank { null },
-                coverUri = savedCover
+                coverUri = savedCover,
             )
-            musicDao.updatePlaylist(updated)
-        }
-
-    suspend fun deletePlaylist(id: Long) = withContext(Dispatchers.IO) {
-        musicDao.clearPlaylistSongs(id)
-        musicDao.clearPlaylistPendingTracks(id)
-        musicDao.deletePlaylist(id)
+        musicDao.updatePlaylist(updated)
     }
 
-    suspend fun addSongToPlaylist(playlistId: Long, songId: Long) {
+    suspend fun deletePlaylist(id: Long) =
+        withContext(Dispatchers.IO) {
+            musicDao.clearPlaylistSongs(id)
+            musicDao.clearPlaylistPendingTracks(id)
+            musicDao.deletePlaylist(id)
+        }
+
+    suspend fun addSongToPlaylist(
+        playlistId: Long,
+        songId: Long,
+    ) {
         addSongsToPlaylist(playlistId, listOf(songId))
     }
 
-    suspend fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) = withContext(Dispatchers.IO) {
+    suspend fun addSongsToPlaylist(
+        playlistId: Long,
+        songIds: List<Long>,
+    ) = withContext(Dispatchers.IO) {
         if (songIds.isEmpty()) return@withContext
         val startPos = (musicDao.getMaxPositionInPlaylist(playlistId) ?: -1) + 1
-        val refs = songIds.mapIndexed { index, songId ->
-            PlaylistSongCrossRef(playlistId = playlistId, songId = songId, position = startPos + index)
-        }
+        val refs =
+            songIds.mapIndexed { index, songId ->
+                PlaylistSongCrossRef(playlistId = playlistId, songId = songId, position = startPos + index)
+            }
         musicDao.addSongsToPlaylist(refs)
     }
 
-    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
+    suspend fun removeSongFromPlaylist(
+        playlistId: Long,
+        songId: Long,
+    ) = withContext(Dispatchers.IO) {
         musicDao.removeSongFromPlaylist(playlistId, songId)
     }
 
-    suspend fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) = withContext(Dispatchers.IO) {
+    suspend fun reorderPlaylistSongs(
+        playlistId: Long,
+        songIds: List<Long>,
+    ) = withContext(Dispatchers.IO) {
         musicDao.reorderPlaylistSongs(playlistId, songIds)
     }
 
-    suspend fun getPlaylistIdsForSong(songId: Long): List<Long> = withContext(Dispatchers.IO) {
-        musicDao.getPlaylistIdsForSong(songId)
-    }
+    suspend fun getPlaylistIdsForSong(songId: Long): List<Long> =
+        withContext(Dispatchers.IO) {
+            musicDao.getPlaylistIdsForSong(songId)
+        }
 
-    suspend fun getCoPlaylistSongIds(songId: Long): Set<Long> = withContext(Dispatchers.IO) {
-        musicDao.getCoPlaylistSongIds(songId).toSet()
-    }
+    suspend fun getCoPlaylistSongIds(songId: Long): Set<Long> =
+        withContext(Dispatchers.IO) {
+            musicDao.getCoPlaylistSongIds(songId).toSet()
+        }
 
     fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
         musicDao.getPlaylistPendingTracksFlow(playlistId).map { list ->
@@ -134,55 +162,63 @@ internal class PlaylistRepositoryOperator(
             enrichPlaylistPendingArtworks(tracks.first().playlistId)
         }
 
-    suspend fun removePlaylistPendingTrack(playlistId: Long, artist: String, title: String) =
-        withContext(Dispatchers.IO) {
-            musicDao.deletePlaylistPendingTrackByArtistTitle(playlistId, artist, title)
-        }
-
-    suspend fun updatePlaylistPendingTrackArtwork(id: Long, artworkUri: String) =
-        withContext(Dispatchers.IO) {
-            musicDao.updatePlaylistPendingTrackArtwork(id, artworkUri)
-        }
-
-    suspend fun rematchPlaylistPendingTracks(playlistId: Long) = withContext(Dispatchers.IO) {
-        val allPending = musicDao.getPlaylistPendingTracks(playlistId)
-        if (allPending.isEmpty()) return@withContext
-        val library = musicDao.getAllSongs()
-        val index = TrackMatchKeys.buildLibraryIndex(library)
-        val maxExistingPos = musicDao.getMaxPositionInPlaylist(playlistId) ?: -1
-        var nextPos = maxExistingPos + 1
-        val refsToAdd = ArrayList<PlaylistSongCrossRef>()
-        val idsToDelete = ArrayList<Long>()
-
-        for (pending in allPending) {
-            val local = TrackMatchKeys.lookupLocalSong(index, pending.toPendingTrack().identity)
-            if (local != null && !local.isRemote) {
-                val targetPos = if (pending.position >= 0) pending.position else nextPos++
-                refsToAdd.add(PlaylistSongCrossRef(playlistId = playlistId, songId = local.id, position = targetPos))
-                idsToDelete.add(pending.id)
-            }
-        }
-        if (refsToAdd.isNotEmpty()) {
-            musicDao.addSongsToPlaylist(refsToAdd)
-            for (id in idsToDelete) {
-                musicDao.deletePlaylistPendingTrackById(id)
-            }
-        }
+    suspend fun removePlaylistPendingTrack(
+        playlistId: Long,
+        artist: String,
+        title: String,
+    ) = withContext(Dispatchers.IO) {
+        musicDao.deletePlaylistPendingTrackByArtistTitle(playlistId, artist, title)
     }
+
+    suspend fun updatePlaylistPendingTrackArtwork(
+        id: Long,
+        artworkUri: String,
+    ) = withContext(Dispatchers.IO) {
+        musicDao.updatePlaylistPendingTrackArtwork(id, artworkUri)
+    }
+
+    suspend fun rematchPlaylistPendingTracks(playlistId: Long) =
+        withContext(Dispatchers.IO) {
+            val allPending = musicDao.getPlaylistPendingTracks(playlistId)
+            if (allPending.isEmpty()) return@withContext
+            val library = musicDao.getAllSongs()
+            val index = TrackMatchKeys.buildLibraryIndex(library)
+            val maxExistingPos = musicDao.getMaxPositionInPlaylist(playlistId) ?: -1
+            var nextPos = maxExistingPos + 1
+            val refsToAdd = ArrayList<PlaylistSongCrossRef>()
+            val idsToDelete = ArrayList<Long>()
+
+            for (pending in allPending) {
+                val local = TrackMatchKeys.lookupLocalSong(index, pending.toPendingTrack().identity)
+                if (local != null && !local.isRemote) {
+                    val targetPos = if (pending.position >= 0) pending.position else nextPos++
+                    refsToAdd.add(PlaylistSongCrossRef(playlistId = playlistId, songId = local.id, position = targetPos))
+                    idsToDelete.add(pending.id)
+                }
+            }
+            if (refsToAdd.isNotEmpty()) {
+                musicDao.addSongsToPlaylist(refsToAdd)
+                for (id in idsToDelete) {
+                    musicDao.deletePlaylistPendingTrackById(id)
+                }
+            }
+        }
 
     suspend fun enrichPlaylistPendingArtworks(playlistId: Long) =
         withContext(Dispatchers.IO) {
             rematchPlaylistPendingTracks(playlistId)
             val allPending = musicDao.getPlaylistPendingTracks(playlistId)
-            val firstExistingArt = allPending.firstNotNullOfOrNull {
-                it.artworkUri?.takeIf { uri -> uri.isNotBlank() && !uri.equals("null", ignoreCase = true) }
-            }
+            val firstExistingArt =
+                allPending.firstNotNullOfOrNull {
+                    it.artworkUri?.takeIf { uri -> uri.isNotBlank() && !uri.equals("null", ignoreCase = true) }
+                }
             if (firstExistingArt != null) {
                 musicDao.updatePlaylistCoverIfEmpty(playlistId, firstExistingArt)
             }
-            val pendingWithoutArtwork = allPending.filter {
-                it.artworkUri.isNullOrBlank() || it.artworkUri.equals("null", ignoreCase = true)
-            }
+            val pendingWithoutArtwork =
+                allPending.filter {
+                    it.artworkUri.isNullOrBlank() || it.artworkUri.equals("null", ignoreCase = true)
+                }
             if (pendingWithoutArtwork.isEmpty()) return@withContext
 
             coroutineScope {

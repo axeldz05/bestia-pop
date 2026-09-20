@@ -22,7 +22,7 @@ class LibraryListModel internal constructor(
     private val slots: IntArray,
     lazySongsById: Map<Long, Song>? = null,
     cachedRows: Array<LibraryListItem.SongRow?>? = null,
-    cachedHeaders: Array<LibraryListItem.AlbumHeader?>? = null
+    cachedHeaders: Array<LibraryListItem.AlbumHeader?>? = null,
 ) {
     val size: Int get() = slots.size
     val isEmpty: Boolean get() = slots.isEmpty()
@@ -44,8 +44,7 @@ class LibraryListModel internal constructor(
     fun songsForIds(ids: Iterable<Long>): List<Song> = ids.mapNotNull { songsById[it] }
 
     /** Level 2: Resolves a collection of song IDs into an ID-to-Song map in O(1) per ID. */
-    fun associateSongsForIds(ids: Iterable<Long>): Map<Long, Song> =
-        ids.mapNotNull { id -> songsById[id]?.let { id to it } }.toMap()
+    fun associateSongsForIds(ids: Iterable<Long>): Map<Long, Song> = ids.mapNotNull { id -> songsById[id]?.let { id to it } }.toMap()
 
     fun keyAt(index: Int): Any {
         val slot = slots[index]
@@ -69,12 +68,13 @@ class LibraryListModel internal constructor(
             var row = rowCache[slot]
             if (row == null) {
                 val song = songsVisual[slot]
-                row = LibraryListItem.SongRow(
-                    song = song,
-                    index = slot,
-                    emphasis = rowEmphasis(song),
-                    artworkUri = inheritedArtworkBySongId[song.id] ?: song.artworkUri
-                )
+                row =
+                    LibraryListItem.SongRow(
+                        song = song,
+                        index = slot,
+                        emphasis = rowEmphasis(song),
+                        artworkUri = inheritedArtworkBySongId[song.id] ?: song.artworkUri,
+                    )
                 rowCache[slot] = row
             }
             return row
@@ -83,16 +83,17 @@ class LibraryListModel internal constructor(
         var header = headerCache[hIdx]
         if (header == null) {
             val segment = segments[hIdx]
-            header = LibraryListItem.AlbumHeader(
-                albumName = segment.albumName,
-                displayName = segment.displayName,
-                artistName = segment.artistName,
-                artworkUri = segment.artworkUri,
-                songCount = segment.count,
-                songIds = segment.songIds,
-                groupingKey = segment.groupingKey,
-                sortHint = segment.sortHint
-            )
+            header =
+                LibraryListItem.AlbumHeader(
+                    albumName = segment.albumName,
+                    displayName = segment.displayName,
+                    artistName = segment.artistName,
+                    artworkUri = segment.artworkUri,
+                    songCount = segment.count,
+                    songIds = segment.songIds,
+                    groupingKey = segment.groupingKey,
+                    sortHint = segment.sortHint,
+                )
             headerCache[hIdx] = header
         }
         return header
@@ -110,7 +111,7 @@ class LibraryListModel internal constructor(
             slots = buildSlots(segments, collapsedAlbumNames),
             lazySongsById = songsById,
             cachedRows = rowCache,
-            cachedHeaders = headerCache
+            cachedHeaders = headerCache,
         )
     }
 
@@ -174,23 +175,24 @@ class LibraryListModel internal constructor(
         }
 
     companion object {
-        val EMPTY = LibraryListModel(
-            songsVisual = emptyList(),
-            segments = emptyList(),
-            inheritedArtworkBySongId = emptyMap(),
-            sortOption = SortOption.TITLE,
-            emphasizeLastPlayed = false,
-            albumNames = emptySet(),
-            slots = IntArray(0),
-            lazySongsById = emptyMap()
-        )
+        val EMPTY =
+            LibraryListModel(
+                songsVisual = emptyList(),
+                segments = emptyList(),
+                inheritedArtworkBySongId = emptyMap(),
+                sortOption = SortOption.TITLE,
+                emphasizeLastPlayed = false,
+                albumNames = emptySet(),
+                slots = IntArray(0),
+                lazySongsById = emptyMap(),
+            )
 
         fun of(
             songsVisual: List<Song>,
             segments: List<LibraryAlbumSegment> = emptyList(),
             inheritedArtworkBySongId: Map<Long, String> = emptyMap(),
             sortOption: SortOption = SortOption.TITLE,
-            emphasizeLastPlayed: Boolean = false
+            emphasizeLastPlayed: Boolean = false,
         ): LibraryListModel {
             if (songsVisual.isEmpty() && segments.isEmpty()) return EMPTY
             val names = LinkedHashSet<String>(segments.size)
@@ -205,7 +207,7 @@ class LibraryListModel internal constructor(
                 emphasizeLastPlayed = emphasizeLastPlayed,
                 albumNames = names,
                 slots = buildSlots(segments, emptySet(), songsVisual.size),
-                lazySongsById = null
+                lazySongsById = null,
             )
         }
 
@@ -216,7 +218,7 @@ class LibraryListModel internal constructor(
         internal fun buildSlots(
             segments: List<LibraryAlbumSegment>,
             collapsedAlbumNames: Set<String>,
-            flatCount: Int = 0
+            flatCount: Int = 0,
         ): IntArray {
             if (segments.isEmpty()) {
                 return IntArray(flatCount) { it }
@@ -253,7 +255,7 @@ data class LibraryAlbumSegment(
     val start: Int,
     val count: Int,
     val songIds: List<Long>,
-    val key: String = "header_$groupingKey"
+    val key: String = "header_$groupingKey",
 ) {
     fun matchesCollapsed(collapsed: Set<String>): Boolean =
         collapsed.contains(albumName) ||
@@ -285,16 +287,17 @@ sealed interface LibraryListItem {
         val songIds: List<Long>,
         val groupingKey: String = albumName,
         val sortHint: String? = null,
-        val subtitle: String = buildString {
-            append(artistName)
-            append(" • ")
-            append(songCount)
-            append(" canciones")
-            if (!sortHint.isNullOrBlank()) {
+        val subtitle: String =
+            buildString {
+                append(artistName)
                 append(" • ")
-                append(sortHint)
-            }
-        }
+                append(songCount)
+                append(" canciones")
+                if (!sortHint.isNullOrBlank()) {
+                    append(" • ")
+                    append(sortHint)
+                }
+            },
     ) : LibraryListItem {
         override val key: Any get() = "header_$groupingKey"
         override val contentType: String get() = CONTENT_TYPE_ALBUM_HEADER
@@ -307,7 +310,7 @@ sealed interface LibraryListItem {
         val index: Int,
         val emphasis: SortEmphasizedTexts,
         /** List thumbnail; may inherit album art without copying [song]. */
-        val artworkUri: String? = song.artworkUri
+        val artworkUri: String? = song.artworkUri,
     ) : LibraryListItem {
         override val key: Any get() = song.id
         override val contentType: String get() = CONTENT_TYPE_SONG

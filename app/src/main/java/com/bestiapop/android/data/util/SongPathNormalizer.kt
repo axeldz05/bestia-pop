@@ -9,14 +9,18 @@ import java.nio.charset.StandardCharsets
  * can be compared and stored consistently (absolute filesystem paths when possible).
  */
 object SongPathNormalizer {
-
     fun toAbsolutePath(uriOrPath: String): String? {
         val raw = uriOrPath.trim()
         if (raw.isEmpty()) return null
         return when {
-            raw.startsWith("content://com.android.externalstorage.documents", ignoreCase = true) ->
+            raw.startsWith("content://com.android.externalstorage.documents", ignoreCase = true) -> {
                 safUriToAbsolutePath(raw)
-            raw.startsWith("content://", ignoreCase = true) -> null
+            }
+
+            raw.startsWith("content://", ignoreCase = true) -> {
+                null
+            }
+
             raw.startsWith("file://", ignoreCase = true) -> {
                 // file:///storage/... or file://localhost/storage/...
                 var path = raw.removePrefix("file://")
@@ -25,13 +29,20 @@ object SongPathNormalizer {
                 }
                 path.trimStart('/').let { "/$it" }.takeIf { it.length > 1 }
             }
+
             raw.startsWith("file:", ignoreCase = true) -> {
                 // file:/storage/... (Java URI single-slash form)
                 val path = raw.removePrefix("file:")
                 if (path.startsWith("/")) path else "/$path"
             }
-            raw.startsWith("/") -> raw
-            else -> null
+
+            raw.startsWith("/") -> {
+                raw
+            }
+
+            else -> {
+                null
+            }
         }
     }
 
@@ -41,50 +52,62 @@ object SongPathNormalizer {
      * Prefers `/document/` (file) over `/tree/` (folder root).
      */
     internal fun safUriToAbsolutePath(uri: String): String? {
-        val encoded = safEncodedId(uri, "/document/")
-            ?: safEncodedId(uri, "/tree/")
-            ?: return null
+        val encoded =
+            safEncodedId(uri, "/document/")
+                ?: safEncodedId(uri, "/tree/")
+                ?: return null
         val docId = percentDecode(encoded)
         val colon = docId.indexOf(':')
         if (colon <= 0 || colon >= docId.length - 1) return null
         val volume = docId.substring(0, colon)
         val rel = docId.substring(colon + 1).trimStart('/')
         if (rel.isEmpty()) return null
-        val root = if (volume.equals("primary", ignoreCase = true)) {
-            "/storage/emulated/0"
-        } else {
-            "/storage/$volume"
-        }
+        val root =
+            if (volume.equals("primary", ignoreCase = true)) {
+                "/storage/emulated/0"
+            } else {
+                "/storage/$volume"
+            }
         return "$root/$rel"
     }
 
-    private fun safEncodedId(uri: String, marker: String): String? {
+    private fun safEncodedId(
+        uri: String,
+        marker: String,
+    ): String? {
         val idx = uri.indexOf(marker, ignoreCase = true)
         if (idx < 0) return null
-        val encoded = uri.substring(idx + marker.length)
-            .substringBefore("/document/")
-            .substringBefore('?')
-            .substringBefore('#')
+        val encoded =
+            uri
+                .substring(idx + marker.length)
+                .substringBefore("/document/")
+                .substringBefore('?')
+                .substringBefore('#')
         return encoded.takeIf { it.isNotBlank() }
     }
 
-    private fun percentDecode(value: String): String {
-        return try {
+    private fun percentDecode(value: String): String =
+        try {
             URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8.name())
         } catch (_: Exception) {
             value
         }
-    }
 
     /** Resolves a playable path: URI absolute path, else MediaStore DATA in [folderPath]. */
-    fun resolveFilePath(uriString: String, folderPath: String = ""): String? {
+    fun resolveFilePath(
+        uriString: String,
+        folderPath: String = "",
+    ): String? {
         toAbsolutePath(uriString)?.let { return it }
         val data = folderPath.trim()
         if (data.startsWith("/") && !data.contains("://")) return data
         return toAbsolutePath(data)
     }
 
-    fun fileName(uriString: String, folderPath: String = ""): String {
+    fun fileName(
+        uriString: String,
+        folderPath: String = "",
+    ): String {
         val path = resolveFilePath(uriString, folderPath) ?: uriString
         return path.substringAfterLast('/').substringAfterLast('\\')
     }
@@ -104,7 +127,10 @@ object SongPathNormalizer {
             lower.contains("/uploadedmusic")
     }
 
-    fun pathsReferToSameFile(a: String, b: String): Boolean {
+    fun pathsReferToSameFile(
+        a: String,
+        b: String,
+    ): Boolean {
         val pa = toAbsolutePath(a) ?: a.takeIf { it.startsWith("/") }
         val pb = toAbsolutePath(b) ?: b.takeIf { it.startsWith("/") }
         if (pa.isNullOrBlank() || pb.isNullOrBlank()) return false
@@ -115,7 +141,10 @@ object SongPathNormalizer {
         }
     }
 
-    fun isAppOwnedUri(uriString: String, folderPath: String = ""): Boolean {
+    fun isAppOwnedUri(
+        uriString: String,
+        folderPath: String = "",
+    ): Boolean {
         if (uriString.startsWith("content://", ignoreCase = true)) {
             val resolved = toAbsolutePath(uriString)
             return resolved != null && isUnderBestiaPop(resolved)
@@ -124,6 +153,5 @@ object SongPathNormalizer {
     }
 
     /** File/http artwork is usable; null/empty and MediaStore content:// albumart stubs are not. */
-    fun hasUsableArtwork(artworkUri: String?): Boolean =
-        !artworkUri.isNullOrEmpty() && !artworkUri.startsWith("content://")
+    fun hasUsableArtwork(artworkUri: String?): Boolean = !artworkUri.isNullOrEmpty() && !artworkUri.startsWith("content://")
 }

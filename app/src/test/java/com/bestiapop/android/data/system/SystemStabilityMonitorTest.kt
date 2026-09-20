@@ -21,7 +21,6 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 @Category(MediumTest::class)
 class SystemStabilityMonitorTest {
-
     @Test
     fun formatReason_mapsStandardReasonsCorrectly() {
         assertEquals("LOW_MEMORY", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_LOW_MEMORY))
@@ -39,7 +38,10 @@ class SystemStabilityMonitorTest {
     @Test
     fun formatImportance_mapsProcessStatesCorrectly() {
         assertEquals("FOREGROUND", SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND))
-        assertEquals("FOREGROUND_SERVICE", SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE))
+        assertEquals(
+            "FOREGROUND_SERVICE",
+            SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE),
+        )
         assertEquals("SERVICE", SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE))
         assertEquals("CACHED", SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED))
     }
@@ -75,10 +77,11 @@ class SystemStabilityMonitorTest {
     @Test
     fun checkHistoricalExitReasons_whenTelemetryDisabled_doesNotInvokeReporter() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val prefs = context.getSharedPreferences(
-            TelemetryPreferencesRepository.PREFS_NAME,
-            Context.MODE_PRIVATE
-        )
+        val prefs =
+            context.getSharedPreferences(
+                TelemetryPreferencesRepository.PREFS_NAME,
+                Context.MODE_PRIVATE,
+            )
         prefs.edit().putBoolean(TelemetryPreferencesRepository.KEY_TELEMETRY_ENABLED, false).commit()
 
         SystemStabilityMonitor.checkHistoricalExitReasons(context) { _, _ ->
@@ -129,33 +132,42 @@ class SystemStabilityMonitorTest {
 
     @Test
     fun createExceptionForExitReason_ignoresCachedKills_reportsForegroundKills() {
-        val cachedLmk = createMockExitInfo(
-            reason = ApplicationExitInfo.REASON_LOW_MEMORY,
-            importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
-        )
+        val cachedLmk =
+            createMockExitInfo(
+                reason = ApplicationExitInfo.REASON_LOW_MEMORY,
+                importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED,
+            )
         assertNull(SystemStabilityMonitor.createExceptionForExitReason(cachedLmk))
 
-        val cachedOther = createMockExitInfo(
-            reason = ApplicationExitInfo.REASON_OTHER,
-            importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
-        )
+        val cachedOther =
+            createMockExitInfo(
+                reason = ApplicationExitInfo.REASON_OTHER,
+                importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED,
+            )
         assertNull(SystemStabilityMonitor.createExceptionForExitReason(cachedOther))
 
-        val fgLmk = createMockExitInfo(
-            reason = ApplicationExitInfo.REASON_LOW_MEMORY,
-            importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
-        )
+        val fgLmk =
+            createMockExitInfo(
+                reason = ApplicationExitInfo.REASON_LOW_MEMORY,
+                importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND,
+            )
         val fgException = SystemStabilityMonitor.createExceptionForExitReason(fgLmk)
         org.junit.Assert.assertNotNull(fgException)
         org.junit.Assert.assertTrue(fgException is LowMemoryKillException)
     }
 
-    private fun createMockExitInfo(reason: Int, importance: Int): ApplicationExitInfo {
+    private fun createMockExitInfo(
+        reason: Int,
+        importance: Int,
+    ): ApplicationExitInfo {
         val constructor = ApplicationExitInfo::class.java.getDeclaredConstructor()
         constructor.isAccessible = true
         val exit = constructor.newInstance()
 
-        fun setField(name: String, value: Any) {
+        fun setField(
+            name: String,
+            value: Any,
+        ) {
             val field = ApplicationExitInfo::class.java.getDeclaredField(name)
             field.isAccessible = true
             field.set(exit, value)

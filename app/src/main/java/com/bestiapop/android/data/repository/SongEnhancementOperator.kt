@@ -12,9 +12,9 @@ import com.bestiapop.android.data.util.AudioTagReader
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.isTrackNumberLabel
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 internal class SongEnhancementOperator(
     private val database: AppDatabase,
@@ -24,7 +24,7 @@ internal class SongEnhancementOperator(
     private val libraryScanOperator: LibraryScanOperator,
     private val songIdentifyOperator: SongIdentifyOperator,
     private val fileTagSyncOperator: FileTagSyncOperator,
-    private val setArtworkOnAlbumBucket: suspend (String, String?, List<Song>?) -> Unit
+    private val setArtworkOnAlbumBucket: suspend (String, String?, List<Song>?) -> Unit,
 ) {
     suspend fun findLocalLyrics(song: Song): String? =
         withContext(Dispatchers.IO) {
@@ -35,13 +35,17 @@ internal class SongEnhancementOperator(
             val file: File? = audioStore.readableFile(song.uriString, song.folderPath)
             val parent = file?.parentFile
             if (file != null && file.isFile && parent != null) {
-                val companionText = readCleanTextFile(File(parent, "${file.nameWithoutExtension}.lrc"))
-                    ?: readCleanTextFile(File(parent, "${song.title}.lrc"))
+                val companionText =
+                    readCleanTextFile(File(parent, "${file.nameWithoutExtension}.lrc"))
+                        ?: readCleanTextFile(File(parent, "${song.title}.lrc"))
                 if (companionText != null) return@withContext companionText
 
                 val rawTags = AudioTagReader.read(file)
-                val tagLyrics = rawTags?.lyrics?.trim()
-                    ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                val tagLyrics =
+                    rawTags
+                        ?.lyrics
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
                 if (tagLyrics != null) return@withContext tagLyrics
             }
             null
@@ -49,11 +53,15 @@ internal class SongEnhancementOperator(
 
     private fun readCleanTextFile(file: File?): String? {
         if (file == null || !file.isFile || !file.canRead()) return null
-        return runCatching { file.readText(Charsets.UTF_8).trim() }.getOrNull()
+        return runCatching { file.readText(Charsets.UTF_8).trim() }
+            .getOrNull()
             ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
     }
 
-    suspend fun saveCompanionLrc(song: Song, lyrics: String): Boolean =
+    suspend fun saveCompanionLrc(
+        song: Song,
+        lyrics: String,
+    ): Boolean =
         withContext(Dispatchers.IO) {
             if (lyrics.isBlank()) return@withContext false
             val file: File = audioStore.readableFile(song.uriString, song.folderPath) ?: return@withContext false
@@ -68,40 +76,41 @@ internal class SongEnhancementOperator(
 
     suspend fun fetchSongLyrics(song: Song): String? =
         withContext(Dispatchers.IO) {
-            metadataSource.fetchLyrics(song.artist, song.title)
+            metadataSource
+                .fetchLyrics(song.artist, song.title)
                 ?.trim()
                 ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
         }
 
-    suspend fun enhanceSongMetadataAndLyrics(song: Song) =
-        enhanceSongMetadataAndLyricsBatch(listOf(song))
+    suspend fun enhanceSongMetadataAndLyrics(song: Song) = enhanceSongMetadataAndLyricsBatch(listOf(song))
 
-    suspend fun enhanceSongMetadataAndLyricsBatch(songs: List<Song>) = withContext(Dispatchers.IO) {
-        if (songs.isEmpty()) return@withContext
-        val patches = songs.mapNotNull { prepareEnhancePatch(it) }
-        if (patches.isEmpty()) return@withContext
-        val identitySongs = musicDao.getIdentitySongs()
-        database.withTransaction {
-            for (patch in patches) {
-                if (patch.metadataChanged) {
-                    musicDao.updateMetadataAndLyrics(patch.songId, patch.artworkUri, patch.lyrics)
+    suspend fun enhanceSongMetadataAndLyricsBatch(songs: List<Song>) =
+        withContext(Dispatchers.IO) {
+            if (songs.isEmpty()) return@withContext
+            val patches = songs.mapNotNull { prepareEnhancePatch(it) }
+            if (patches.isEmpty()) return@withContext
+            val identitySongs = musicDao.getIdentitySongs()
+            database.withTransaction {
+                for (patch in patches) {
+                    if (patch.metadataChanged) {
+                        musicDao.updateMetadataAndLyrics(patch.songId, patch.artworkUri, patch.lyrics)
+                    }
+                    patch.durationMs?.let { musicDao.updateSongDuration(patch.songId, it) }
+                    patch.trackNumber?.let { musicDao.updateTrackNumber(patch.songId, it) }
                 }
-                patch.durationMs?.let { musicDao.updateSongDuration(patch.songId, it) }
-                patch.trackNumber?.let { musicDao.updateTrackNumber(patch.songId, it) }
+                val albumStamps = LinkedHashMap<String, String>()
+                for (patch in patches) {
+                    val stamp = patch.albumStamp ?: continue
+                    albumStamps.putIfAbsent(stamp.first, stamp.second)
+                }
+                for ((album, art) in albumStamps) {
+                    setArtworkOnAlbumBucket(album, art, identitySongs)
+                }
             }
-            val albumStamps = LinkedHashMap<String, String>()
             for (patch in patches) {
-                val stamp = patch.albumStamp ?: continue
-                albumStamps.putIfAbsent(stamp.first, stamp.second)
-            }
-            for ((album, art) in albumStamps) {
-                setArtworkOnAlbumBucket(album, art, identitySongs)
+                patch.tagSong?.let { fileTagSyncOperator.maybeWriteTags(it) }
             }
         }
-        for (patch in patches) {
-            patch.tagSong?.let { fileTagSyncOperator.maybeWriteTags(it) }
-        }
-    }
 
     private data class EnhancePatch(
         val songId: Long,
@@ -111,7 +120,7 @@ internal class SongEnhancementOperator(
         val durationMs: Long?,
         val trackNumber: Int?,
         val albumStamp: Pair<String, String>?,
-        val tagSong: Song?
+        val tagSong: Song?,
     )
 
     private suspend fun prepareEnhancePatch(song: Song): EnhancePatch? {
@@ -129,7 +138,7 @@ internal class SongEnhancementOperator(
 
         if (!SongPathNormalizer.hasUsableArtwork(artUrl)) {
             val ref = audioStore.canonicalize(persisted.uriString, persisted.folderPath)
-            val embedded = libraryScanOperator.extractAndSaveEmbeddedArtwork(ref.uriString, "${persisted.artist}_${albumName}")
+            val embedded = libraryScanOperator.extractAndSaveEmbeddedArtwork(ref.uriString, "${persisted.artist}_$albumName")
             if (!embedded.isNullOrEmpty()) {
                 artUrl = embedded
             } else if (!IdentifyRanking.isPlaceholderArtist(persisted.artist)) {
@@ -139,9 +148,11 @@ internal class SongEnhancementOperator(
 
         var lyricsStr = persisted.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
         if (lyricsStr.isNullOrEmpty() && !IdentifyRanking.isPlaceholderArtist(persisted.artist)) {
-            lyricsStr = metadataSource.fetchLyrics(persisted.artist, persisted.title)
-                ?.trim()
-                ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+            lyricsStr =
+                metadataSource
+                    .fetchLyrics(persisted.artist, persisted.title)
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
         }
 
         var trackNumber: Int? = null
@@ -153,20 +164,22 @@ internal class SongEnhancementOperator(
         }
 
         val metadataChanged = artUrl != persisted.artworkUri || lyricsStr != persisted.lyrics
-        val tagSong = if ((metadataChanged || trackNumber != null) && (artUrl != persisted.artworkUri || trackNumber != null)) {
-            persisted.copy(artworkUri = artUrl, lyrics = lyricsStr, trackNumber = trackNumber ?: persisted.trackNumber)
-        } else {
-            null
-        }
+        val tagSong =
+            if ((metadataChanged || trackNumber != null) && (artUrl != persisted.artworkUri || trackNumber != null)) {
+                persisted.copy(artworkUri = artUrl, lyrics = lyricsStr, trackNumber = trackNumber ?: persisted.trackNumber)
+            } else {
+                null
+            }
 
-        val albumStamp = if (!artUrl.isNullOrEmpty() &&
-            !IdentifyRanking.isGenericAlbum(albumName) &&
-            (existingAlbumArt.isNullOrEmpty() || existingAlbumArt != artUrl)
-        ) {
-            albumName to artUrl
-        } else {
-            null
-        }
+        val albumStamp =
+            if (!artUrl.isNullOrEmpty() &&
+                !IdentifyRanking.isGenericAlbum(albumName) &&
+                (existingAlbumArt.isNullOrEmpty() || existingAlbumArt != artUrl)
+            ) {
+                albumName to artUrl
+            } else {
+                null
+            }
 
         var durationMs: Long? = null
         if (!hasDuration) {
@@ -187,7 +200,7 @@ internal class SongEnhancementOperator(
             durationMs = durationMs,
             trackNumber = trackNumber,
             albumStamp = albumStamp,
-            tagSong = tagSong
+            tagSong = tagSong,
         )
     }
 
@@ -234,7 +247,10 @@ internal class SongEnhancementOperator(
         return 0L
     }
 
-    private fun hasUsableIdentity(artist: String, title: String): Boolean =
+    private fun hasUsableIdentity(
+        artist: String,
+        title: String,
+    ): Boolean =
         !IdentifyRanking.isPlaceholderArtist(artist) ||
-                (!isTrackNumberLabel(title) && !isPlaceholderTitle(title))
+            (!isTrackNumberLabel(title) && !isPlaceholderTitle(title))
 }

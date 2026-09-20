@@ -8,12 +8,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.bestiapop.android.MainActivity
 import com.bestiapop.android.data.db.AppDatabase
 import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Seeds only the version marker that survives Room's destructive downgrade and observes the actual
@@ -22,7 +22,6 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class DatabaseDowngradeWarningFunctionalTest {
-
     @Test
     fun higherSchemaMarker_onFreshActivity_showsDataLossWarningToast() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -51,7 +50,7 @@ class DatabaseDowngradeWarningFunctionalTest {
 
             assertTrue(
                 "Did not observe the real downgrade warning Toast",
-                warningObserved.await(TOAST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                warningObserved.await(TOAST_TIMEOUT_SECONDS, TimeUnit.SECONDS),
             )
         } finally {
             instrumentation.uiAutomation.setOnAccessibilityEventListener(null)

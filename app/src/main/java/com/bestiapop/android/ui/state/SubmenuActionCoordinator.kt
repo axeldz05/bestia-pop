@@ -34,7 +34,7 @@ class SubmenuActionCoordinator(
     private val getLocalSongsByMatchKey: () -> Map<String, Song>,
     private val getAllSongsByMatchKey: () -> Map<String, Song>,
     private val getCatalogCollection: () -> CatalogCollectionUiState,
-    private val findLocalSongFor: (TrackMeta) -> Song?
+    private val findLocalSongFor: (TrackMeta) -> Song?,
 ) {
     private fun enqueueToastMessage(count: Int): String =
         if (count == 1) "Canción añadida a la cola" else "$count canciones añadidas a la cola"
@@ -45,7 +45,7 @@ class SubmenuActionCoordinator(
     fun executeForPlayables(
         action: SubmenuSwipeAction,
         items: List<PlayableItem>,
-        onAddToPlaylist: ((List<PlayableItem>) -> Unit)? = null
+        onAddToPlaylist: ((List<PlayableItem>) -> Unit)? = null,
     ) {
         if (items.isEmpty() || action == SubmenuSwipeAction.DISABLED) return
         when (action) {
@@ -53,10 +53,12 @@ class SubmenuActionCoordinator(
                 addPlayableBatch(items)
                 toast(enqueueToastMessage(items.size))
             }
+
             SubmenuSwipeAction.PLAY_NEXT -> {
                 playNextPlayableBatch(items)
                 toast(playNextToastMessage(items.size))
             }
+
             SubmenuSwipeAction.START_RADIO -> {
                 val seed = items.firstOrNull()
                 if (seed != null) {
@@ -75,6 +77,7 @@ class SubmenuActionCoordinator(
                     toast(if (artist.isNotBlank()) "Iniciando radio de $artist" else "Iniciando radio")
                 }
             }
+
             SubmenuSwipeAction.SEARCH_SIMILAR -> {
                 val artist = items.firstOrNull()?.artist.orEmpty()
                 if (artist.isNotBlank()) {
@@ -82,17 +85,21 @@ class SubmenuActionCoordinator(
                     navigateToDiscover()
                 }
             }
+
             SubmenuSwipeAction.ADD_TO_PLAYLIST -> {
                 onAddToPlaylist?.invoke(items)
             }
-            SubmenuSwipeAction.DISABLED -> Unit
+
+            SubmenuSwipeAction.DISABLED -> {
+                Unit
+            }
         }
     }
 
     fun executeForSongs(
         action: SubmenuSwipeAction,
         songs: List<Song>,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) {
         if (songs.isEmpty() || action == SubmenuSwipeAction.DISABLED) return
         if (action == SubmenuSwipeAction.ADD_TO_PLAYLIST) {
@@ -106,7 +113,7 @@ class SubmenuActionCoordinator(
     fun executeForCandidates(
         action: SubmenuSwipeAction,
         candidates: List<CatalogTrackCandidate>,
-        onAddToPlaylist: ((List<CatalogTrackCandidate>) -> Unit)? = null
+        onAddToPlaylist: ((List<CatalogTrackCandidate>) -> Unit)? = null,
     ) {
         if (candidates.isEmpty() || action == SubmenuSwipeAction.DISABLED) return
         if (action == SubmenuSwipeAction.ADD_TO_PLAYLIST) {
@@ -120,7 +127,7 @@ class SubmenuActionCoordinator(
     fun executeForTrack(
         action: SubmenuSwipeAction,
         track: TrackMeta,
-        onAddToPlaylist: ((Song) -> Unit)? = null
+        onAddToPlaylist: ((Song) -> Unit)? = null,
     ) {
         if (action == SubmenuSwipeAction.DISABLED) return
         val local = if (track is Song) track else findLocalSongFor(track)
@@ -139,7 +146,7 @@ class SubmenuActionCoordinator(
     fun executeForAlbum(
         action: SubmenuSwipeAction,
         album: CatalogAlbum,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) {
         executeForAlbum(
             action = action,
@@ -147,21 +154,21 @@ class SubmenuActionCoordinator(
             artistName = album.artist,
             albumId = album.id,
             coverUrl = album.coverUrl,
-            onAddToPlaylist = onAddToPlaylist
+            onAddToPlaylist = onAddToPlaylist,
         )
     }
 
     fun executeForAlbum(
         action: SubmenuSwipeAction,
         album: Album,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) {
         executeForAlbum(
             action = action,
             albumTitle = album.name,
             artistName = album.artist,
             coverUrl = album.artworkUri,
-            onAddToPlaylist = onAddToPlaylist
+            onAddToPlaylist = onAddToPlaylist,
         )
     }
 
@@ -171,7 +178,7 @@ class SubmenuActionCoordinator(
         artistName: String = "",
         albumId: String = "",
         coverUrl: String? = null,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) {
         if (action == SubmenuSwipeAction.DISABLED) return
         val cleanTitle = albumTitle.trim()
@@ -184,7 +191,9 @@ class SubmenuActionCoordinator(
         }
 
         val currentCollection = getCatalogCollection()
-        if (currentCollection.isOpen && currentCollection.title.equals(cleanTitle, ignoreCase = true) && currentCollection.candidates.isNotEmpty()) {
+        if (currentCollection.isOpen && currentCollection.title.equals(cleanTitle, ignoreCase = true) &&
+            currentCollection.candidates.isNotEmpty()
+        ) {
             executeForCandidates(action, currentCollection.candidates)
             return
         }
@@ -200,7 +209,7 @@ class SubmenuActionCoordinator(
     fun executeForArtist(
         action: SubmenuSwipeAction,
         artistName: String,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) {
         if (action == SubmenuSwipeAction.DISABLED) return
         val cleanArtist = artistName.trim()
@@ -225,7 +234,9 @@ class SubmenuActionCoordinator(
         }
 
         val currentCollection = getCatalogCollection()
-        if (currentCollection.isOpen && currentCollection.title.equals(cleanArtist, ignoreCase = true) && currentCollection.candidates.isNotEmpty()) {
+        if (currentCollection.isOpen && currentCollection.title.equals(cleanArtist, ignoreCase = true) &&
+            currentCollection.candidates.isNotEmpty()
+        ) {
             executeForCandidates(action, currentCollection.candidates)
             return
         }

@@ -41,7 +41,7 @@ fun RadioModeControl(
     modifier: Modifier = Modifier,
     onStartPreferred: () -> Unit = {},
     onStartMode: (RadioMode) -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
 ) = RadioModeControl(
     radioActive = state.active,
     radioLoading = state.loading,
@@ -49,7 +49,7 @@ fun RadioModeControl(
     onStartPreferred = onStartPreferred,
     onStartMode = onStartMode,
     onStop = onStop,
-    modifier = modifier
+    modifier = modifier,
 )
 
 @Composable
@@ -60,62 +60,63 @@ fun RadioModeControl(
     onStartPreferred: () -> Unit = {},
     onStartMode: (RadioMode) -> Unit,
     onStop: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
     Box(modifier = modifier) {
         Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(
-                    if (radioActive) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                    }
-                )
-                .clickable(
-                    enabled = !radioLoading,
-                    onClick = { menuExpanded = true }
-                ),
-            contentAlignment = Alignment.Center
+            modifier =
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (radioActive) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        },
+                    ).clickable(
+                        enabled = !radioLoading,
+                        onClick = { menuExpanded = true },
+                    ),
+            contentAlignment = Alignment.Center,
         ) {
             if (radioLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
             } else {
                 Icon(
                     imageVector = Icons.Default.Radio,
                     contentDescription = "Modo Radio",
                     modifier = Modifier.size(22.dp),
-                    tint = if (radioActive) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-                    }
+                    tint =
+                        if (radioActive) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                        },
                 )
             }
         }
 
         DropdownMenu(
             expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false }
+            onDismissRequest = { menuExpanded = false },
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Text(
                     text = "Modo de Radio",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = if (radioActive) "Radio activa" else "Elige cómo generar canciones",
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (radioActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (radioActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -129,14 +130,16 @@ fun RadioModeControl(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = mode.menuTitle(),
-                                    style = MaterialTheme.typography.bodyMedium.copy(
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    ),
-                                    color = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    }
+                                    style =
+                                        MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        ),
+                                    color =
+                                        if (isSelected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
                                 )
                                 if (isSelected) {
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -144,21 +147,21 @@ fun RadioModeControl(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = "Activo",
                                         modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.primary
+                                        tint = MaterialTheme.colorScheme.primary,
                                     )
                                 }
                             }
                             Text(
                                 text = mode.menuDescription(),
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     },
                     onClick = {
                         menuExpanded = false
                         onStartMode(mode)
-                    }
+                    },
                 )
             }
 
@@ -170,34 +173,36 @@ fun RadioModeControl(
                             imageVector = Icons.Default.Close,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
                     },
                     text = {
                         Text(
                             text = "Detener radio",
                             color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                         )
                     },
                     onClick = {
                         menuExpanded = false
                         onStop()
-                    }
+                    },
                 )
             }
         }
     }
 }
 
-private fun RadioMode.menuTitle(): String = when (this) {
-    RadioMode.KNOWN -> "Solo conocidos"
-    RadioMode.NEW -> "Solo nuevos"
-    RadioMode.BOTH -> "Ambos"
-}
+private fun RadioMode.menuTitle(): String =
+    when (this) {
+        RadioMode.KNOWN -> "Solo conocidos"
+        RadioMode.NEW -> "Solo nuevos"
+        RadioMode.BOTH -> "Ambos"
+    }
 
-private fun RadioMode.menuDescription(): String = when (this) {
-    RadioMode.KNOWN -> "Basado en tu biblioteca"
-    RadioMode.NEW -> "Descubrimiento y novedades"
-    RadioMode.BOTH -> "Mezcla de conocidos y nuevos"
-}
+private fun RadioMode.menuDescription(): String =
+    when (this) {
+        RadioMode.KNOWN -> "Basado en tu biblioteca"
+        RadioMode.NEW -> "Descubrimiento y novedades"
+        RadioMode.BOTH -> "Mezcla de conocidos y nuevos"
+    }

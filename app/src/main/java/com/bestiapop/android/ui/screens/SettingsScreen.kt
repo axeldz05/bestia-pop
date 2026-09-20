@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Repeat
@@ -39,8 +40,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bestiapop.android.data.model.OfflineMessages
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,15 +51,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.BuildConfig
+import com.bestiapop.android.data.model.OfflineMessages
 import com.bestiapop.android.data.update.GitHubReleaseUrls
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.InviteFriendsDialog
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.update.AppUpdateScreen
 import com.bestiapop.android.ui.update.AppUpdateViewModel
-
-import androidx.compose.material.icons.filled.LibraryMusic
 
 private enum class SettingsSection {
     Themes,
@@ -72,11 +71,14 @@ private enum class SettingsSection {
     Downloads,
     LibraryTags,
     Telemetry,
-    Update
+    Update,
 }
 
 @Composable
-fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdateViewModel) {
+fun SettingsScreen(
+    viewModel: MusicPlayerViewModel,
+    appUpdateViewModel: AppUpdateViewModel,
+) {
     var section by remember { mutableStateOf<SettingsSection?>(null) }
     val pendingSettingsSection by viewModel.pendingSettingsSection.collectAsStateWithLifecycle()
     val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
@@ -87,6 +89,7 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
                 section = SettingsSection.Downloads
                 viewModel.consumePendingSettingsSection()
             }
+
             "playback" -> {
                 section = SettingsSection.Playback
                 viewModel.consumePendingSettingsSection()
@@ -104,50 +107,82 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
     BackHandler(enabled = section != null) { closeSection() }
 
     when (section) {
-        null -> SettingsHome(
-            appUpdateViewModel = appUpdateViewModel,
-            isOfflineMode = isOfflineMode,
-            onToggleOfflineMode = { viewModel.setOfflineMode(it) },
-            onOpenThemes = { section = SettingsSection.Themes },
-            onOpenLibrary = { section = SettingsSection.Library },
-            onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
-            onOpenPlayback = { section = SettingsSection.Playback },
-            onOpenLyrics = { section = SettingsSection.Lyrics },
-            onOpenSound = { section = SettingsSection.Sound },
-            onOpenDownloads = { section = SettingsSection.Downloads },
-            onOpenLibraryTags = { section = SettingsSection.LibraryTags },
-            onOpenTelemetry = { section = SettingsSection.Telemetry },
-            onOpenUpdate = { section = SettingsSection.Update }
-        )
-        SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = closeSection) {
-            ThemeSettingsScreen(viewModel = viewModel, showTitle = false)
+        null -> {
+            SettingsHome(
+                appUpdateViewModel = appUpdateViewModel,
+                isOfflineMode = isOfflineMode,
+                onToggleOfflineMode = { viewModel.setOfflineMode(it) },
+                onOpenThemes = { section = SettingsSection.Themes },
+                onOpenLibrary = { section = SettingsSection.Library },
+                onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
+                onOpenPlayback = { section = SettingsSection.Playback },
+                onOpenLyrics = { section = SettingsSection.Lyrics },
+                onOpenSound = { section = SettingsSection.Sound },
+                onOpenDownloads = { section = SettingsSection.Downloads },
+                onOpenLibraryTags = { section = SettingsSection.LibraryTags },
+                onOpenTelemetry = { section = SettingsSection.Telemetry },
+                onOpenUpdate = { section = SettingsSection.Update },
+            )
         }
-        SettingsSection.Library -> SettingsSectionPage("Biblioteca", onBack = closeSection) {
-            LibrarySettingsScreen(viewModel = viewModel)
+
+        SettingsSection.Themes -> {
+            SettingsSectionPage("Temas", onBack = closeSection) {
+                ThemeSettingsScreen(viewModel = viewModel, showTitle = false)
+            }
         }
-        SettingsSection.ListenBrainz -> SettingsSectionPage("ListenBrainz y recomendaciones", onBack = closeSection) {
-            ListenBrainzSettingsScreen(viewModel = viewModel)
+
+        SettingsSection.Library -> {
+            SettingsSectionPage("Biblioteca", onBack = closeSection) {
+                LibrarySettingsScreen(viewModel = viewModel)
+            }
         }
-        SettingsSection.Playback -> SettingsSectionPage("Reproducción", onBack = closeSection) {
-            PlaybackSettingsScreen(viewModel = viewModel)
+
+        SettingsSection.ListenBrainz -> {
+            SettingsSectionPage("ListenBrainz y recomendaciones", onBack = closeSection) {
+                ListenBrainzSettingsScreen(viewModel = viewModel)
+            }
         }
-        SettingsSection.Lyrics -> SettingsSectionPage("Letras", onBack = closeSection) {
-            LyricsSettingsScreen(viewModel = viewModel)
+
+        SettingsSection.Playback -> {
+            SettingsSectionPage("Reproducción", onBack = closeSection) {
+                PlaybackSettingsScreen(viewModel = viewModel)
+            }
         }
-        SettingsSection.Sound -> SettingsSectionPage("Sonido", onBack = closeSection) {
-            VolumeBoostSettingsScreen(viewModel = viewModel)
+
+        SettingsSection.Lyrics -> {
+            SettingsSectionPage("Letras", onBack = closeSection) {
+                LyricsSettingsScreen(viewModel = viewModel)
+            }
         }
-        SettingsSection.Downloads -> SettingsSectionPage("Descargas", onBack = closeSection) {
-            DownloadSettingsScreen(viewModel = viewModel)
+
+        SettingsSection.Sound -> {
+            SettingsSectionPage("Sonido", onBack = closeSection) {
+                VolumeBoostSettingsScreen(viewModel = viewModel)
+            }
         }
-        SettingsSection.LibraryTags -> SettingsSectionPage("Archivos", onBack = closeSection) {
-            LibraryTagWriteSettingsScreen(viewModel = viewModel)
+
+        SettingsSection.Downloads -> {
+            SettingsSectionPage("Descargas", onBack = closeSection) {
+                DownloadSettingsScreen(viewModel = viewModel)
+            }
         }
-        SettingsSection.Telemetry -> SettingsSectionPage("Telemetría y estabilidad", onBack = closeSection) {
-            TelemetrySettingsScreen(viewModel = viewModel)
+
+        SettingsSection.LibraryTags -> {
+            SettingsSectionPage("Archivos", onBack = closeSection) {
+                LibraryTagWriteSettingsScreen(viewModel = viewModel)
+            }
         }
-        SettingsSection.Update -> SettingsSectionPage("Actualización", onBack = closeSection) {
-            AppUpdateScreen(viewModel = appUpdateViewModel)
+
+        SettingsSection.Telemetry -> {
+            SettingsSectionPage("Telemetría y estabilidad", onBack = closeSection) {
+                TelemetrySettingsScreen(viewModel = viewModel)
+            }
+        }
+
+        SettingsSection.Update -> {
+            SettingsSectionPage("Actualización", onBack = closeSection) {
+                AppUpdateScreen(viewModel = appUpdateViewModel)
+            }
         }
     }
 }
@@ -156,13 +191,13 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
 private fun SettingsSectionPage(
     title: String,
     onBack: () -> Unit,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         ScreenBackHeader(
             title = title,
             onBack = onBack,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
         )
         content()
     }
@@ -182,46 +217,49 @@ private fun SettingsHome(
     onOpenDownloads: () -> Unit,
     onOpenLibraryTags: () -> Unit,
     onOpenTelemetry: () -> Unit,
-    onOpenUpdate: () -> Unit
+    onOpenUpdate: () -> Unit,
 ) {
     val context = LocalContext.current
     var showInviteDialog by rememberSaveable { mutableStateOf(false) }
     val updateNotes by appUpdateViewModel.notes.collectAsStateWithLifecycle()
     val repo = BuildConfig.GITHUB_REPOSITORY.trim()
     val latestUrl = if (repo.isNotEmpty()) GitHubReleaseUrls.latestApkDownloadUrl(repo) else ""
-    val inviteText = """
+    val inviteText =
+        """
         BestiaPop — descargá la app:
 
         $latestUrl
 
         En el celular: descargá el APK y permití “Instalar apps desconocidas” para el navegador.
-    """.trimIndent()
+        """.trimIndent()
     val newestVersion = updateNotes.newer.firstOrNull()?.versionName
-    val updateSubtitle = when {
-        newestVersion != null -> "Nueva versión $newestVersion"
-        else -> "Versión ${BuildConfig.VERSION_NAME} · notas y cambios"
-    }
+    val updateSubtitle =
+        when {
+            newestVersion != null -> "Nueva versión $newestVersion"
+            else -> "Versión ${BuildConfig.VERSION_NAME} · notas y cambios"
+        }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = Icons.Default.Settings,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(end = 8.dp)
+                modifier = Modifier.padding(end = 8.dp),
             )
             Text(
                 text = "Ajustes",
                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
         }
 
@@ -229,89 +267,91 @@ private fun SettingsHome(
         Text(
             text = "Personalizá la app y conectá servicios.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = "Versión ${BuildConfig.VERSION_NAME}",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        val entries = listOf(
-            SettingsHomeEntry("Temas", "Colores y estilo visual", Icons.Default.Palette, onOpenThemes),
-            SettingsHomeEntry(
-                "Biblioteca",
-                "Scroll vertical rápido y visualización",
-                Icons.Default.LibraryMusic,
-                onOpenLibrary
-            ),
-            SettingsHomeEntry(
-                "ListenBrainz y recomendaciones",
-                "Scrobbling y motor de recomendaciones para Discover",
-                Icons.Default.Headset,
-                onOpenListenBrainz
-            ),
-            SettingsHomeEntry(
-                "Reproducción",
-                "Aleatorio y repetición al abrir",
-                Icons.Default.Repeat,
-                onOpenPlayback
-            ),
-            SettingsHomeEntry(
-                "Letras",
-                "Guía fonética, modo japonés y traducción",
-                Icons.Default.Lyrics,
-                onOpenLyrics
-            ),
-            SettingsHomeEntry(
-                "Sonido",
-                "Amplificar y balance estéreo",
-                Icons.AutoMirrored.Filled.VolumeUp,
-                onOpenSound
-            ),
-            SettingsHomeEntry(
-                "Descargas",
-                "Datos móviles y carpeta de guardado",
-                Icons.Default.Download,
-                onOpenDownloads
-            ),
-            SettingsHomeEntry(
-                "Archivos",
-                "Escribir metadata de la app a los archivos",
-                Icons.Default.AudioFile,
-                onOpenLibraryTags
-            ),
-            SettingsHomeEntry(
-                "Telemetría y estabilidad",
-                "Diagnósticos anónimos de cierres y memoria",
-                Icons.Default.Analytics,
-                onOpenTelemetry
-            ),
-            SettingsHomeEntry(
-                "Actualización",
-                updateSubtitle,
-                Icons.Default.SystemUpdate,
-                onOpenUpdate
-            ),
-            SettingsHomeEntry(
-                "Invitar amigos",
-                "QR y link de descarga del APK",
-                Icons.Default.Share
-            ) {
-                if (repo.isEmpty()) {
-                    Toast.makeText(
-                        context,
-                        "Falta GITHUB_REPOSITORY en github-release.properties",
-                        Toast.LENGTH_LONG
-                    ).show()
-                } else {
-                    showInviteDialog = true
-                }
-            }
-        )
+        val entries =
+            listOf(
+                SettingsHomeEntry("Temas", "Colores y estilo visual", Icons.Default.Palette, onOpenThemes),
+                SettingsHomeEntry(
+                    "Biblioteca",
+                    "Scroll vertical rápido y visualización",
+                    Icons.Default.LibraryMusic,
+                    onOpenLibrary,
+                ),
+                SettingsHomeEntry(
+                    "ListenBrainz y recomendaciones",
+                    "Scrobbling y motor de recomendaciones para Discover",
+                    Icons.Default.Headset,
+                    onOpenListenBrainz,
+                ),
+                SettingsHomeEntry(
+                    "Reproducción",
+                    "Aleatorio y repetición al abrir",
+                    Icons.Default.Repeat,
+                    onOpenPlayback,
+                ),
+                SettingsHomeEntry(
+                    "Letras",
+                    "Guía fonética, modo japonés y traducción",
+                    Icons.Default.Lyrics,
+                    onOpenLyrics,
+                ),
+                SettingsHomeEntry(
+                    "Sonido",
+                    "Amplificar y balance estéreo",
+                    Icons.AutoMirrored.Filled.VolumeUp,
+                    onOpenSound,
+                ),
+                SettingsHomeEntry(
+                    "Descargas",
+                    "Datos móviles y carpeta de guardado",
+                    Icons.Default.Download,
+                    onOpenDownloads,
+                ),
+                SettingsHomeEntry(
+                    "Archivos",
+                    "Escribir metadata de la app a los archivos",
+                    Icons.Default.AudioFile,
+                    onOpenLibraryTags,
+                ),
+                SettingsHomeEntry(
+                    "Telemetría y estabilidad",
+                    "Diagnósticos anónimos de cierres y memoria",
+                    Icons.Default.Analytics,
+                    onOpenTelemetry,
+                ),
+                SettingsHomeEntry(
+                    "Actualización",
+                    updateSubtitle,
+                    Icons.Default.SystemUpdate,
+                    onOpenUpdate,
+                ),
+                SettingsHomeEntry(
+                    "Invitar amigos",
+                    "QR y link de descarga del APK",
+                    Icons.Default.Share,
+                ) {
+                    if (repo.isEmpty()) {
+                        Toast
+                            .makeText(
+                                context,
+                                "Falta GITHUB_REPOSITORY en github-release.properties",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                    } else {
+                        showInviteDialog = true
+                    }
+                },
+            )
 
         if (showInviteDialog && repo.isNotEmpty()) {
             InviteFriendsDialog(
@@ -324,55 +364,59 @@ private fun SettingsHome(
                                 putExtra(Intent.EXTRA_SUBJECT, "BestiaPop")
                                 putExtra(Intent.EXTRA_TEXT, inviteText)
                             },
-                            "Invitar amigos"
-                        )
+                            "Invitar amigos",
+                        ),
                     )
                 },
-                onDismiss = { showInviteDialog = false }
+                onDismiss = { showInviteDialog = false },
             )
         }
 
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isOfflineMode) {
-                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                }
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onToggleOfflineMode(!isOfflineMode) }
+            colors =
+                CardDefaults.cardColors(
+                    containerColor =
+                        if (isOfflineMode) {
+                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                        },
+                ),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleOfflineMode(!isOfflineMode) },
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Icon(
                     imageVector = if (isOfflineMode) Icons.Default.WifiOff else Icons.Default.Wifi,
                     contentDescription = null,
                     tint = if (isOfflineMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(28.dp),
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = OfflineMessages.settingsTitle,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = OfflineMessages.settingsSubtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Switch(
                     checked = isOfflineMode,
-                    onCheckedChange = onToggleOfflineMode
+                    onCheckedChange = onToggleOfflineMode,
                 )
             }
         }
@@ -385,7 +429,7 @@ private fun SettingsHome(
                 title = entry.title,
                 subtitle = entry.subtitle,
                 icon = entry.icon,
-                onClick = entry.onClick
+                onClick = entry.onClick,
             )
         }
     }
@@ -395,7 +439,7 @@ private data class SettingsHomeEntry(
     val title: String,
     val subtitle: String,
     val icon: ImageVector,
-    val onClick: () -> Unit
+    val onClick: () -> Unit,
 )
 
 @Composable
@@ -403,46 +447,49 @@ private fun SettingsEntryCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(28.dp),
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

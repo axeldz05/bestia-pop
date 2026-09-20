@@ -26,7 +26,7 @@ fun isRemoteCatalogArtwork(artworkUri: String?): Boolean {
 fun fillSongGapsFromFileTags(
     song: Song,
     meta: AudioFileMetadata,
-    library: List<Song>
+    library: List<Song>,
 ): Song {
     val wasPlaceholder = IdentifyRanking.isPlaceholderArtist(song.artist)
     val albumGeneric = IdentifyRanking.isGenericAlbum(song.album)
@@ -34,92 +34,118 @@ fun fillSongGapsFromFileTags(
     val fileAlbumOk = !IdentifyRanking.isGenericAlbum(meta.album)
 
     val genericTitle = IdentifyRanking.isGenericIdentifyTitle(song.title)
-    val spuriousArtistMatch = genericTitle && !wasPlaceholder && (
-        (fileArtistOk && IdentifyRanking.fieldSimilarity(song.artist, meta.artist) < IdentifyRanking.MEDIUM_SCORE) ||
-        (!fileArtistOk && !song.folderPath.contains(song.artist, ignoreCase = true) && !albumNamesMatch(song.album, meta.album))
-    )
+    val spuriousArtistMatch =
+        genericTitle && !wasPlaceholder && (
+            (fileArtistOk && IdentifyRanking.fieldSimilarity(song.artist, meta.artist) < IdentifyRanking.MEDIUM_SCORE) ||
+                (!fileArtistOk && !song.folderPath.contains(song.artist, ignoreCase = true) && !albumNamesMatch(song.album, meta.album))
+        )
     val needsArtistReset = wasPlaceholder || spuriousArtistMatch
     val needsAlbumReset = albumGeneric || spuriousArtistMatch
 
-    val knownSplit = if (needsArtistReset && !fileArtistOk) {
-        val phrases = listOf(meta.title, song.title)
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !looksLikeStoragePath(it) }
-            .distinct()
-        val artists = library.map { it.artist }
-        phrases.firstNotNullOfOrNull { splitUsingKnownArtists(it, artists) }
-    } else {
-        null
-    }
+    val knownSplit =
+        if (needsArtistReset && !fileArtistOk) {
+            val phrases =
+                listOf(meta.title, song.title)
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() && !looksLikeStoragePath(it) }
+                    .distinct()
+            val artists = library.map { it.artist }
+            phrases.firstNotNullOfOrNull { splitUsingKnownArtists(it, artists) }
+        } else {
+            null
+        }
     val splitArtist = knownSplit?.artist?.takeIf { it.isNotBlank() }
     val splitTitle = knownSplit?.title?.takeIf { it.isNotBlank() }
 
-    val proposedArtist = when {
-        needsArtistReset && fileArtistOk -> meta.artist
-        needsArtistReset && splitArtist != null -> splitArtist
-        spuriousArtistMatch -> Song.UNKNOWN_ARTIST
-        else -> song.artist
-    }
-    val proposedAlbum = when {
-        needsAlbumReset && fileAlbumOk -> meta.album
-        spuriousArtistMatch -> Song.UNKNOWN_ALBUM
-        else -> song.album
-    }
-    val resolvedAlbum = if (needsAlbumReset && fileAlbumOk) {
-        pickPersistedAlbumName(
-            library = library,
-            proposedAlbum = proposedAlbum,
-            proposedArtist = proposedArtist,
-            sourceAlbum = song.album,
-            isGeneric = IdentifyRanking::isGenericAlbum
-        )
-    } else {
-        proposedAlbum
-    }
-    val bucketArtists = library.mapNotNull { sibling ->
-        sibling.artist.takeIf { albumNamesMatch(sibling.album, resolvedAlbum) }
-    } + proposedArtist
-    val resolvedArtist = if (needsArtistReset && !IdentifyRanking.isPlaceholderArtist(proposedArtist)) {
-        pickPersistedArtistName(bucketArtists, proposedArtist)
-    } else {
-        proposedArtist
-    }
-    val resolvedTitle = when {
-        spuriousArtistMatch && meta.title.isNotBlank() && !IdentifyRanking.isGenericIdentifyTitle(meta.title) -> meta.title
-        wasPlaceholder && fileArtistOk && meta.title.isNotBlank() ->
-            IdentifyRanking.preferBilingualTitle(meta.title, song.title)
-        wasPlaceholder && splitTitle != null -> splitTitle
-        isWeakIdentityTitle(song.artist, song.title) && meta.title.isNotBlank() -> meta.title
-        else -> song.title
-    }
-    val resolvedGenre = if (
-        (needsArtistReset || needsAlbumReset) &&
-        isPlaceholderGenre(song.genre) &&
-        !isPlaceholderGenre(meta.genre)
-    ) {
-        meta.genre
-    } else {
-        song.genre
-    }
+    val proposedArtist =
+        when {
+            needsArtistReset && fileArtistOk -> meta.artist
+            needsArtistReset && splitArtist != null -> splitArtist
+            spuriousArtistMatch -> Song.UNKNOWN_ARTIST
+            else -> song.artist
+        }
+    val proposedAlbum =
+        when {
+            needsAlbumReset && fileAlbumOk -> meta.album
+            spuriousArtistMatch -> Song.UNKNOWN_ALBUM
+            else -> song.album
+        }
+    val resolvedAlbum =
+        if (needsAlbumReset && fileAlbumOk) {
+            pickPersistedAlbumName(
+                library = library,
+                proposedAlbum = proposedAlbum,
+                proposedArtist = proposedArtist,
+                sourceAlbum = song.album,
+                isGeneric = IdentifyRanking::isGenericAlbum,
+            )
+        } else {
+            proposedAlbum
+        }
+    val bucketArtists =
+        library.mapNotNull { sibling ->
+            sibling.artist.takeIf { albumNamesMatch(sibling.album, resolvedAlbum) }
+        } + proposedArtist
+    val resolvedArtist =
+        if (needsArtistReset && !IdentifyRanking.isPlaceholderArtist(proposedArtist)) {
+            pickPersistedArtistName(bucketArtists, proposedArtist)
+        } else {
+            proposedArtist
+        }
+    val resolvedTitle =
+        when {
+            spuriousArtistMatch && meta.title.isNotBlank() && !IdentifyRanking.isGenericIdentifyTitle(meta.title) -> {
+                meta.title
+            }
+
+            wasPlaceholder && fileArtistOk && meta.title.isNotBlank() -> {
+                IdentifyRanking.preferBilingualTitle(meta.title, song.title)
+            }
+
+            wasPlaceholder && splitTitle != null -> {
+                splitTitle
+            }
+
+            isWeakIdentityTitle(song.artist, song.title) && meta.title.isNotBlank() -> {
+                meta.title
+            }
+
+            else -> {
+                song.title
+            }
+        }
+    val resolvedGenre =
+        if (
+            (needsArtistReset || needsAlbumReset) &&
+            isPlaceholderGenre(song.genre) &&
+            !isPlaceholderGenre(meta.genre)
+        ) {
+            meta.genre
+        } else {
+            song.genre
+        }
     val resolvedYear = if (song.year <= 0 && meta.year > 0) meta.year else song.year
-    val resolvedTrack = if (song.trackNumber <= 0 && meta.trackNumber > 0) {
-        meta.trackNumber
-    } else {
-        song.trackNumber
-    }
+    val resolvedTrack =
+        if (song.trackNumber <= 0 && meta.trackNumber > 0) {
+            meta.trackNumber
+        } else {
+            song.trackNumber
+        }
     val fileArt = meta.artworkUri.takeIf { SongPathNormalizer.hasUsableArtwork(it) }
-    val resolvedArtwork = when {
-        spuriousArtistMatch -> fileArt
-        wasPlaceholder && isRemoteCatalogArtwork(song.artworkUri) && fileArt != null -> fileArt
-        !SongPathNormalizer.hasUsableArtwork(song.artworkUri) && fileArt != null -> fileArt
-        else -> song.artworkUri
-    }
+    val resolvedArtwork =
+        when {
+            spuriousArtistMatch -> fileArt
+            wasPlaceholder && isRemoteCatalogArtwork(song.artworkUri) && fileArt != null -> fileArt
+            !SongPathNormalizer.hasUsableArtwork(song.artworkUri) && fileArt != null -> fileArt
+            else -> song.artworkUri
+        }
     val fileLyrics = meta.lyrics?.trim()?.takeIf { it.isNotEmpty() }
-    val resolvedLyrics = when {
-        needsArtistReset && fileLyrics != null -> fileLyrics
-        song.lyrics.isNullOrBlank() && fileLyrics != null -> fileLyrics
-        else -> song.lyrics
-    }
+    val resolvedLyrics =
+        when {
+            needsArtistReset && fileLyrics != null -> fileLyrics
+            song.lyrics.isNullOrBlank() && fileLyrics != null -> fileLyrics
+            else -> song.lyrics
+        }
     return song.copy(
         title = resolvedTitle,
         artist = resolvedArtist,
@@ -128,6 +154,6 @@ fun fillSongGapsFromFileTags(
         year = resolvedYear,
         trackNumber = resolvedTrack,
         artworkUri = resolvedArtwork,
-        lyrics = resolvedLyrics
+        lyrics = resolvedLyrics,
     )
 }

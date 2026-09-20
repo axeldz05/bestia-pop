@@ -22,7 +22,6 @@ import java.io.FileOutputStream
  */
 @OptIn(UnstableApi::class)
 object BestiaPopMediaCache {
-
     private const val MAX_CACHE_BYTES = 150 * 1024 * 1024L // 150 MB
     private const val CACHE_DIR_NAME = "bestiapop_media_cache"
 
@@ -30,8 +29,8 @@ object BestiaPopMediaCache {
     private var simpleCache: SimpleCache? = null
     private val lock = Any()
 
-    fun getCache(context: Context): SimpleCache {
-        return simpleCache ?: synchronized(lock) {
+    fun getCache(context: Context): SimpleCache =
+        simpleCache ?: synchronized(lock) {
             simpleCache ?: run {
                 val cacheDir = File(context.cacheDir, CACHE_DIR_NAME).apply { mkdirs() }
                 val evictor = LeastRecentlyUsedCacheEvictor(MAX_CACHE_BYTES)
@@ -41,7 +40,6 @@ object BestiaPopMediaCache {
                 }
             }
         }
-    }
 
     /**
      * Builds a [CacheDataSource.Factory] wrapping [upstreamFactory] for ExoPlayer.
@@ -50,14 +48,16 @@ object BestiaPopMediaCache {
     fun createCacheDataSourceFactory(
         context: Context,
         upstreamFactory: DataSource.Factory,
-        cacheKey: String? = null
+        cacheKey: String? = null,
     ): CacheDataSource.Factory {
         val cache = getCache(context)
-        val factory = CacheDataSource.Factory()
-            .setCache(cache)
-            .setUpstreamDataSourceFactory(upstreamFactory)
-            .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(cache))
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        val factory =
+            CacheDataSource
+                .Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(upstreamFactory)
+                .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(cache))
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         if (!cacheKey.isNullOrBlank()) {
             factory.setCacheKeyFactory { _ -> cacheKey }
         }
@@ -78,7 +78,7 @@ object BestiaPopMediaCache {
     fun copyCachedPrefixToFile(
         context: Context,
         videoId: String,
-        destination: File
+        destination: File,
     ): Long {
         if (videoId.isBlank()) return 0L
         val cache = getCache(context)
@@ -102,18 +102,22 @@ object BestiaPopMediaCache {
 
         if (contiguousLength <= 0L) return 0L
 
-        val cacheDataSource = CacheDataSource.Factory()
-            .setCache(cache)
-            .setUpstreamDataSourceFactory(null) // No network; cache-only
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-            .createDataSource()
+        val cacheDataSource =
+            CacheDataSource
+                .Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(null) // No network; cache-only
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                .createDataSource()
 
-        val dataSpec = DataSpec.Builder()
-            .setUri("dummy://$key")
-            .setKey(key)
-            .setPosition(0L)
-            .setLength(contiguousLength)
-            .build()
+        val dataSpec =
+            DataSpec
+                .Builder()
+                .setUri("dummy://$key")
+                .setKey(key)
+                .setPosition(0L)
+                .setLength(contiguousLength)
+                .build()
 
         return try {
             cacheDataSource.open(dataSpec)
@@ -147,21 +151,25 @@ object BestiaPopMediaCache {
         position: Long,
         bytes: ByteArray,
         offset: Int,
-        length: Int
+        length: Int,
     ) {
         if (videoId.isBlank() || length <= 0) return
         val cache = getCache(context)
         val key = cacheKey(videoId)
-        val sink = CacheDataSink.Factory()
-            .setCache(cache)
-            .createDataSink()
+        val sink =
+            CacheDataSink
+                .Factory()
+                .setCache(cache)
+                .createDataSink()
 
-        val dataSpec = DataSpec.Builder()
-            .setUri("dummy://$key")
-            .setKey(key)
-            .setPosition(position)
-            .setLength(length.toLong())
-            .build()
+        val dataSpec =
+            DataSpec
+                .Builder()
+                .setUri("dummy://$key")
+                .setKey(key)
+                .setPosition(position)
+                .setLength(length.toLong())
+                .build()
 
         try {
             sink.open(dataSpec)

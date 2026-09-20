@@ -24,7 +24,7 @@ import kotlin.math.roundToInt
 class ReorderDragModifiers(
     val rowModifier: Modifier,
     val handleModifier: Modifier?,
-    val isDragging: Boolean = false
+    val isDragging: Boolean = false,
 )
 
 /**
@@ -39,7 +39,7 @@ fun rememberVerticalReorderDrag(
     reorderCount: Int,
     enabled: Boolean = true,
     onDragStateChanged: ((Boolean) -> Unit)? = null,
-    onReorder: ((from: Int, to: Int) -> Unit)?
+    onReorder: ((from: Int, to: Int) -> Unit)?,
 ): ReorderDragModifiers {
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
@@ -52,50 +52,52 @@ fun rememberVerticalReorderDrag(
     val currentReorderCount by rememberUpdatedState(reorderCount)
     val currentOnDragStateChanged by rememberUpdatedState(onDragStateChanged)
 
-    val rowModifier = if (isDragActive) {
-        measured
-            .zIndex(if (isDragging) 10f else 0f)
-            .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-    } else {
-        measured
-    }
+    val rowModifier =
+        if (isDragActive) {
+            measured
+                .zIndex(if (isDragging) 10f else 0f)
+                .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+        } else {
+            measured
+        }
 
-    val handleModifier = if (isDragActive) {
-        Modifier.pointerInput(isDragActive) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                down.consume()
-                isDragging = true
-                currentOnDragStateChanged?.invoke(true)
-                dragOffsetY = 0f
-                try {
-                    while (true) {
-                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) {
-                            val rowPx = rowHeightPx.takeIf { it > 0 }?.toFloat() ?: 56.dp.toPx()
-                            val deltaSlots = (dragOffsetY / rowPx).roundToInt()
-                            val to = (currentIndex + deltaSlots).coerceIn(0, currentReorderCount - 1)
-                            if (to != currentIndex) {
-                                currentOnReorder?.invoke(currentIndex, to)
-                            }
-                            change.consume()
-                            break
-                        }
-                        val deltaY = change.positionChange().y
-                        dragOffsetY += deltaY
-                        change.consume()
-                    }
-                } finally {
+    val handleModifier =
+        if (isDragActive) {
+            Modifier.pointerInput(isDragActive) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    down.consume()
+                    isDragging = true
+                    currentOnDragStateChanged?.invoke(true)
                     dragOffsetY = 0f
-                    isDragging = false
-                    currentOnDragStateChanged?.invoke(false)
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                val rowPx = rowHeightPx.takeIf { it > 0 }?.toFloat() ?: 56.dp.toPx()
+                                val deltaSlots = (dragOffsetY / rowPx).roundToInt()
+                                val to = (currentIndex + deltaSlots).coerceIn(0, currentReorderCount - 1)
+                                if (to != currentIndex) {
+                                    currentOnReorder?.invoke(currentIndex, to)
+                                }
+                                change.consume()
+                                break
+                            }
+                            val deltaY = change.positionChange().y
+                            dragOffsetY += deltaY
+                            change.consume()
+                        }
+                    } finally {
+                        dragOffsetY = 0f
+                        isDragging = false
+                        currentOnDragStateChanged?.invoke(false)
+                    }
                 }
             }
+        } else {
+            null
         }
-    } else {
-        null
-    }
 
     return ReorderDragModifiers(rowModifier, handleModifier, isDragging)
 }

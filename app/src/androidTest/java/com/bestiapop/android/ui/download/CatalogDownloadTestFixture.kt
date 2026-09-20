@@ -35,12 +35,6 @@ import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.testutil.PcmWavFixture
 import com.bestiapop.android.ui.MusicPlayerViewModel
-import java.io.File
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -51,12 +45,18 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okio.Buffer
 import org.json.JSONObject
+import java.io.File
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 internal data class CatalogFixtureTrack(
     val catalogId: Long,
     val title: String,
     val videoId: String,
-    val trackNumber: Int
+    val trackNumber: Int,
 )
 
 internal object CatalogDownloadTestContract {
@@ -79,20 +79,22 @@ internal object CatalogDownloadTestContract {
     const val EXISTING_DATE_ADDED = 123_456_789L
     const val EXISTING_LAST_PLAYED_AT = 987_654_321L
 
-    val PRIMARY_TRACK = CatalogFixtureTrack(
-        catalogId = 4242L,
-        title = TITLE,
-        videoId = VIDEO_ID,
-        trackNumber = TRACK_NUMBER
-    )
-    val METERED_TRACKS: List<CatalogFixtureTrack> = List(4) { index ->
+    val PRIMARY_TRACK =
         CatalogFixtureTrack(
-            catalogId = 4300L + index,
-            title = "${TITLE}Metered${index + 1}",
-            videoId = "Bm$index${token.take(8)}",
-            trackNumber = index + 1
+            catalogId = 4242L,
+            title = TITLE,
+            videoId = VIDEO_ID,
+            trackNumber = TRACK_NUMBER,
         )
-    }
+    val METERED_TRACKS: List<CatalogFixtureTrack> =
+        List(4) { index ->
+            CatalogFixtureTrack(
+                catalogId = 4300L + index,
+                title = "${TITLE}Metered${index + 1}",
+                videoId = "Bm$index${token.take(8)}",
+                trackNumber = index + 1,
+            )
+        }
     val ALL_TRACKS = listOf(PRIMARY_TRACK) + METERED_TRACKS
 
     fun downloadIdFor(title: String): String = TrackMatchKeys.downloadIdFor(ARTIST, title)
@@ -102,8 +104,7 @@ internal object CatalogDownloadTestContract {
         return "$sanitized.wav"
     }
 
-    fun owns(song: Song): Boolean =
-        song.artist == ARTIST && song.title.contains(token)
+    fun owns(song: Song): Boolean = song.artist == ARTIST && song.title.contains(token)
 
     fun owns(file: File): Boolean = file.name.contains(token)
 }
@@ -121,7 +122,7 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         GATED_SUCCESS,
         PARTIAL_CANCELLATION,
         FORBIDDEN_THEN_RECOVERY,
-        METERED_AFTER_PERMIT
+        METERED_AFTER_PERMIT,
     }
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -162,25 +163,29 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         server.start()
 
         val localBaseUrl = server.url("/").toString()
-        val localClient = OkHttpClient.Builder()
-            .connectTimeout(2, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.SECONDS)
-            .callTimeout(7, TimeUnit.SECONDS)
-            .build()
+        val localClient =
+            OkHttpClient
+                .Builder()
+                .connectTimeout(2, TimeUnit.SECONDS)
+                .readTimeout(5, TimeUnit.SECONDS)
+                .callTimeout(7, TimeUnit.SECONDS)
+                .build()
         MetadataFetcher.configureForTest(
             http = localClient,
-            endpoints = MetadataFetcherEndpoints(
-                deezerBaseUrl = localBaseUrl,
-                itunesBaseUrl = localBaseUrl,
-                lyricsBaseUrl = localBaseUrl
-            )
+            endpoints =
+                MetadataFetcherEndpoints(
+                    deezerBaseUrl = localBaseUrl,
+                    itunesBaseUrl = localBaseUrl,
+                    lyricsBaseUrl = localBaseUrl,
+                ),
         )
         YouTubeExtractor.configureForTest(
             http = localClient,
-            endpoints = YouTubeEndpoints(
-                webBaseUrl = localBaseUrl,
-                googleApiBaseUrl = localBaseUrl
-            )
+            endpoints =
+                YouTubeEndpoints(
+                    webBaseUrl = localBaseUrl,
+                    googleApiBaseUrl = localBaseUrl,
+                ),
         )
 
         runBlocking {
@@ -202,9 +207,10 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
     }
 
     fun launchMainActivity() {
-        scenario = ActivityScenario.launch(MainActivity::class.java).also {
-            it.moveToState(Lifecycle.State.RESUMED)
-        }
+        scenario =
+            ActivityScenario.launch(MainActivity::class.java).also {
+                it.moveToState(Lifecycle.State.RESUMED)
+            }
     }
 
     fun destroyMainActivity() {
@@ -215,12 +221,13 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
     fun seedInterruptedPrimaryDownload() {
         val track = CatalogDownloadTestContract.PRIMARY_TRACK.toOnlineCatalogTrack()
         application.processDownloads.upsert(
-            ActiveDownload.queued(
-                id = CatalogDownloadTestContract.DOWNLOAD_ID,
-                source = ActiveDownloadSource.CATALOG,
-                candidates = listOf(track),
-                lookupIdentity = track.identity
-            ).asError(DownloadMessages.interrupted, interrupted = true)
+            ActiveDownload
+                .queued(
+                    id = CatalogDownloadTestContract.DOWNLOAD_ID,
+                    source = ActiveDownloadSource.CATALOG,
+                    candidates = listOf(track),
+                    lookupIdentity = track.identity,
+                ).asError(DownloadMessages.interrupted, interrupted = true),
         )
     }
 
@@ -267,29 +274,31 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         ConnectivityObserver.configureForTest(currentlyOnline = true, metered = false)
     }
 
-    fun seedExistingSong(): Song = runBlocking {
-        val pending = audioStore.prepareWrite(CatalogDownloadTestContract.EXISTING_FILE_NAME)
-        pending.stagingFile.writeBytes(originalAudioBytes)
-        val published = audioStore.canonicalize(pending.publish())
-        val original = Song(
-            uriString = published.uriString,
-            title = CatalogDownloadTestContract.TITLE,
-            artist = CatalogDownloadTestContract.ARTIST,
-            album = "Original private album",
-            genre = CatalogDownloadTestContract.EXISTING_GENRE,
-            durationMs = 1_500L,
-            year = CatalogDownloadTestContract.EXISTING_YEAR,
-            trackNumber = 9,
-            artworkUri = "file:///private-fixture-cover.jpg",
-            lyrics = CatalogDownloadTestContract.EXISTING_LYRICS,
-            folderPath = published.folderPath,
-            dateAdded = CatalogDownloadTestContract.EXISTING_DATE_ADDED,
-            lastPlayedAt = CatalogDownloadTestContract.EXISTING_LAST_PLAYED_AT
-        )
-        val id = musicDao.insertSong(original)
-        check(id > 0L) { "Could not seed duplicate fixture Song. ${diagnostic()}" }
-        original.copy(id = id)
-    }
+    fun seedExistingSong(): Song =
+        runBlocking {
+            val pending = audioStore.prepareWrite(CatalogDownloadTestContract.EXISTING_FILE_NAME)
+            pending.stagingFile.writeBytes(originalAudioBytes)
+            val published = audioStore.canonicalize(pending.publish())
+            val original =
+                Song(
+                    uriString = published.uriString,
+                    title = CatalogDownloadTestContract.TITLE,
+                    artist = CatalogDownloadTestContract.ARTIST,
+                    album = "Original private album",
+                    genre = CatalogDownloadTestContract.EXISTING_GENRE,
+                    durationMs = 1_500L,
+                    year = CatalogDownloadTestContract.EXISTING_YEAR,
+                    trackNumber = 9,
+                    artworkUri = "file:///private-fixture-cover.jpg",
+                    lyrics = CatalogDownloadTestContract.EXISTING_LYRICS,
+                    folderPath = published.folderPath,
+                    dateAdded = CatalogDownloadTestContract.EXISTING_DATE_ADDED,
+                    lastPlayedAt = CatalogDownloadTestContract.EXISTING_LAST_PLAYED_AT,
+                )
+            val id = musicDao.insertSong(original)
+            check(id > 0L) { "Could not seed duplicate fixture Song. ${diagnostic()}" }
+            original.copy(id = id)
+        }
 
     fun releaseAudioDownload() {
         releaseByVideoId[CatalogDownloadTestContract.VIDEO_ID]?.countDown()
@@ -316,10 +325,11 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         awaitLatch(expectedAudioRequests, "partial audio request")
         val deadline = android.os.SystemClock.elapsedRealtime() + NETWORK_BOUNDARY_TIMEOUT_MS
         while (android.os.SystemClock.elapsedRealtime() < deadline) {
-            val partial = context.cacheDir.listFiles().orEmpty().firstOrNull {
-                CatalogDownloadTestContract.owns(it) &&
-                    it.length() in 1 until newAudioBytes.size.toLong()
-            }
+            val partial =
+                context.cacheDir.listFiles().orEmpty().firstOrNull {
+                    CatalogDownloadTestContract.owns(it) &&
+                        it.length() in 1 until newAudioBytes.size.toLong()
+                }
             if (partial != null) return
             android.os.SystemClock.sleep(25L)
         }
@@ -337,9 +347,10 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
     fun awaitCancellationFinished() {
         val deadline = android.os.SystemClock.elapsedRealtime() + CLEANUP_TIMEOUT_MS
         while (android.os.SystemClock.elapsedRealtime() < deadline) {
-            val partialExists = context.cacheDir.listFiles().orEmpty().any {
-                CatalogDownloadTestContract.owns(it) && it.length() > 0L
-            }
+            val partialExists =
+                context.cacheDir.listFiles().orEmpty().any {
+                    CatalogDownloadTestContract.owns(it) && it.length() > 0L
+                }
             if (!partialExists) break
             android.os.SystemClock.sleep(25L)
         }
@@ -348,16 +359,21 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         }
     }
 
-    fun isDownloadingAt(percent: Int, title: String = CatalogDownloadTestContract.TITLE): Boolean =
+    fun isDownloadingAt(
+        percent: Int,
+        title: String = CatalogDownloadTestContract.TITLE,
+    ): Boolean =
         fixtureDownload(title)?.let {
             it.state == CandidateDownloadState.DOWNLOADING &&
                 it.progressPercent == percent
         } == true
 
-    fun isQueued(title: String): Boolean =
-        fixtureDownload(title)?.state == CandidateDownloadState.QUEUED
+    fun isQueued(title: String): Boolean = fixtureDownload(title)?.state == CandidateDownloadState.QUEUED
 
-    fun isError(title: String, expectedMessage: String? = null): Boolean =
+    fun isError(
+        title: String,
+        expectedMessage: String? = null,
+    ): Boolean =
         fixtureDownload(title)?.let {
             it.state == CandidateDownloadState.ERROR &&
                 (expectedMessage == null || it.errorMessage == expectedMessage)
@@ -375,7 +391,7 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
             !application.processDownloads.isRunning(
                 CatalogDownloadTestContract.downloadIdFor(title),
                 CatalogDownloadTestContract.ARTIST,
-                title
+                title,
             )
 
     fun audioRequestCount(title: String = CatalogDownloadTestContract.TITLE): Int {
@@ -420,10 +436,12 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
 
     fun verifySaveAs(existing: Song) {
         val rows = runBlocking { fixtureSongs() }
-        val original = rows.singleOrNull { it.id == existing.id }
-            ?: error("Save As removed the original Song. ${diagnostic()}")
-        val copy = rows.singleOrNull { it.title == CatalogDownloadTestContract.SAVE_AS_TITLE }
-            ?: error("Save As copy missing. ${diagnostic()}")
+        val original =
+            rows.singleOrNull { it.id == existing.id }
+                ?: error("Save As removed the original Song. ${diagnostic()}")
+        val copy =
+            rows.singleOrNull { it.title == CatalogDownloadTestContract.SAVE_AS_TITLE }
+                ?: error("Save As copy missing. ${diagnostic()}")
         check(rows.size == 2) { "Save As expected two fixture Songs, found ${rows.size}" }
         check(original.id == existing.id)
         check(original.title == CatalogDownloadTestContract.TITLE)
@@ -433,7 +451,7 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         verifySongFile(
             copy,
             CatalogDownloadTestContract.fileNameFor(CatalogDownloadTestContract.SAVE_AS_TITLE),
-            newAudioBytes
+            newAudioBytes,
         )
         check(fileFor(original).absolutePath != fileFor(copy).absolutePath) {
             "Save As reused the original file"
@@ -441,8 +459,9 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
     }
 
     fun verifyOriginalUnchanged(existing: Song) {
-        val current = runBlocking { musicDao.getSongById(existing.id) }
-            ?: error("Original duplicate Song disappeared. ${diagnostic()}")
+        val current =
+            runBlocking { musicDao.getSongById(existing.id) }
+                ?: error("Original duplicate Song disappeared. ${diagnostic()}")
         check(current == existing) {
             "Original duplicate Song changed after cancel.\nexpected=$existing\nactual=$current"
         }
@@ -460,9 +479,11 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         check(audioStore.listManaged().none { it.name == expectedName }) {
             "Unexpected published file $expectedName. ${diagnostic()}"
         }
-        check(context.cacheDir.listFiles().orEmpty().none { file ->
-            CatalogDownloadTestContract.owns(file) && file.length() > 0L
-        }) {
+        check(
+            context.cacheDir.listFiles().orEmpty().none { file ->
+                CatalogDownloadTestContract.owns(file) && file.length() > 0L
+            },
+        ) {
             "Unexpected namespaced staging partial. ${diagnostic()}"
         }
     }
@@ -479,29 +500,35 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
     }
 
     fun diagnostic(): String {
-        val rows = application.processDownloads.downloads.value
-            .filter { download ->
-                download.artist == CatalogDownloadTestContract.ARTIST ||
-                    download.title.contains("BestiaPopFixture")
+        val rows =
+            application.processDownloads.downloads.value
+                .filter { download ->
+                    download.artist == CatalogDownloadTestContract.ARTIST ||
+                        download.title.contains("BestiaPopFixture")
+                }.joinToString {
+                    "${it.id}:${it.displayLabel}:${it.state}:${it.progressPercent}:" +
+                        it.errorMessage.orEmpty()
+                }
+        val songs =
+            runCatching {
+                runBlocking { fixtureSongs() }
+                    .joinToString { "${it.id}:${it.title}:${it.uriString}" }
+            }.getOrElse { "Room diagnostic failed: ${it.message}" }
+        val requests =
+            CatalogDownloadTestContract.ALL_TRACKS.joinToString {
+                "${it.title}=${audioRequestCounts[it.videoId]?.get() ?: 0}"
             }
-            .joinToString {
-                "${it.id}:${it.displayLabel}:${it.state}:${it.progressPercent}:" +
-                    it.errorMessage.orEmpty()
-            }
-        val songs = runCatching {
-            runBlocking { fixtureSongs() }
-                .joinToString { "${it.id}:${it.title}:${it.uriString}" }
-        }.getOrElse { "Room diagnostic failed: ${it.message}" }
-        val requests = CatalogDownloadTestContract.ALL_TRACKS.joinToString {
-            "${it.title}=${audioRequestCounts[it.videoId]?.get() ?: 0}"
-        }
-        val managed = audioStore.listManaged()
-            .filter(CatalogDownloadTestContract::owns)
-            .joinToString { "${it.name}:${it.length()}" }
-        val cache = context.cacheDir.listFiles()
-            .orEmpty()
-            .filter(CatalogDownloadTestContract::owns)
-            .joinToString { "${it.name}:${it.length()}" }
+        val managed =
+            audioStore
+                .listManaged()
+                .filter(CatalogDownloadTestContract::owns)
+                .joinToString { "${it.name}:${it.length()}" }
+        val cache =
+            context.cacheDir
+                .listFiles()
+                .orEmpty()
+                .filter(CatalogDownloadTestContract::owns)
+                .joinToString { "${it.name}:${it.length()}" }
         return "scenario=$audioScenario, downloads=[$rows], fixtureSongs=[$songs], " +
             "audioRequests=[$requests], managed=[$managed], cache=[$cache], " +
             "server=${server.hostName}:${server.port}"
@@ -509,10 +536,14 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
 
     override fun close() {
         var firstFailure: Throwable? = null
+
         fun cleanup(block: () -> Unit) {
             runCatching(block).exceptionOrNull()?.let { failure ->
-                if (firstFailure == null) firstFailure = failure
-                else firstFailure?.addSuppressed(failure)
+                if (firstFailure == null) {
+                    firstFailure = failure
+                } else {
+                    firstFailure?.addSuppressed(failure)
+                }
             }
         }
 
@@ -529,7 +560,8 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         }
         cleanup { notificationHelper.cancel() }
         cleanup {
-            context.getSystemService(NotificationManager::class.java)
+            context
+                .getSystemService(NotificationManager::class.java)
                 .cancel(DownloadNotificationHelper.NOTIFICATION_ID)
         }
         cleanup {
@@ -568,15 +600,16 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
 
     private fun CatalogFixtureTrack.toOnlineCatalogTrack(): OnlineCatalogTrack =
         OnlineCatalogTrack(
-            identity = TrackIdentity(
-                title = title,
-                artist = CatalogDownloadTestContract.ARTIST,
-                album = CatalogDownloadTestContract.ALBUM,
-                durationMs = 3_000L,
-                trackNumber = trackNumber
-            ),
+            identity =
+                TrackIdentity(
+                    title = title,
+                    artist = CatalogDownloadTestContract.ARTIST,
+                    album = CatalogDownloadTestContract.ALBUM,
+                    durationMs = 3_000L,
+                    trackNumber = trackNumber,
+                ),
             id = catalogId.toString(),
-            provider = "Deezer"
+            provider = "Deezer",
         )
 
     private fun setDownloadOnMeteredAllowed(allowed: Boolean) {
@@ -594,7 +627,10 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         }
     }
 
-    private fun awaitLatch(latch: CountDownLatch, description: String) {
+    private fun awaitLatch(
+        latch: CountDownLatch,
+        description: String,
+    ) {
         check(latch.await(NETWORK_BOUNDARY_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
             "Timed out waiting for $description. ${diagnostic()}"
         }
@@ -612,36 +648,40 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
                 error("Unknown fixture title $title")
             }
 
-    private suspend fun fixtureSongs(): List<Song> =
-        repository.getAllSongsSync().filter(CatalogDownloadTestContract::owns)
+    private suspend fun fixtureSongs(): List<Song> = repository.getAllSongsSync().filter(CatalogDownloadTestContract::owns)
 
-    private fun fixtureDownload(title: String) = application.processDownloads.findByTrack(
-        downloadId = CatalogDownloadTestContract.downloadIdFor(title),
-        artist = CatalogDownloadTestContract.ARTIST,
-        title = title
-    )
+    private fun fixtureDownload(title: String) =
+        application.processDownloads.findByTrack(
+            downloadId = CatalogDownloadTestContract.downloadIdFor(title),
+            artist = CatalogDownloadTestContract.ARTIST,
+            title = title,
+        )
 
     private suspend fun cancelFixtureDownloads() {
-        val ids = buildSet {
-            add(CatalogDownloadTestContract.DOWNLOAD_ID)
-            CatalogDownloadTestContract.METERED_TRACKS.forEach {
-                add(CatalogDownloadTestContract.downloadIdFor(it.title))
-            }
-            application.processDownloads.downloads.value
-                .filter { download ->
-                    download.artist == CatalogDownloadTestContract.ARTIST ||
-                        download.title.contains("BestiaPopFixture")
+        val ids =
+            buildSet {
+                add(CatalogDownloadTestContract.DOWNLOAD_ID)
+                CatalogDownloadTestContract.METERED_TRACKS.forEach {
+                    add(CatalogDownloadTestContract.downloadIdFor(it.title))
                 }
-                .mapTo(this) { it.id }
-        }
+                application.processDownloads.downloads.value
+                    .filter { download ->
+                        download.artist == CatalogDownloadTestContract.ARTIST ||
+                            download.title.contains("BestiaPopFixture")
+                    }.mapTo(this) { it.id }
+            }
         ids.forEach { application.processDownloads.cancelAndJoin(it) }
     }
 
     private suspend fun deleteFixtureArtifacts() {
         var firstFailure: Throwable? = null
+
         fun recordFailure(failure: Throwable) {
-            if (firstFailure == null) firstFailure = failure
-            else firstFailure?.addSuppressed(failure)
+            if (firstFailure == null) {
+                firstFailure = failure
+            } else {
+                firstFailure?.addSuppressed(failure)
+            }
         }
 
         runCatching {
@@ -649,7 +689,8 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
             if (rows.isNotEmpty()) repository.deleteSongsFromDevice(rows)
         }.exceptionOrNull()?.let(::recordFailure)
 
-        audioStore.listManaged()
+        audioStore
+            .listManaged()
             .filter(CatalogDownloadTestContract::owns)
             .forEach { file ->
                 runCatching {
@@ -657,7 +698,8 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
                 }.exceptionOrNull()?.let(::recordFailure)
             }
 
-        context.cacheDir.listFiles()
+        context.cacheDir
+            .listFiles()
             .orEmpty()
             .filter(CatalogDownloadTestContract::owns)
             .forEach { file ->
@@ -680,13 +722,18 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
 
     private fun readSongBytes(song: Song): ByteArray {
         val ref = audioStore.canonicalize(song.uriString, song.folderPath)
-        val descriptor = checkNotNull(audioStore.openRead(ref)) {
-            "Stored fixture audio cannot be opened: $ref"
-        }
+        val descriptor =
+            checkNotNull(audioStore.openRead(ref)) {
+                "Stored fixture audio cannot be opened: $ref"
+            }
         return ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { it.readBytes() }
     }
 
-    private fun verifySongFile(song: Song, expectedFileName: String, expectedBytes: ByteArray) {
+    private fun verifySongFile(
+        song: Song,
+        expectedFileName: String,
+        expectedBytes: ByteArray,
+    ) {
         check(SongPathNormalizer.fileName(song.uriString, song.folderPath) == expectedFileName) {
             "Unexpected stored filename: uri=${song.uriString}, folder=${song.folderPath}"
         }
@@ -697,16 +744,17 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
     }
 
     private fun grantStartupPermissions() {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            listOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+        val permissions =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                listOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
         permissions.forEach { permission ->
             if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_DENIED) {
                 instrumentation.uiAutomation.grantRuntimePermission(
                     context.packageName,
-                    permission
+                    permission,
                 )
             }
         }
@@ -716,31 +764,66 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         override fun dispatch(request: RecordedRequest): MockResponse {
             val path = request.requestUrl?.encodedPath.orEmpty()
             return when {
-                path == "/search" -> catalogSearchResponse(request)
-                path in setOf("/search/album", "/search/playlist", "/search/artist", "/search/track") ->
+                path == "/search" -> {
+                    catalogSearchResponse(request)
+                }
+
+                path in setOf("/search/album", "/search/playlist", "/search/artist", "/search/track") -> {
                     jsonResponse("""{"data":[]}""")
-                path == "/api/get" -> MockResponse().setResponseCode(404)
-                path == "/api/search" -> jsonResponse("[]")
-                path == "/youtubei/v1/search" -> youtubeSearchResponse(request)
-                path == "/youtubei/v1/player" -> youtubePlayerResponse(request)
-                path == "/watch" -> MockResponse()
-                    .setResponseCode(200)
-                    .setBody("""<html>"visitorData":"fixture-visitor"</html>""")
-                path.startsWith("/audio/") -> audioResponse(path)
-                path in setOf("/cover.jpg", "/results") -> MockResponse().setResponseCode(404)
-                else -> MockResponse().setResponseCode(404)
+                }
+
+                path == "/api/get" -> {
+                    MockResponse().setResponseCode(404)
+                }
+
+                path == "/api/search" -> {
+                    jsonResponse("[]")
+                }
+
+                path == "/youtubei/v1/search" -> {
+                    youtubeSearchResponse(request)
+                }
+
+                path == "/youtubei/v1/player" -> {
+                    youtubePlayerResponse(request)
+                }
+
+                path == "/watch" -> {
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setBody("""<html>"visitorData":"fixture-visitor"</html>""")
+                }
+
+                path.startsWith("/audio/") -> {
+                    audioResponse(path)
+                }
+
+                path in setOf("/cover.jpg", "/results") -> {
+                    MockResponse().setResponseCode(404)
+                }
+
+                else -> {
+                    MockResponse().setResponseCode(404)
+                }
             }
         }
 
         private fun catalogSearchResponse(request: RecordedRequest): MockResponse {
             val url = request.requestUrl
-            val tracks = when (url?.queryParameter("q")) {
-                CatalogDownloadTestContract.SEARCH_QUERY ->
-                    listOf(CatalogDownloadTestContract.PRIMARY_TRACK)
-                CatalogDownloadTestContract.METERED_SEARCH_QUERY ->
-                    CatalogDownloadTestContract.METERED_TRACKS
-                else -> emptyList()
-            }
+            val tracks =
+                when (url?.queryParameter("q")) {
+                    CatalogDownloadTestContract.SEARCH_QUERY -> {
+                        listOf(CatalogDownloadTestContract.PRIMARY_TRACK)
+                    }
+
+                    CatalogDownloadTestContract.METERED_SEARCH_QUERY -> {
+                        CatalogDownloadTestContract.METERED_TRACKS
+                    }
+
+                    else -> {
+                        emptyList()
+                    }
+                }
             return when {
                 tracks.isNotEmpty() -> jsonResponse(catalogSearchJson(tracks))
                 url?.queryParameter("term") != null -> jsonResponse("""{"results":[]}""")
@@ -749,15 +832,17 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         }
 
         private fun youtubeSearchResponse(request: RecordedRequest): MockResponse {
-            val query = runCatching {
-                JSONObject(request.body.readUtf8()).optString("query")
-            }.getOrDefault("")
-            val track = CatalogDownloadTestContract.ALL_TRACKS.firstOrNull {
-                query == "${CatalogDownloadTestContract.ARTIST} ${it.title}"
-            } ?: CatalogDownloadTestContract.PRIMARY_TRACK.takeIf {
-                query == "${CatalogDownloadTestContract.ARTIST} " +
-                    CatalogDownloadTestContract.SAVE_AS_TITLE
-            }
+            val query =
+                runCatching {
+                    JSONObject(request.body.readUtf8()).optString("query")
+                }.getOrDefault("")
+            val track =
+                CatalogDownloadTestContract.ALL_TRACKS.firstOrNull {
+                    query == "${CatalogDownloadTestContract.ARTIST} ${it.title}"
+                } ?: CatalogDownloadTestContract.PRIMARY_TRACK.takeIf {
+                    query == "${CatalogDownloadTestContract.ARTIST} " +
+                        CatalogDownloadTestContract.SAVE_AS_TITLE
+                }
             return if (track != null) {
                 jsonResponse(youtubeSearchJson(track))
             } else {
@@ -766,29 +851,33 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         }
 
         private fun youtubePlayerResponse(request: RecordedRequest): MockResponse {
-            val videoId = runCatching {
-                JSONObject(request.body.readUtf8()).optString("videoId")
-            }.getOrDefault("")
-            val track = CatalogDownloadTestContract.ALL_TRACKS.firstOrNull {
-                it.videoId == videoId
-            } ?: return jsonResponse(
-                """{"playabilityStatus":{"status":"ERROR","reason":"fixture only"}}"""
-            )
+            val videoId =
+                runCatching {
+                    JSONObject(request.body.readUtf8()).optString("videoId")
+                }.getOrDefault("")
+            val track =
+                CatalogDownloadTestContract.ALL_TRACKS.firstOrNull {
+                    it.videoId == videoId
+                } ?: return jsonResponse(
+                    """{"playabilityStatus":{"status":"ERROR","reason":"fixture only"}}""",
+                )
             val audioUrl = server.url("/audio/${track.videoId}.wav").toString()
             return jsonResponse(youtubePlayerJson(track, audioUrl))
         }
 
         private fun audioResponse(path: String): MockResponse {
             val videoId = path.substringAfterLast('/').substringBeforeLast('.')
-            val track = CatalogDownloadTestContract.ALL_TRACKS.firstOrNull {
-                it.videoId == videoId
-            } ?: return MockResponse().setResponseCode(404)
+            val track =
+                CatalogDownloadTestContract.ALL_TRACKS.firstOrNull {
+                    it.videoId == videoId
+                } ?: return MockResponse().setResponseCode(404)
             audioRequestCounts.computeIfAbsent(videoId) { AtomicInteger() }.incrementAndGet()
             return when (audioScenario) {
                 AudioScenario.GATED_SUCCESS -> {
                     expectedAudioRequests.countDown()
                     gatedSuccessResponse(track)
                 }
+
                 AudioScenario.PARTIAL_CANCELLATION -> {
                     expectedAudioRequests.countDown()
                     MockResponse()
@@ -798,9 +887,10 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
                         .throttleBody(
                             PARTIAL_CHUNK_BYTES,
                             PARTIAL_CHUNK_PERIOD_SECONDS,
-                            TimeUnit.SECONDS
+                            TimeUnit.SECONDS,
                         )
                 }
+
                 AudioScenario.FORBIDDEN_THEN_RECOVERY -> {
                     if (forbiddenRecovered) {
                         successResponse()
@@ -809,6 +899,7 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
                         MockResponse().setResponseCode(403).setBody("expired fixture CDN")
                     }
                 }
+
                 AudioScenario.METERED_AFTER_PERMIT -> {
                     if (track in CatalogDownloadTestContract.METERED_TRACKS.take(3)) {
                         expectedAudioRequests.countDown()
@@ -821,10 +912,11 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         }
 
         private fun gatedSuccessResponse(track: CatalogFixtureTrack): MockResponse {
-            val released = releaseByVideoId[track.videoId]?.await(
-                NETWORK_BOUNDARY_TIMEOUT_MS,
-                TimeUnit.MILLISECONDS
-            ) == true
+            val released =
+                releaseByVideoId[track.videoId]?.await(
+                    NETWORK_BOUNDARY_TIMEOUT_MS,
+                    TimeUnit.MILLISECONDS,
+                ) == true
             return if (released) {
                 successResponse()
             } else {
@@ -834,31 +926,34 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
             }
         }
 
-        private fun successResponse(): MockResponse = MockResponse()
-            .setResponseCode(200)
-            .setHeader("Content-Type", "audio/wav")
-            .setBody(Buffer().write(newAudioBytes))
+        private fun successResponse(): MockResponse =
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "audio/wav")
+                .setBody(Buffer().write(newAudioBytes))
 
         private fun catalogSearchJson(tracks: List<CatalogFixtureTrack>): String {
-            val data = tracks.joinToString(",") { track ->
-                """
-                {
-                  "id": ${track.catalogId},
-                  "title": "${track.title}",
-                  "duration": 3,
-                  "track_position": ${track.trackNumber},
-                  "artist": {"name": "${CatalogDownloadTestContract.ARTIST}"},
-                  "album": {
-                    "title": "${CatalogDownloadTestContract.ALBUM}",
-                    "cover_xl": "${server.url("/cover.jpg")}"
-                  }
+            val data =
+                tracks.joinToString(",") { track ->
+                    """
+                    {
+                      "id": ${track.catalogId},
+                      "title": "${track.title}",
+                      "duration": 3,
+                      "track_position": ${track.trackNumber},
+                      "artist": {"name": "${CatalogDownloadTestContract.ARTIST}"},
+                      "album": {
+                        "title": "${CatalogDownloadTestContract.ALBUM}",
+                        "cover_xl": "${server.url("/cover.jpg")}"
+                      }
+                    }
+                    """.trimIndent()
                 }
-                """.trimIndent()
-            }
             return """{"data":[$data]}"""
         }
 
-        private fun youtubeSearchJson(track: CatalogFixtureTrack): String = """
+        private fun youtubeSearchJson(track: CatalogFixtureTrack): String =
+            """
             {
               "contents": {
                 "sectionListRenderer": {
@@ -877,9 +972,13 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
                 }
               }
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        private fun youtubePlayerJson(track: CatalogFixtureTrack, audioUrl: String): String = """
+        private fun youtubePlayerJson(
+            track: CatalogFixtureTrack,
+            audioUrl: String,
+        ): String =
+            """
             {
               "playabilityStatus": {"status": "OK"},
               "videoDetails": {
@@ -895,12 +994,13 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
                 }]
               }
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        private fun jsonResponse(body: String): MockResponse = MockResponse()
-            .setResponseCode(200)
-            .setHeader("Content-Type", "application/json")
-            .setBody(body)
+        private fun jsonResponse(body: String): MockResponse =
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(body)
     }
 
     private companion object {

@@ -42,7 +42,7 @@ import com.bestiapop.android.data.model.ColorSchemeData
 fun ColorPickerDialog(
     initialColors: ColorSchemeData,
     onDismiss: () -> Unit,
-    onConfirm: (ColorSchemeData) -> Unit
+    onConfirm: (ColorSchemeData) -> Unit,
 ) {
     var primaryColor by remember { mutableStateOf(Color(initialColors.primary)) }
     var backgroundColor by remember { mutableStateOf(Color(initialColors.background)) }
@@ -51,18 +51,28 @@ fun ColorPickerDialog(
 
     var activeTarget by remember { mutableStateOf("Primary") }
 
-    val presetSwatches = listOf(
-        Color(0xFF9D4EDD), Color(0xFFFF9E00), Color(0xFF00F5D4), Color(0xFFE63946),
-        Color(0xFF457B9D), Color(0xFF2A9D8F), Color(0xFFF4A261), Color(0xFFE76F51),
-        Color(0xFF0F0C1B), Color(0xFF000000), Color(0xFF1A0B2E), Color(0xFFF6F8FA)
-    )
+    val presetSwatches =
+        listOf(
+            Color(0xFF9D4EDD),
+            Color(0xFFFF9E00),
+            Color(0xFF00F5D4),
+            Color(0xFFE63946),
+            Color(0xFF457B9D),
+            Color(0xFF2A9D8F),
+            Color(0xFFF4A261),
+            Color(0xFFE76F51),
+            Color(0xFF0F0C1B),
+            Color(0xFF000000),
+            Color(0xFF1A0B2E),
+            Color(0xFFF6F8FA),
+        )
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
                 text = "Personalizar Colores del Tema",
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
             )
         },
         text = {
@@ -70,14 +80,14 @@ fun ColorPickerDialog(
                 Text(
                     text = "Seleccioná el elemento a modificar:",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     TargetChip("Primary", primaryColor, activeTarget == "Primary") { activeTarget = "Primary" }
                     TargetChip("Fondo", backgroundColor, activeTarget == "Fondo") { activeTarget = "Fondo" }
@@ -87,44 +97,45 @@ fun ColorPickerDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                val currentColor = when (activeTarget) {
-                    "Primary" -> primaryColor
-                    "Fondo" -> backgroundColor
-                    "Superficie" -> surfaceColor
-                    else -> accentColor
-                }
+                val currentColor =
+                    when (activeTarget) {
+                        "Primary" -> primaryColor
+                        "Fondo" -> backgroundColor
+                        "Superficie" -> surfaceColor
+                        else -> accentColor
+                    }
 
                 Text(
                     text = "Seleccionar Color ($activeTarget):",
                     style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     items(presetSwatches) { swatch ->
                         Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(swatch)
-                                .border(
-                                    width = if (currentColor == swatch) 3.dp else 1.dp,
-                                    color = if (currentColor == swatch) MaterialTheme.colorScheme.primary else Color.Gray,
-                                    shape = CircleShape
-                                )
-                                .clickable {
-                                    when (activeTarget) {
-                                        "Primary" -> primaryColor = swatch
-                                        "Fondo" -> backgroundColor = swatch
-                                        "Superficie" -> surfaceColor = swatch
-                                        "Acento" -> accentColor = swatch
-                                    }
-                                }
+                            modifier =
+                                Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(swatch)
+                                    .border(
+                                        width = if (currentColor == swatch) 3.dp else 1.dp,
+                                        color = if (currentColor == swatch) MaterialTheme.colorScheme.primary else Color.Gray,
+                                        shape = CircleShape,
+                                    ).clickable {
+                                        when (activeTarget) {
+                                            "Primary" -> primaryColor = swatch
+                                            "Fondo" -> backgroundColor = swatch
+                                            "Superficie" -> surfaceColor = swatch
+                                            "Acento" -> accentColor = swatch
+                                        }
+                                    },
                         )
                     }
                 }
@@ -133,17 +144,18 @@ fun ColorPickerDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val updatedData = ColorSchemeData(
-                        primary = primaryColor.toArgb().toLong(),
-                        onPrimary = 0xFFFFFFFF,
-                        secondary = accentColor.toArgb().toLong(),
-                        background = backgroundColor.toArgb().toLong(),
-                        surface = surfaceColor.toArgb().toLong(),
-                        surfaceVariant = surfaceColor.toArgb().toLong(),
-                        accent = accentColor.toArgb().toLong()
-                    )
+                    val updatedData =
+                        ColorSchemeData(
+                            primary = primaryColor.toArgb().toLong(),
+                            onPrimary = 0xFFFFFFFF,
+                            secondary = accentColor.toArgb().toLong(),
+                            background = backgroundColor.toArgb().toLong(),
+                            surface = surfaceColor.toArgb().toLong(),
+                            surfaceVariant = surfaceColor.toArgb().toLong(),
+                            accent = accentColor.toArgb().toLong(),
+                        )
                     onConfirm(updatedData)
-                }
+                },
             ) {
                 Text("Guardar Tema")
             }
@@ -152,7 +164,7 @@ fun ColorPickerDialog(
             OutlinedButton(onClick = onDismiss) {
                 Text("Cancelar")
             }
-        }
+        },
     )
 }
 
@@ -161,29 +173,30 @@ private fun TargetChip(
     label: String,
     color: Color,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     Surface(
         color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(8.dp),
         border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
-        modifier = Modifier.clickable { onClick() }
+        modifier = Modifier.clickable { onClick() },
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier = Modifier
-                    .size(14.dp)
-                    .clip(CircleShape)
-                    .background(color)
+                modifier =
+                    Modifier
+                        .size(14.dp)
+                        .clip(CircleShape)
+                        .background(color),
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
     }

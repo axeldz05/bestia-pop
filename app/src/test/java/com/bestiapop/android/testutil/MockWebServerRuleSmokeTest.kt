@@ -18,17 +18,20 @@ class MockWebServerRuleSmokeTest {
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
-                .setBody("""{"status":"ok"}""")
+                .setBody("""{"status":"ok"}"""),
         )
 
-        OkHttpClient().newCall(
-            Request.Builder()
-                .url(server.url("/health"))
-                .build()
-        ).execute().use { response ->
-            assertEquals(200, response.code)
-            assertEquals("""{"status":"ok"}""", response.body?.string())
-        }
+        OkHttpClient()
+            .newCall(
+                Request
+                    .Builder()
+                    .url(server.url("/health"))
+                    .build(),
+            ).execute()
+            .use { response ->
+                assertEquals(200, response.code)
+                assertEquals("""{"status":"ok"}""", response.body?.string())
+            }
 
         assertEquals("/health", server.takeRequest().path)
     }

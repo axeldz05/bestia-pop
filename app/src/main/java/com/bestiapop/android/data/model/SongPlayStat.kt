@@ -8,5 +8,5 @@ import androidx.room.PrimaryKey
 data class SongPlayStat(
     @PrimaryKey
     val songId: Long,
-    val lastPlayedAt: Long
+    val lastPlayedAt: Long,
 )

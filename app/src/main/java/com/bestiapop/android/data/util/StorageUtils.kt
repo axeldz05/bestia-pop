@@ -18,7 +18,6 @@ import java.util.Locale
  * (survives FUSE owner/UID changes after debug↔release reinstall).
  */
 object StorageUtils {
-
     const val RELATIVE_MUSIC_DIR = "Music/BestiaPop"
     private const val FOLDER_NAME = "BestiaPop"
 
@@ -35,8 +34,7 @@ object StorageUtils {
         return String.format(Locale.getDefault(), "%.2f GB", mb / 1024.0)
     }
 
-    fun publicBestiaPopDir(): File =
-        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), FOLDER_NAME)
+    fun publicBestiaPopDir(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), FOLDER_NAME)
 
     fun mimeFromFileName(name: String): String {
         val lower = name.lowercase()
@@ -53,8 +51,16 @@ object StorageUtils {
         }
     }
 
-    fun isBestiaPopLocation(relativePath: String?, dataPath: String?): Boolean {
-        val rel = relativePath.orEmpty().replace('\\', '/').trim().trimStart('/')
+    fun isBestiaPopLocation(
+        relativePath: String?,
+        dataPath: String?,
+    ): Boolean {
+        val rel =
+            relativePath
+                .orEmpty()
+                .replace('\\', '/')
+                .trim()
+                .trimStart('/')
         if (rel.contains(RELATIVE_MUSIC_DIR, ignoreCase = true)) return true
         val data = dataPath.orEmpty().replace('\\', '/')
         return data.contains("/$RELATIVE_MUSIC_DIR", ignoreCase = true) ||
@@ -68,24 +74,25 @@ object StorageUtils {
             if (file.isFile && file.name.isNotBlank()) names.add(file.name.lowercase())
         }
         runCatching {
-            context.contentResolver.query(
-                audioCollection(),
-                audioProjection(),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val nameIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
-                val relIdx = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
-                val dataIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
-                while (cursor.moveToNext()) {
-                    val name = nameIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
-                    if (name.isBlank()) continue
-                    val rel = relIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }
-                    val data = dataIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }
-                    if (isBestiaPopLocation(rel, data)) names.add(name.lowercase())
+            context.contentResolver
+                .query(
+                    audioCollection(),
+                    audioProjection(),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    val nameIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                    val relIdx = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
+                    val dataIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                    while (cursor.moveToNext()) {
+                        val name = nameIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
+                        if (name.isBlank()) continue
+                        val rel = relIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }
+                        val data = dataIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }
+                        if (isBestiaPopLocation(rel, data)) names.add(name.lowercase())
+                    }
                 }
-            }
         }
         return names
     }
@@ -93,11 +100,15 @@ object StorageUtils {
     fun listManagedAudioFiles(context: Context): List<File> {
         val dir = publicBestiaPopDir()
         val fromFs = ArrayList<File>()
+
         fun walk(folder: File) {
             val children = folder.listFiles() ?: return
             for (child in children) {
-                if (child.isDirectory) walk(child)
-                else if (child.isFile) fromFs.add(child)
+                if (child.isDirectory) {
+                    walk(child)
+                } else if (child.isFile) {
+                    fromFs.add(child)
+                }
             }
         }
         walk(dir)
@@ -107,7 +118,7 @@ object StorageUtils {
 
     class PendingWrite internal constructor(
         val stagingFile: File,
-        private val publisher: () -> String
+        private val publisher: () -> String,
     ) {
         fun publish(): String = publisher()
     }
@@ -119,7 +130,7 @@ object StorageUtils {
     fun prepareWrite(
         context: Context,
         displayName: String,
-        mime: String = mimeFromFileName(displayName)
+        mime: String = mimeFromFileName(displayName),
     ): PendingWrite {
         val safeName = displayName.substringAfterLast('/').substringAfterLast('\\')
         val dir = publicBestiaPopDir()
@@ -140,7 +151,11 @@ object StorageUtils {
         }
     }
 
-    fun scanFile(context: Context, path: String, mime: String? = null) {
+    fun scanFile(
+        context: Context,
+        path: String,
+        mime: String? = null,
+    ) {
         try {
             val mimes = if (mime != null) arrayOf(mime) else null
             MediaScannerConnection.scanFile(context.applicationContext, arrayOf(path), mimes, null)
@@ -148,7 +163,10 @@ object StorageUtils {
         }
     }
 
-    fun deleteManagedAudio(context: Context, path: String): Boolean {
+    fun deleteManagedAudio(
+        context: Context,
+        path: String,
+    ): Boolean {
         var deleted = false
         val file = File(path)
         if (file.exists()) deleted = file.delete() || deleted
@@ -160,23 +178,25 @@ object StorageUtils {
         context: Context,
         staging: File,
         displayName: String,
-        mime: String
+        mime: String,
     ): String {
         if (!staging.exists() || staging.length() == 0L) {
             throw IOException("No hay audio para publicar en Music/BestiaPop")
         }
         deleteMediaStoreEntry(context, displayName)
         val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Audio.Media.DISPLAY_NAME, displayName)
-            put(MediaStore.Audio.Media.MIME_TYPE, mime)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Audio.Media.RELATIVE_PATH, RELATIVE_MUSIC_DIR)
-                put(MediaStore.Audio.Media.IS_PENDING, 1)
+        val values =
+            ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, displayName)
+                put(MediaStore.Audio.Media.MIME_TYPE, mime)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Audio.Media.RELATIVE_PATH, RELATIVE_MUSIC_DIR)
+                    put(MediaStore.Audio.Media.IS_PENDING, 1)
+                }
             }
-        }
-        val uri = resolver.insert(audioCollection(), values)
-            ?: throw IOException("MediaStore no pudo crear $displayName en $RELATIVE_MUSIC_DIR")
+        val uri =
+            resolver.insert(audioCollection(), values)
+                ?: throw IOException("MediaStore no pudo crear $displayName en $RELATIVE_MUSIC_DIR")
         resolver.openOutputStream(uri)?.use { out ->
             staging.inputStream().use { input -> input.copyTo(out) }
         } ?: throw IOException("No se pudo escribir $displayName vía MediaStore")
@@ -189,38 +209,42 @@ object StorageUtils {
             ?: File(publicBestiaPopDir(), displayName).absolutePath
     }
 
-    private fun deleteMediaStoreEntry(context: Context, pathOrName: String): Boolean {
+    private fun deleteMediaStoreEntry(
+        context: Context,
+        pathOrName: String,
+    ): Boolean {
         val name = pathOrName.substringAfterLast('/').substringAfterLast('\\')
         if (name.isBlank()) return false
         val resolver = context.contentResolver
         var deleted = false
         runCatching {
-            resolver.query(
-                audioCollection(),
-                audioProjection(includeId = true),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val idIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                val nameIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
-                val dataIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
-                val relIdx = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
-                val toDelete = ArrayList<Long>()
-                while (cursor.moveToNext()) {
-                    val display = nameIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
-                    val data = dataIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
-                    val rel = relIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }
-                    if (!isBestiaPopLocation(rel, data) && !data.equals(pathOrName, ignoreCase = true)) continue
-                    if (display.equals(name, ignoreCase = true) || data.equals(pathOrName, ignoreCase = true)) {
-                        toDelete.add(cursor.getLong(idIdx))
+            resolver
+                .query(
+                    audioCollection(),
+                    audioProjection(includeId = true),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    val idIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val nameIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                    val dataIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                    val relIdx = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
+                    val toDelete = ArrayList<Long>()
+                    while (cursor.moveToNext()) {
+                        val display = nameIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
+                        val data = dataIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
+                        val rel = relIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }
+                        if (!isBestiaPopLocation(rel, data) && !data.equals(pathOrName, ignoreCase = true)) continue
+                        if (display.equals(name, ignoreCase = true) || data.equals(pathOrName, ignoreCase = true)) {
+                            toDelete.add(cursor.getLong(idIdx))
+                        }
+                    }
+                    for (id in toDelete) {
+                        val uri = ContentUris.withAppendedId(audioCollection(), id)
+                        if (resolver.delete(uri, null, null) > 0) deleted = true
                     }
                 }
-                for (id in toDelete) {
-                    val uri = ContentUris.withAppendedId(audioCollection(), id)
-                    if (resolver.delete(uri, null, null) > 0) deleted = true
-                }
-            }
         }
         return deleted
     }
@@ -228,44 +252,50 @@ object StorageUtils {
     private fun mediaStoreBestiaPopFiles(context: Context): List<File> {
         val files = ArrayList<File>()
         runCatching {
-            context.contentResolver.query(
-                audioCollection(),
-                audioProjection(),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val dataIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
-                val relIdx = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
-                val nameIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
-                while (cursor.moveToNext()) {
-                    val data = dataIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
-                    val rel = relIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }
-                    val name = nameIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
-                    if (!isBestiaPopLocation(rel, data)) continue
-                    val path = data.ifBlank {
-                        if (name.isNotBlank()) File(publicBestiaPopDir(), name).absolutePath else ""
+            context.contentResolver
+                .query(
+                    audioCollection(),
+                    audioProjection(),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    val dataIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                    val relIdx = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
+                    val nameIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                    while (cursor.moveToNext()) {
+                        val data = dataIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
+                        val rel = relIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }
+                        val name = nameIdx.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
+                        if (!isBestiaPopLocation(rel, data)) continue
+                        val path =
+                            data.ifBlank {
+                                if (name.isNotBlank()) File(publicBestiaPopDir(), name).absolutePath else ""
+                            }
+                        if (path.isNotBlank()) files.add(File(path))
                     }
-                    if (path.isNotBlank()) files.add(File(path))
                 }
-            }
         }
         return files
     }
 
-    private fun queryAbsolutePath(context: Context, uri: android.net.Uri): String? {
-        context.contentResolver.query(
-            uri,
-            arrayOf(MediaStore.Audio.Media.DATA),
-            null,
-            null,
-            null
-        )?.use { cursor ->
-            val idx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
-            if (idx >= 0 && cursor.moveToFirst()) {
-                return cursor.getString(idx)?.takeIf { it.isNotBlank() }
+    private fun queryAbsolutePath(
+        context: Context,
+        uri: android.net.Uri,
+    ): String? {
+        context.contentResolver
+            .query(
+                uri,
+                arrayOf(MediaStore.Audio.Media.DATA),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                val idx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                if (idx >= 0 && cursor.moveToFirst()) {
+                    return cursor.getString(idx)?.takeIf { it.isNotBlank() }
+                }
             }
-        }
         return null
     }
 

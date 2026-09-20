@@ -18,15 +18,14 @@ import kotlinx.coroutines.flow.stateIn
  */
 internal class ProcessSaveWhileListeningCoordinator(
     private val scope: CoroutineScope,
-    private val runtime: ProcessDownloadRuntime
+    private val runtime: ProcessDownloadRuntime,
 ) : PlaybackRuntimeSaveDownloads {
-    override val downloads: StateFlow<List<ActiveDownload>> = runtime.downloads
-        .map { rows -> rows.forLane(DownloadLane.AUTOSAVE) }
-        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+    override val downloads: StateFlow<List<ActiveDownload>> =
+        runtime.downloads
+            .map { rows -> rows.forLane(DownloadLane.AUTOSAVE) }
+            .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    override suspend fun save(
-        remote: PlayableItem.Remote
-    ): SaveWhileListeningDownloadResult = runtime.saveWhileListening(remote)
+    override suspend fun save(remote: PlayableItem.Remote): SaveWhileListeningDownloadResult = runtime.saveWhileListening(remote)
 
     override fun dismiss(id: String) {
         runtime.dismiss(id)

@@ -31,7 +31,6 @@ import com.bestiapop.android.domain.util.gapApplyFields
 import com.bestiapop.android.domain.util.knownAlbumQueryOf
 import com.bestiapop.android.domain.util.matchAndApplyKnownAlbumTracks
 import com.bestiapop.android.domain.util.partitionAlbumBatchSongs
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,31 +48,39 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 data class IdentifyBatchSummary(
     val updated: Int,
     val reviewCount: Int,
     val alreadyQueued: Int,
     val skipped: Int,
-    val showReview: Boolean
+    val showReview: Boolean,
 ) {
-    fun toastMessage(): String = buildString {
-        append(if (updated == 1) "1 actualizada" else "$updated actualizadas")
-        if (reviewCount > 0) {
-            append(if (reviewCount == 1) ", 1 para revisar" else ", $reviewCount para revisar")
+    fun toastMessage(): String =
+        buildString {
+            append(if (updated == 1) "1 actualizada" else "$updated actualizadas")
+            if (reviewCount > 0) {
+                append(if (reviewCount == 1) ", 1 para revisar" else ", $reviewCount para revisar")
+            }
+            if (alreadyQueued > 0) {
+                append(" ($alreadyQueued ya en cola)")
+            }
+            if (skipped > 0) {
+                append(" ($skipped omitidas)")
+            }
         }
-        if (alreadyQueued > 0) {
-            append(" ($alreadyQueued ya en cola)")
-        }
-        if (skipped > 0) {
-            append(" ($skipped omitidas)")
-        }
-    }
 }
 
 sealed interface ProcessIdentifyEvent {
-    data class Completed(val summary: IdentifyBatchSummary) : ProcessIdentifyEvent
-    data class AlreadyQueued(val count: Int, val showReview: Boolean) : ProcessIdentifyEvent
+    data class Completed(
+        val summary: IdentifyBatchSummary,
+    ) : ProcessIdentifyEvent
+
+    data class AlreadyQueued(
+        val count: Int,
+        val showReview: Boolean,
+    ) : ProcessIdentifyEvent
 }
 
 /**
@@ -82,14 +89,14 @@ sealed interface ProcessIdentifyEvent {
 internal class ProcessIdentifyRuntime(
     private val scope: CoroutineScope,
     private val dependencies: Dependencies,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     internal data class Dependencies(
         val getSong: suspend (Long) -> Song?,
         val getSongs: (suspend (List<Long>) -> List<Song>)? = null,
         val propose: suspend (Song, force: Boolean, listenBrainzToken: String?) -> IdentifyProposal,
         val apply: suspend (songId: Long, proposal: IdentifyProposal, fields: IdentifyApplyFields) ->
-            IdentifyResult,
+        IdentifyResult,
         val listenBrainzToken: suspend () -> String?,
         val pendingSongIds: suspend () -> Set<Long>,
         val appendReview: suspend (List<IdentifyProposal>, IdentifyApplyFields) -> Unit,
@@ -105,7 +112,7 @@ internal class ProcessIdentifyRuntime(
         val searchAlbums: (suspend (query: String) -> List<CatalogAlbum>)? = null,
         val isPlaybackActive: () -> Boolean = { false },
         val isResolvingStream: () -> Boolean = { false },
-        val isSongActiveInPlayback: (Long) -> Boolean = { false }
+        val isSongActiveInPlayback: (Long) -> Boolean = { false },
     )
 
     private val workMutex = Mutex()
@@ -122,10 +129,13 @@ internal class ProcessIdentifyRuntime(
     private var unpersistedWorkEdits = 0
     private val reviewBuffer = ArrayList<IdentifyProposal>()
     private var reviewBufferFields: IdentifyApplyFields? = null
-    private val attemptedAlbumGroupKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val attemptedAlbumGroupKeys =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet<String>()
     private val songIdentityCache = java.util.concurrent.ConcurrentHashMap<Long, Song>()
 
     private val activeWorkerJobs = java.util.concurrent.CopyOnWriteArrayList<Job>()
+
     @Volatile
     private var userCancelled = false
 
@@ -134,15 +144,16 @@ internal class ProcessIdentifyRuntime(
         force: Boolean = false,
         showReview: Boolean = true,
         fields: IdentifyApplyFields = IdentifyApplyFields.ALL,
-        fillGapsOnly: Boolean = false
+        fillGapsOnly: Boolean = false,
     ): Job {
         userCancelled = false
-        val job = scope.launch(ioDispatcher) {
-            val started = enqueue(songs, force, showReview, fields, fillGapsOnly)
-            if (started) {
-                runMutex.withLock { processUntilEmpty() }
+        val job =
+            scope.launch(ioDispatcher) {
+                val started = enqueue(songs, force, showReview, fields, fillGapsOnly)
+                if (started) {
+                    runMutex.withLock { processUntilEmpty() }
+                }
             }
-        }
         activeWorkerJobs.add(job)
         job.invokeOnCompletion { activeWorkerJobs.remove(job) }
         return job
@@ -150,12 +161,13 @@ internal class ProcessIdentifyRuntime(
 
     fun resumeInterrupted(): Job {
         userCancelled = false
-        val job = scope.launch(ioDispatcher) {
-            ensureHydrated()
-            val remaining = workMutex.withLock { snapshot?.remainingSongIds.orEmpty() }
-            if (remaining.isEmpty()) return@launch
-            runMutex.withLock { processUntilEmpty() }
-        }
+        val job =
+            scope.launch(ioDispatcher) {
+                ensureHydrated()
+                val remaining = workMutex.withLock { snapshot?.remainingSongIds.orEmpty() }
+                if (remaining.isEmpty()) return@launch
+                runMutex.withLock { processUntilEmpty() }
+            }
         activeWorkerJobs.add(job)
         job.invokeOnCompletion { activeWorkerJobs.remove(job) }
         return job
@@ -208,7 +220,7 @@ internal class ProcessIdentifyRuntime(
         force: Boolean,
         showReview: Boolean,
         fields: IdentifyApplyFields,
-        fillGapsOnly: Boolean
+        fillGapsOnly: Boolean,
     ): Boolean {
         if (songs.isEmpty()) return false
         ensureHydrated()
@@ -225,46 +237,60 @@ internal class ProcessIdentifyRuntime(
             if (toProcess.isEmpty()) {
                 queuedOnly = alreadyQueued > 0
                 if (queuedOnly && snapshot != null) {
-                    snapshot = snapshot?.copy(
-                        alreadyQueued = snapshot!!.alreadyQueued + alreadyQueued,
-                        showReview = snapshot!!.showReview || showReview
-                    )
+                    snapshot =
+                        snapshot?.copy(
+                            alreadyQueued = snapshot!!.alreadyQueued + alreadyQueued,
+                            showReview = snapshot!!.showReview || showReview,
+                        )
                     persistLocked(snapshot, force = true)
                 }
                 return@withLock
             }
-            val sortedToProcess = toProcess.sortedWith(
-                compareBy<Song>(
-                    { it.folderPath.orEmpty().lowercase() },
-                    { it.album.takeUnless { a -> IdentifyRanking.isGenericAlbum(a) }.orEmpty().lowercase() },
-                    { it.artist.takeUnless { a -> IdentifyRanking.isPlaceholderArtist(a) }.orEmpty().lowercase() },
-                    { it.trackNumber.takeIf { t -> t > 0 } ?: Int.MAX_VALUE },
-                    { it.title.lowercase() }
+            val sortedToProcess =
+                toProcess.sortedWith(
+                    compareBy<Song>(
+                        { it.folderPath.orEmpty().lowercase() },
+                        {
+                            it.album
+                                .takeUnless { a -> IdentifyRanking.isGenericAlbum(a) }
+                                .orEmpty()
+                                .lowercase()
+                        },
+                        {
+                            it.artist
+                                .takeUnless { a -> IdentifyRanking.isPlaceholderArtist(a) }
+                                .orEmpty()
+                                .lowercase()
+                        },
+                        { it.trackNumber.takeIf { t -> t > 0 } ?: Int.MAX_VALUE },
+                        { it.title.lowercase() },
+                    ),
                 )
-            )
             val current = snapshot
             val remaining = (current?.remainingSongIds.orEmpty() + sortedToProcess.map { it.id }).distinct()
             val newIds = sortedToProcess.map { it.id }
-            val fillGapsIds = current?.fillGapsOnlySongIds.orEmpty() +
-                if (fillGapsOnly) newIds else emptyList()
-            snapshot = IdentifyWorkSnapshot(
-                remainingSongIds = remaining,
-                force = (current?.force == true) || force,
-                showReview = (current?.showReview == true) || showReview,
-                applyFields = fields,
-                processedCount = current?.processedCount ?: 0,
-                totalCount = (current?.totalCount ?: 0) + toProcess.size,
-                updated = current?.updated ?: 0,
-                skipped = current?.skipped ?: 0,
-                medium = current?.medium ?: 0,
-                low = current?.low ?: 0,
-                none = current?.none ?: 0,
-                lbHits = current?.lbHits ?: 0,
-                alreadyQueued = (current?.alreadyQueued ?: 0) + alreadyQueued,
-                reviewCount = current?.reviewCount ?: 0,
-                interrupted = false,
-                fillGapsOnlySongIds = fillGapsIds
-            )
+            val fillGapsIds =
+                current?.fillGapsOnlySongIds.orEmpty() +
+                    if (fillGapsOnly) newIds else emptyList()
+            snapshot =
+                IdentifyWorkSnapshot(
+                    remainingSongIds = remaining,
+                    force = (current?.force == true) || force,
+                    showReview = (current?.showReview == true) || showReview,
+                    applyFields = fields,
+                    processedCount = current?.processedCount ?: 0,
+                    totalCount = (current?.totalCount ?: 0) + toProcess.size,
+                    updated = current?.updated ?: 0,
+                    skipped = current?.skipped ?: 0,
+                    medium = current?.medium ?: 0,
+                    low = current?.low ?: 0,
+                    none = current?.none ?: 0,
+                    lbHits = current?.lbHits ?: 0,
+                    alreadyQueued = (current?.alreadyQueued ?: 0) + alreadyQueued,
+                    reviewCount = current?.reviewCount ?: 0,
+                    interrupted = false,
+                    fillGapsOnlySongIds = fillGapsIds,
+                )
             persistLocked(snapshot, force = true)
             started = true
         }
@@ -275,128 +301,139 @@ internal class ProcessIdentifyRuntime(
     }
 
     private sealed interface WorkTask {
-        data class AlbumGroup(val candidate: IdentifyAlbumBatchCandidate) : WorkTask
-        data class SingleSong(val songId: Long) : WorkTask
+        data class AlbumGroup(
+            val candidate: IdentifyAlbumBatchCandidate,
+        ) : WorkTask
+
+        data class SingleSong(
+            val songId: Long,
+        ) : WorkTask
     }
 
-    private suspend fun processUntilEmpty() = withContext(ioDispatcher) {
-        ensureHydrated()
-        var lease: AutoCloseable? = null
-        _running.value = true
-        try {
-            if (workMutex.withLock { snapshot?.hasRemaining == true }) {
-                lease = dependencies.acquireExecutionLease()
-            }
-            val missingIds = workMutex.withLock {
-                snapshot?.remainingSongIds.orEmpty().filter { !songIdentityCache.containsKey(it) }
-            }
-            if (missingIds.isNotEmpty()) {
-                val loaded = dependencies.getSongs?.invoke(missingIds)
-                    ?: missingIds.mapNotNull { dependencies.getSong(it) }
-                loaded.forEach { songIdentityCache[it.id] = it }
-            }
+    private suspend fun processUntilEmpty() =
+        withContext(ioDispatcher) {
+            ensureHydrated()
+            var lease: AutoCloseable? = null
+            _running.value = true
+            try {
+                if (workMutex.withLock { snapshot?.hasRemaining == true }) {
+                    lease = dependencies.acquireExecutionLease()
+                }
+                val missingIds =
+                    workMutex.withLock {
+                        snapshot?.remainingSongIds.orEmpty().filter { !songIdentityCache.containsKey(it) }
+                    }
+                if (missingIds.isNotEmpty()) {
+                    val loaded =
+                        dependencies.getSongs?.invoke(missingIds)
+                            ?: missingIds.mapNotNull { dependencies.getSong(it) }
+                    loaded.forEach { songIdentityCache[it.id] = it }
+                }
 
-            coroutineScope {
-                val inFlight = mutableSetOf<Long>()
-                val token = dependencies.listenBrainzToken()
-                val workerCount = if (dependencies.isPlaybackActive()) 1 else IDENTIFY_PARALLEL
-                repeat(workerCount) { workerIndex ->
-                    launch(ioDispatcher) {
-                        while (true) {
-                            if (!dependencies.isOnline()) {
-                                workMutex.withLock { markInterruptedLocked() }
-                                break
-                            }
-                            while (dependencies.isResolvingStream()) {
-                                delay(STREAM_RESOLVE_WAIT_MS)
-                            }
-                            if (workerIndex > 0 && dependencies.isPlaybackActive()) {
-                                delay(200L)
-                                if (dependencies.isPlaybackActive()) break
-                            }
-                            val task: WorkTask = workMutex.withLock {
-                                val currentSnap = snapshot ?: return@withLock null
-                                val availableIds = currentSnap.remainingSongIds.filter { it !in inFlight }
-                                if (availableIds.isEmpty()) return@withLock null
-
-                                val availableSongs = availableIds.mapNotNull { songIdentityCache[it] }
-                                val albumBatch = findNextAlbumBatchCandidate(
-                                    availableSongs = availableSongs,
-                                    batchFields = currentSnap.applyFields,
-                                    fillGapsOnlyIds = currentSnap.fillGapsOnlySongIds.toSet(),
-                                    attemptedGroupKeys = attemptedAlbumGroupKeys
-                                )
-                                if (albumBatch != null) {
-                                    inFlight += albumBatch.songIds
-                                    return@withLock WorkTask.AlbumGroup(albumBatch)
+                coroutineScope {
+                    val inFlight = mutableSetOf<Long>()
+                    val token = dependencies.listenBrainzToken()
+                    val workerCount = if (dependencies.isPlaybackActive()) 1 else IDENTIFY_PARALLEL
+                    repeat(workerCount) { workerIndex ->
+                        launch(ioDispatcher) {
+                            while (true) {
+                                if (!dependencies.isOnline()) {
+                                    workMutex.withLock { markInterruptedLocked() }
+                                    break
                                 }
+                                while (dependencies.isResolvingStream()) {
+                                    delay(STREAM_RESOLVE_WAIT_MS)
+                                }
+                                if (workerIndex > 0 && dependencies.isPlaybackActive()) {
+                                    delay(200L)
+                                    if (dependencies.isPlaybackActive()) break
+                                }
+                                val task: WorkTask =
+                                    workMutex.withLock {
+                                        val currentSnap = snapshot ?: return@withLock null
+                                        val availableIds = currentSnap.remainingSongIds.filter { it !in inFlight }
+                                        if (availableIds.isEmpty()) return@withLock null
 
-                                val songId = availableIds.first()
-                                inFlight += songId
-                                WorkTask.SingleSong(songId)
-                            } ?: break
+                                        val availableSongs = availableIds.mapNotNull { songIdentityCache[it] }
+                                        val albumBatch =
+                                            findNextAlbumBatchCandidate(
+                                                availableSongs = availableSongs,
+                                                batchFields = currentSnap.applyFields,
+                                                fillGapsOnlyIds = currentSnap.fillGapsOnlySongIds.toSet(),
+                                                attemptedGroupKeys = attemptedAlbumGroupKeys,
+                                            )
+                                        if (albumBatch != null) {
+                                            inFlight += albumBatch.songIds
+                                            return@withLock WorkTask.AlbumGroup(albumBatch)
+                                        }
 
-                            when (task) {
-                                is WorkTask.AlbumGroup -> {
-                                    try {
-                                        val baseline = workMutex.withLock { snapshot } ?: break
-                                        processAlbumGroup(task.candidate, baseline, inFlight, token)
-                                    } catch (cancelled: CancellationException) {
-                                        throw cancelled
-                                    } catch (_: Exception) {
-                                        attemptedAlbumGroupKeys += task.candidate.groupKey
-                                    } finally {
-                                        workMutex.withLock { inFlight.removeAll(task.candidate.songIds.toSet()) }
+                                        val songId = availableIds.first()
+                                        inFlight += songId
+                                        WorkTask.SingleSong(songId)
+                                    } ?: break
+
+                                when (task) {
+                                    is WorkTask.AlbumGroup -> {
+                                        try {
+                                            val baseline = workMutex.withLock { snapshot } ?: break
+                                            processAlbumGroup(task.candidate, baseline, inFlight, token)
+                                        } catch (cancelled: CancellationException) {
+                                            throw cancelled
+                                        } catch (_: Exception) {
+                                            attemptedAlbumGroupKeys += task.candidate.groupKey
+                                        } finally {
+                                            workMutex.withLock { inFlight.removeAll(task.candidate.songIds.toSet()) }
+                                        }
+                                    }
+
+                                    is WorkTask.SingleSong -> {
+                                        try {
+                                            val baseline = workMutex.withLock { snapshot } ?: break
+                                            processOne(task.songId, baseline, inFlight, token)
+                                        } catch (cancelled: CancellationException) {
+                                            throw cancelled
+                                        } catch (_: Exception) {
+                                            commitProcessed(task.songId) { it.copy(skipped = it.skipped + 1) }
+                                        } finally {
+                                            workMutex.withLock { inFlight.remove(task.songId) }
+                                        }
                                     }
                                 }
-                                is WorkTask.SingleSong -> {
-                                    try {
-                                        val baseline = workMutex.withLock { snapshot } ?: break
-                                        processOne(task.songId, baseline, inFlight, token)
-                                    } catch (cancelled: CancellationException) {
-                                        throw cancelled
-                                    } catch (_: Exception) {
-                                        commitProcessed(task.songId) { it.copy(skipped = it.skipped + 1) }
-                                    } finally {
-                                        workMutex.withLock { inFlight.remove(task.songId) }
-                                    }
+                                if (dependencies.isPlaybackActive()) {
+                                    delay(IDENTIFY_DELAY_PLAYING_MS)
+                                } else {
+                                    delay(IDENTIFY_DELAY_IDLE_MS)
                                 }
-                            }
-                            if (dependencies.isPlaybackActive()) {
-                                delay(IDENTIFY_DELAY_PLAYING_MS)
-                            } else {
-                                delay(IDENTIFY_DELAY_IDLE_MS)
                             }
                         }
                     }
                 }
-            }
-            flushReviewBuffer()
-            val current = workMutex.withLock { snapshot }
-            if (current == null || !current.hasRemaining) {
-                finishBatch(current)
-            } else {
-                workMutex.withLock { markInterruptedLocked() }
-            }
-        } catch (cancelled: CancellationException) {
-            flushReviewBuffer()
-            workMutex.withLock {
-                if (!userCancelled) {
-                    val current = snapshot ?: return@withLock
-                    if (current.hasRemaining) {
-                        val interrupted = current.copy(interrupted = true)
-                        snapshot = interrupted
-                        persistLocked(interrupted, force = true)
+                flushReviewBuffer()
+                val current = workMutex.withLock { snapshot }
+                if (current == null || !current.hasRemaining) {
+                    finishBatch(current)
+                } else {
+                    workMutex.withLock { markInterruptedLocked() }
+                }
+            } catch (cancelled: CancellationException) {
+                flushReviewBuffer()
+                workMutex.withLock {
+                    if (!userCancelled) {
+                        val current = snapshot ?: return@withLock
+                        if (current.hasRemaining) {
+                            val interrupted = current.copy(interrupted = true)
+                            snapshot = interrupted
+                            persistLocked(interrupted, force = true)
+                        }
                     }
                 }
+                throw cancelled
+            } finally {
+                lease?.close()
+                _progress.value = null
+                _running.value = false
             }
-            throw cancelled
-        } finally {
-            lease?.close()
-            _progress.value = null
-            _running.value = false
         }
-    }
 
     private suspend fun markInterruptedLocked() {
         val snap = snapshot ?: return
@@ -410,22 +447,24 @@ internal class ProcessIdentifyRuntime(
         candidate: IdentifyAlbumBatchCandidate,
         baseline: IdentifyWorkSnapshot,
         inFlight: MutableSet<Long>,
-        listenBrainzToken: String?
+        listenBrainzToken: String?,
     ) {
         val total = baseline.totalCount.coerceAtLeast(1)
-        _progress.value = LibraryJobProgress(
-            kind = LibraryJobKind.IDENTIFY,
-            done = baseline.processedCount,
-            total = total,
-            label = "${candidate.artist} - ${candidate.album}"
-        )
+        _progress.value =
+            LibraryJobProgress(
+                kind = LibraryJobKind.IDENTIFY,
+                done = baseline.processedCount,
+                total = total,
+                label = "${candidate.artist} - ${candidate.album}",
+            )
 
         var knownAlbum: KnownAlbumTracks? = null
         var catalogAlbum: CatalogAlbum? = null
 
         try {
             knownAlbum = dependencies.loadScopedAlbumTracks(candidate.artist, candidate.album)
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
 
         if (knownAlbum?.artworkUri.isNullOrBlank()) {
             try {
@@ -433,11 +472,13 @@ internal class ProcessIdentifyRuntime(
                 catalogAlbum = hits?.firstOrNull { hit ->
                     albumNamesMatch(hit.title, candidate.album) && artistsCompatible(hit.artist, candidate.artist)
                 } ?: hits?.firstOrNull { hit -> albumNamesMatch(hit.title, candidate.album) }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
 
-        val artworkUri = knownAlbum?.artworkUri?.takeIf { it.isNotBlank() }
-            ?: catalogAlbum?.coverUrl?.takeIf { it.isNotBlank() }
+        val artworkUri =
+            knownAlbum?.artworkUri?.takeIf { it.isNotBlank() }
+                ?: catalogAlbum?.coverUrl?.takeIf { it.isNotBlank() }
 
         if (artworkUri.isNullOrBlank()) {
             attemptedAlbumGroupKeys += candidate.groupKey
@@ -455,25 +496,31 @@ internal class ProcessIdentifyRuntime(
         val fillGapsIds = workMutex.withLock { snapshot?.fillGapsOnlySongIds.orEmpty().toSet() }
         val batchFields = workMutex.withLock { snapshot?.applyFields ?: IdentifyApplyFields.ALL }
 
-        val partition = partitionAlbumBatchSongs(
-            songs = candidate.songs,
-            batchFields = batchFields,
-            fillGapsOnlyIds = fillGapsIds
-        )
-
-        val trackMatchResult = if (partition.otherGaps.isNotEmpty() && knownAlbum != null) {
-            matchAndApplyKnownAlbumTracks(
-                songs = partition.otherGaps,
-                knownAlbum = knownAlbum,
+        val partition =
+            partitionAlbumBatchSongs(
+                songs = candidate.songs,
                 batchFields = batchFields,
                 fillGapsOnlyIds = fillGapsIds,
-                seedFolderPath = candidate.songs.firstOrNull()?.folderPath.orEmpty(),
-                collectReviewProposals = true,
-                apply = dependencies.apply
             )
-        } else {
-            AlbumTrackMatchResult()
-        }
+
+        val trackMatchResult =
+            if (partition.otherGaps.isNotEmpty() && knownAlbum != null) {
+                matchAndApplyKnownAlbumTracks(
+                    songs = partition.otherGaps,
+                    knownAlbum = knownAlbum,
+                    batchFields = batchFields,
+                    fillGapsOnlyIds = fillGapsIds,
+                    seedFolderPath =
+                        candidate.songs
+                            .firstOrNull()
+                            ?.folderPath
+                            .orEmpty(),
+                    collectReviewProposals = true,
+                    apply = dependencies.apply,
+                )
+            } else {
+                AlbumTrackMatchResult()
+            }
 
         if (trackMatchResult.reviewProposals.isNotEmpty()) {
             bufferReviewList(trackMatchResult.reviewProposals, batchFields)
@@ -485,11 +532,11 @@ internal class ProcessIdentifyRuntime(
         workMutex.withLock {
             commitCompletedLocked(
                 completedIds = completedIds,
-                forcePersist = true
+                forcePersist = true,
             ) { current ->
                 current.copy(
                     updated = current.updated + appliedIds.size,
-                    reviewCount = current.reviewCount + trackMatchResult.reviewProposals.size
+                    reviewCount = current.reviewCount + trackMatchResult.reviewProposals.size,
                 )
             }
         }
@@ -499,16 +546,17 @@ internal class ProcessIdentifyRuntime(
         songId: Long,
         baseline: IdentifyWorkSnapshot,
         inFlight: MutableSet<Long>,
-        listenBrainzToken: String?
+        listenBrainzToken: String?,
     ) {
         val song = dependencies.getSong(songId)
         val total = baseline.totalCount.coerceAtLeast(1)
-        _progress.value = LibraryJobProgress(
-            kind = LibraryJobKind.IDENTIFY,
-            done = baseline.processedCount,
-            total = total,
-            label = song?.title.orEmpty()
-        )
+        _progress.value =
+            LibraryJobProgress(
+                kind = LibraryJobKind.IDENTIFY,
+                done = baseline.processedCount,
+                total = total,
+                label = song?.title.orEmpty(),
+            )
         if (song == null) {
             commitProcessed(songId) { it.copy(skipped = it.skipped + 1) }
             return
@@ -527,7 +575,10 @@ internal class ProcessIdentifyRuntime(
         var deltaReview = 0
         val gate = IdentifyPipeline.evaluateReviewGate(proposal)
         when {
-            proposal.alreadyIdentified -> deltaSkipped = 1
+            proposal.alreadyIdentified -> {
+                deltaSkipped = 1
+            }
+
             !gate.requiresReview && proposal.suggested != null -> {
                 when (dependencies.apply(song.id, proposal, applyFields)) {
                     is IdentifyResult.Updated -> {
@@ -539,16 +590,17 @@ internal class ProcessIdentifyRuntime(
                             omitRemainingArtworkOnlySiblings(
                                 albumName = candAlbum,
                                 seedId = song.id,
-                                inFlight = inFlight
+                                inFlight = inFlight,
                             )
                         }
                         fanOutKnownAlbum(
                             seed = song,
                             candidate = proposal.suggested,
                             fillGaps = fillGaps,
-                            inFlight = inFlight
+                            inFlight = inFlight,
                         )
                     }
+
                     else -> {
                         bufferReview(reviewProposal, baseline.applyFields)
                         deltaReview = 1
@@ -556,6 +608,7 @@ internal class ProcessIdentifyRuntime(
                     }
                 }
             }
+
             else -> {
                 bufferReview(reviewProposal, baseline.applyFields)
                 deltaReview = 1
@@ -574,7 +627,7 @@ internal class ProcessIdentifyRuntime(
                 low = snap.low + deltaLow,
                 none = snap.none + deltaNone,
                 lbHits = snap.lbHits + deltaLbHits,
-                reviewCount = snap.reviewCount + deltaReview
+                reviewCount = snap.reviewCount + deltaReview,
             )
         }
     }
@@ -582,14 +635,16 @@ internal class ProcessIdentifyRuntime(
     private suspend fun omitRemainingArtworkOnlySiblings(
         albumName: String,
         seedId: Long,
-        inFlight: MutableSet<Long>
+        inFlight: MutableSet<Long>,
     ) {
-        val remainingIds = workMutex.withLock {
-            snapshot?.remainingSongIds.orEmpty().filter { id -> id != seedId && id !in inFlight }
-        }
+        val remainingIds =
+            workMutex.withLock {
+                snapshot?.remainingSongIds.orEmpty().filter { id -> id != seedId && id !in inFlight }
+            }
         if (remainingIds.isEmpty()) return
-        val songs = dependencies.getSongs?.invoke(remainingIds)
-            ?: remainingIds.mapNotNull { id -> dependencies.getSong(id) }
+        val songs =
+            dependencies.getSongs?.invoke(remainingIds)
+                ?: remainingIds.mapNotNull { id -> dependencies.getSong(id) }
         if (songs.isEmpty()) return
 
         val fillGapsIds = workMutex.withLock { snapshot?.fillGapsOnlySongIds.orEmpty().toSet() }
@@ -598,18 +653,19 @@ internal class ProcessIdentifyRuntime(
         val albumSongs = songs.filter { s -> s.album.equals(albumName, ignoreCase = true) }
         if (albumSongs.isEmpty()) return
 
-        val partition = partitionAlbumBatchSongs(
-            songs = albumSongs,
-            batchFields = batchFields,
-            fillGapsOnlyIds = fillGapsIds
-        )
+        val partition =
+            partitionAlbumBatchSongs(
+                songs = albumSongs,
+                batchFields = batchFields,
+                fillGapsOnlyIds = fillGapsIds,
+            )
         if (partition.artworkOnlyIds.isEmpty()) return
 
         workMutex.withLock {
             val toRemove = partition.artworkOnlyIds.filter { it !in inFlight }
             commitCompletedLocked(
                 completedIds = toRemove,
-                forcePersist = true
+                forcePersist = true,
             ) { current ->
                 current.copy(updated = current.updated + toRemove.size)
             }
@@ -620,7 +676,7 @@ internal class ProcessIdentifyRuntime(
         seed: Song,
         candidate: IdentifyCandidate,
         fillGaps: Boolean,
-        inFlight: MutableSet<Long>
+        inFlight: MutableSet<Long>,
     ) {
         val albumName = candidate.album
         val artist = candidate.artist
@@ -631,57 +687,65 @@ internal class ProcessIdentifyRuntime(
         }
         val album = dependencies.loadScopedAlbumTracks(artist, albumName) ?: return
         if (album.tracks.size < 2) return
-        val remainingIds = workMutex.withLock {
-            snapshot?.remainingSongIds.orEmpty().filter { id ->
-                id != seed.id && id !in inFlight
+        val remainingIds =
+            workMutex.withLock {
+                snapshot?.remainingSongIds.orEmpty().filter { id ->
+                    id != seed.id && id !in inFlight
+                }
             }
-        }
         if (remainingIds.isEmpty()) return
-        val songs = dependencies.getSongs?.invoke(remainingIds)
-            ?: remainingIds.mapNotNull { id -> dependencies.getSong(id) }
+        val songs =
+            dependencies.getSongs?.invoke(remainingIds)
+                ?: remainingIds.mapNotNull { id -> dependencies.getSong(id) }
         if (songs.isEmpty()) return
-        val candidateSongs = songs.filter { s ->
-            (seed.folderPath.isNotBlank() && s.folderPath == seed.folderPath) ||
-                s.album.equals(albumName, ignoreCase = true) ||
-                (s.artist.equals(artist, ignoreCase = true) && !IdentifyRanking.isGenericAlbum(s.album)) ||
-                IdentifyRanking.isGenericAlbum(s.album) ||
-                IdentifyRanking.isPlaceholderArtist(s.artist)
-        }
+        val candidateSongs =
+            songs.filter { s ->
+                (seed.folderPath.isNotBlank() && s.folderPath == seed.folderPath) ||
+                    s.album.equals(albumName, ignoreCase = true) ||
+                    (s.artist.equals(artist, ignoreCase = true) && !IdentifyRanking.isGenericAlbum(s.album)) ||
+                    IdentifyRanking.isGenericAlbum(s.album) ||
+                    IdentifyRanking.isPlaceholderArtist(s.artist)
+            }
         if (candidateSongs.isEmpty()) return
         val queries = candidateSongs.map { knownAlbumQueryOf(it) }
-        val matches = assignUniqueKnownAlbumMatches(
-            queries = queries,
-            albums = listOf(album),
-            scoped = true,
-            seedFolderPath = seed.folderPath
-        )
+        val matches =
+            assignUniqueKnownAlbumMatches(
+                queries = queries,
+                albums = listOf(album),
+                scoped = true,
+                seedFolderPath = seed.folderPath,
+            )
         if (matches.isEmpty()) return
-        val toApplySongs = workMutex.withLock {
-            val ids = matches.keys.filter { id ->
-                id in snapshot?.remainingSongIds.orEmpty() && id !in inFlight
+        val toApplySongs =
+            workMutex.withLock {
+                val ids =
+                    matches.keys.filter { id ->
+                        id in snapshot?.remainingSongIds.orEmpty() && id !in inFlight
+                    }
+                inFlight += ids
+                candidateSongs.filter { it.id in ids }
             }
-            inFlight += ids
-            candidateSongs.filter { it.id in ids }
-        }
         if (toApplySongs.isEmpty()) return
         val fillGapsIds = workMutex.withLock { snapshot?.fillGapsOnlySongIds.orEmpty().toSet() }
-        val batchFields = workMutex.withLock {
-            snapshot?.applyFields ?: IdentifyApplyFields.ALL
-        }
+        val batchFields =
+            workMutex.withLock {
+                snapshot?.applyFields ?: IdentifyApplyFields.ALL
+            }
         try {
-            val result = applyKnownAlbumMatches(
-                songs = toApplySongs,
-                matches = matches,
-                batchFields = batchFields,
-                fillGapsOnlyIds = if (fillGaps) toApplySongs.map { it.id }.toSet() else fillGapsIds,
-                collectReviewProposals = false,
-                apply = dependencies.apply
-            )
+            val result =
+                applyKnownAlbumMatches(
+                    songs = toApplySongs,
+                    matches = matches,
+                    batchFields = batchFields,
+                    fillGapsOnlyIds = if (fillGaps) toApplySongs.map { it.id }.toSet() else fillGapsIds,
+                    collectReviewProposals = false,
+                    apply = dependencies.apply,
+                )
             if (result.appliedSongIds.isNotEmpty()) {
                 workMutex.withLock {
                     commitCompletedLocked(
                         completedIds = result.appliedSongIds,
-                        forcePersist = true
+                        forcePersist = true,
                     ) { current ->
                         current.copy(updated = current.updated + result.appliedSongIds.size)
                     }
@@ -697,44 +761,46 @@ internal class ProcessIdentifyRuntime(
     private suspend fun commitCompletedLocked(
         completedIds: Collection<Long>,
         forcePersist: Boolean = false,
-        transform: (IdentifyWorkSnapshot) -> IdentifyWorkSnapshot = { it }
+        transform: (IdentifyWorkSnapshot) -> IdentifyWorkSnapshot = { it },
     ) {
         val current = snapshot ?: return
         val toRemove = completedIds.filter { it in current.remainingSongIds }
         if (toRemove.isEmpty()) return
         val remaining = current.remainingSongIds.filterNot { it in toRemove }
-        val next = transform(current).copy(
-            remainingSongIds = remaining,
-            processedCount = current.processedCount + toRemove.size,
-            interrupted = current.interrupted
-        )
+        val next =
+            transform(current).copy(
+                remainingSongIds = remaining,
+                processedCount = current.processedCount + toRemove.size,
+                interrupted = current.interrupted,
+            )
         snapshot = next
         persistLocked(next, force = forcePersist)
     }
 
     private suspend fun commitProcessed(
         songId: Long,
-        transform: (IdentifyWorkSnapshot) -> IdentifyWorkSnapshot
+        transform: (IdentifyWorkSnapshot) -> IdentifyWorkSnapshot,
     ) {
         workMutex.withLock {
             commitCompletedLocked(
                 completedIds = listOf(songId),
                 forcePersist = false,
-                transform = transform
+                transform = transform,
             )
         }
     }
 
     private suspend fun finishBatch(current: IdentifyWorkSnapshot?) {
-        val summary = current?.let {
-            IdentifyBatchSummary(
-                updated = it.updated,
-                reviewCount = it.reviewCount,
-                alreadyQueued = it.alreadyQueued,
-                skipped = it.skipped,
-                showReview = it.showReview
-            )
-        }
+        val summary =
+            current?.let {
+                IdentifyBatchSummary(
+                    updated = it.updated,
+                    reviewCount = it.reviewCount,
+                    alreadyQueued = it.alreadyQueued,
+                    skipped = it.skipped,
+                    showReview = it.showReview,
+                )
+            }
         current?.let(dependencies.reportTelemetry)
         flushReviewBuffer()
         workMutex.withLock {
@@ -742,9 +808,11 @@ internal class ProcessIdentifyRuntime(
             persistLocked(null, force = true)
         }
         if (summary != null &&
-            (summary.updated > 0 || summary.reviewCount > 0 ||
-                summary.alreadyQueued > 0 || summary.skipped > 0 ||
-                (current?.totalCount ?: 0) > 0)
+            (
+                summary.updated > 0 || summary.reviewCount > 0 ||
+                    summary.alreadyQueued > 0 || summary.skipped > 0 ||
+                    (current?.totalCount ?: 0) > 0
+            )
         ) {
             _events.tryEmit(ProcessIdentifyEvent.Completed(summary))
             dependencies.notifyCompleted(summary)
@@ -760,47 +828,59 @@ internal class ProcessIdentifyRuntime(
         }
     }
 
-    private suspend fun persistLocked(snapshot: IdentifyWorkSnapshot?, force: Boolean = false) {
+    private suspend fun persistLocked(
+        snapshot: IdentifyWorkSnapshot?,
+        force: Boolean = false,
+    ) {
         unpersistedWorkEdits++
-        val mustWrite = force ||
-            snapshot == null ||
-            snapshot.interrupted ||
-            unpersistedWorkEdits >= PERSIST_EVERY
+        val mustWrite =
+            force ||
+                snapshot == null ||
+                snapshot.interrupted ||
+                unpersistedWorkEdits >= PERSIST_EVERY
         if (!mustWrite) return
         dependencies.saveWork(snapshot)
         unpersistedWorkEdits = 0
     }
 
-    private suspend fun bufferReview(proposal: IdentifyProposal, fields: IdentifyApplyFields) {
-        val flush = workMutex.withLock {
-            reviewBuffer += proposal
-            if (reviewBufferFields == null) {
-                reviewBufferFields = fields
+    private suspend fun bufferReview(
+        proposal: IdentifyProposal,
+        fields: IdentifyApplyFields,
+    ) {
+        val flush =
+            workMutex.withLock {
+                reviewBuffer += proposal
+                if (reviewBufferFields == null) {
+                    reviewBufferFields = fields
+                }
+                if (reviewBuffer.size >= PERSIST_EVERY) {
+                    takeReviewBufferLocked()
+                } else {
+                    null
+                }
             }
-            if (reviewBuffer.size >= PERSIST_EVERY) {
-                takeReviewBufferLocked()
-            } else {
-                null
-            }
-        }
         if (flush != null) {
             dependencies.appendReview(flush.first, flush.second)
         }
     }
 
-    private suspend fun bufferReviewList(proposals: List<IdentifyProposal>, fields: IdentifyApplyFields) {
+    private suspend fun bufferReviewList(
+        proposals: List<IdentifyProposal>,
+        fields: IdentifyApplyFields,
+    ) {
         if (proposals.isEmpty()) return
-        val flush = workMutex.withLock {
-            reviewBuffer += proposals
-            if (reviewBufferFields == null) {
-                reviewBufferFields = fields
+        val flush =
+            workMutex.withLock {
+                reviewBuffer += proposals
+                if (reviewBufferFields == null) {
+                    reviewBufferFields = fields
+                }
+                if (reviewBuffer.size >= PERSIST_EVERY) {
+                    takeReviewBufferLocked()
+                } else {
+                    null
+                }
             }
-            if (reviewBuffer.size >= PERSIST_EVERY) {
-                takeReviewBufferLocked()
-            } else {
-                null
-            }
-        }
         if (flush != null) {
             dependencies.appendReview(flush.first, flush.second)
         }
@@ -834,7 +914,7 @@ internal class ProcessIdentifyRuntime(
             acquireExecutionLease: suspend () -> AutoCloseable = { AutoCloseable {} },
             isPlaybackActive: () -> Boolean = { false },
             isResolvingStream: () -> Boolean = { false },
-            isSongActiveInPlayback: (Long) -> Boolean = { false }
+            isSongActiveInPlayback: (Long) -> Boolean = { false },
         ): ProcessIdentifyRuntime {
             val workStore = IdentifyWorkStore(context)
             val reviewStore = IdentifyReviewStore(context)
@@ -842,62 +922,64 @@ internal class ProcessIdentifyRuntime(
             val connectivity = ConnectivityObserver(context)
             return ProcessIdentifyRuntime(
                 scope = scope,
-                dependencies = Dependencies(
-                    getSong = { id -> repository.getSongById(id) },
-                    getSongs = { ids -> repository.getSongsByIds(ids) },
-                    propose = { song, force, token ->
-                        repository.proposeSongIdentity(
-                            song = song,
-                            force = force,
-                            listenBrainzToken = token
-                        )
-                    },
-                    apply = { songId, proposal, fields ->
-                        val suggested = proposal.suggested
-                            ?: return@Dependencies IdentifyResult.NoMatch
-                        repository.applySongIdentity(songId, suggested, fields)
-                    },
-                    listenBrainzToken = {
-                        val settings = listenBrainzPreferences.settingsFlow.first()
-                        settings.userToken.takeIf { settings.enabled && it.isNotBlank() }
-                    },
-                    pendingSongIds = { reviewStore.pendingSongIds() },
-                    appendReview = { proposals, fields ->
-                        reviewStore.appendProposals(proposals, fields)
-                    },
-                    loadWork = { workStore.load() },
-                    saveWork = { workStore.save(it) },
-                    isOnline = connectivity::isCurrentlyOnline,
-                    acquireExecutionLease = acquireExecutionLease,
-                    notifyCompleted = { summary ->
-                        IdentifyNotificationHelper(context).notifyCompleted(summary)
-                    },
-                    reportTelemetry = { snap ->
-                        CrashReporter.setKey("identify_high", "${snap.updated}")
-                        CrashReporter.setKey("identify_medium", "${snap.medium}")
-                        CrashReporter.setKey("identify_low", "${snap.low}")
-                        CrashReporter.setKey("identify_none", "${snap.none}")
-                        CrashReporter.setKey("identify_skipped", "${snap.skipped}")
-                        CrashReporter.setKey("identify_lb_hits", "${snap.lbHits}")
-                        CrashReporter.log(
-                            "identify_batch high=${snap.updated} medium=${snap.medium} " +
-                                "low=${snap.low} none=${snap.none} skipped=${snap.skipped} " +
-                                "lb_hits=${snap.lbHits}"
-                        )
-                    },
-                    loadScopedAlbumTracks = { artist, album ->
-                        repository.loadKnownAlbumTracks(artist, album, fetchCatalog = true)
-                    },
-                    setAlbumArtwork = { albumKey, artworkUri ->
-                        repository.setAlbumArtwork(albumKey, artworkUri)
-                    },
-                    searchAlbums = { query ->
-                        repository.searchAlbums(query)
-                    },
-                    isPlaybackActive = isPlaybackActive,
-                    isResolvingStream = isResolvingStream,
-                    isSongActiveInPlayback = isSongActiveInPlayback
-                )
+                dependencies =
+                    Dependencies(
+                        getSong = { id -> repository.getSongById(id) },
+                        getSongs = { ids -> repository.getSongsByIds(ids) },
+                        propose = { song, force, token ->
+                            repository.proposeSongIdentity(
+                                song = song,
+                                force = force,
+                                listenBrainzToken = token,
+                            )
+                        },
+                        apply = { songId, proposal, fields ->
+                            val suggested =
+                                proposal.suggested
+                                    ?: return@Dependencies IdentifyResult.NoMatch
+                            repository.applySongIdentity(songId, suggested, fields)
+                        },
+                        listenBrainzToken = {
+                            val settings = listenBrainzPreferences.settingsFlow.first()
+                            settings.userToken.takeIf { settings.enabled && it.isNotBlank() }
+                        },
+                        pendingSongIds = { reviewStore.pendingSongIds() },
+                        appendReview = { proposals, fields ->
+                            reviewStore.appendProposals(proposals, fields)
+                        },
+                        loadWork = { workStore.load() },
+                        saveWork = { workStore.save(it) },
+                        isOnline = connectivity::isCurrentlyOnline,
+                        acquireExecutionLease = acquireExecutionLease,
+                        notifyCompleted = { summary ->
+                            IdentifyNotificationHelper(context).notifyCompleted(summary)
+                        },
+                        reportTelemetry = { snap ->
+                            CrashReporter.setKey("identify_high", "${snap.updated}")
+                            CrashReporter.setKey("identify_medium", "${snap.medium}")
+                            CrashReporter.setKey("identify_low", "${snap.low}")
+                            CrashReporter.setKey("identify_none", "${snap.none}")
+                            CrashReporter.setKey("identify_skipped", "${snap.skipped}")
+                            CrashReporter.setKey("identify_lb_hits", "${snap.lbHits}")
+                            CrashReporter.log(
+                                "identify_batch high=${snap.updated} medium=${snap.medium} " +
+                                    "low=${snap.low} none=${snap.none} skipped=${snap.skipped} " +
+                                    "lb_hits=${snap.lbHits}",
+                            )
+                        },
+                        loadScopedAlbumTracks = { artist, album ->
+                            repository.loadKnownAlbumTracks(artist, album, fetchCatalog = true)
+                        },
+                        setAlbumArtwork = { albumKey, artworkUri ->
+                            repository.setAlbumArtwork(albumKey, artworkUri)
+                        },
+                        searchAlbums = { query ->
+                            repository.searchAlbums(query)
+                        },
+                        isPlaybackActive = isPlaybackActive,
+                        isResolvingStream = isResolvingStream,
+                        isSongActiveInPlayback = isSongActiveInPlayback,
+                    ),
             )
         }
     }

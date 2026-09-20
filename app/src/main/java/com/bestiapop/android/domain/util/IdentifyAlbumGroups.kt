@@ -25,7 +25,7 @@ data class IdentifyAlbumGroup(
     val artworkOnlySongIds: List<Long> = emptyList(),
     val otherGapsSongIds: List<Long> = emptyList(),
     val candidates: List<CatalogAlbum> = emptyList(),
-    val selectedCandidateIndex: Int = 0
+    val selectedCandidateIndex: Int = 0,
 ) {
     /** Backwards-compatible constructor for legacy usages. */
     constructor(
@@ -33,7 +33,7 @@ data class IdentifyAlbumGroup(
         artist: String,
         album: String,
         artworkUri: String?,
-        songIds: List<Long>
+        songIds: List<Long>,
     ) : this(
         key = key,
         currentArtist = artist,
@@ -48,28 +48,32 @@ data class IdentifyAlbumGroup(
         artworkOnlySongIds = emptyList(),
         otherGapsSongIds = emptyList(),
         candidates = emptyList(),
-        selectedCandidateIndex = 0
+        selectedCandidateIndex = 0,
     )
 
     val artist: String
-        get() = candidates.getOrNull(selectedCandidateIndex)?.artist
-            ?: proposedArtist.takeIf { it.isNotBlank() }
-            ?: currentArtist
+        get() =
+            candidates.getOrNull(selectedCandidateIndex)?.artist
+                ?: proposedArtist.takeIf { it.isNotBlank() }
+                ?: currentArtist
 
     val album: String
-        get() = candidates.getOrNull(selectedCandidateIndex)?.title
-            ?: proposedAlbum.takeIf { it.isNotBlank() }
-            ?: currentAlbum
+        get() =
+            candidates.getOrNull(selectedCandidateIndex)?.title
+                ?: proposedAlbum.takeIf { it.isNotBlank() }
+                ?: currentAlbum
 
     val artworkUri: String?
-        get() = candidates.getOrNull(selectedCandidateIndex)?.coverUrl
-            ?: proposedArtworkUri
-            ?: currentArtworkUri
+        get() =
+            candidates.getOrNull(selectedCandidateIndex)?.coverUrl
+                ?: proposedArtworkUri
+                ?: currentArtworkUri
 
     val year: Int
-        get() = candidates.getOrNull(selectedCandidateIndex)?.releaseYear?.toIntOrNull()
-            ?: proposedYear.takeIf { it > 0 }
-            ?: currentYear
+        get() =
+            candidates.getOrNull(selectedCandidateIndex)?.releaseYear?.toIntOrNull()
+                ?: proposedYear.takeIf { it > 0 }
+                ?: currentYear
 
     val selectedCandidate: CatalogAlbum?
         get() = candidates.getOrNull(selectedCandidateIndex)
@@ -77,7 +81,7 @@ data class IdentifyAlbumGroup(
 
 data class IdentifyAlbumGroupSource(
     val song: Song,
-    val proposal: IdentifyProposal
+    val proposal: IdentifyProposal,
 )
 
 /** Convert candidates to catalog albums omitting invalid or generic titles. */
@@ -90,7 +94,7 @@ fun IdentifyCandidate.toCatalogAlbum(): CatalogAlbum? {
         artist = artist,
         coverUrl = artworkUri?.takeIf { it.isNotBlank() },
         trackCount = 0,
-        releaseYear = year.takeIf { it > 0 }?.toString().orEmpty()
+        releaseYear = year.takeIf { it > 0 }?.toString().orEmpty(),
     )
 }
 
@@ -105,7 +109,7 @@ fun clusterIdentifyAlbumGroupsFromSources(
     sources: List<IdentifyAlbumGroupSource>,
     applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
     searchedCandidates: Map<String, List<CatalogAlbum>> = emptyMap(),
-    selectedCandidateIndices: Map<String, Int> = emptyMap()
+    selectedCandidateIndices: Map<String, Int> = emptyMap(),
 ): List<IdentifyAlbumGroup> {
     if (sources.size < 2) return emptyList()
     val buckets = LinkedHashMap<String, MutableList<IdentifyAlbumGroupSource>>()
@@ -114,18 +118,20 @@ fun clusterIdentifyAlbumGroupsFromSources(
         val suggested = source.proposal.suggested
         val suggestedAlbum = suggested?.album?.trim().orEmpty()
         val suggestedArtist = suggested?.artist?.trim().orEmpty()
-        val hasSuggested = source.proposal.confidence == IdentifyConfidence.MEDIUM &&
-            suggestedAlbum.isNotEmpty() && !IdentifyRanking.isGenericAlbum(suggestedAlbum)
+        val hasSuggested =
+            source.proposal.confidence == IdentifyConfidence.MEDIUM &&
+                suggestedAlbum.isNotEmpty() && !IdentifyRanking.isGenericAlbum(suggestedAlbum)
 
         val localAlbum = source.song.album.trim()
         val localArtist = source.song.artist.trim()
         val hasLocal = localAlbum.isNotEmpty() && !IdentifyRanking.isGenericAlbum(localAlbum)
 
-        val key = when {
-            hasSuggested -> albumGroupKey(suggestedArtist.ifEmpty { localArtist }, suggestedAlbum)
-            hasLocal -> albumGroupKey(localArtist, localAlbum)
-            else -> null
-        } ?: continue
+        val key =
+            when {
+                hasSuggested -> albumGroupKey(suggestedArtist.ifEmpty { localArtist }, suggestedAlbum)
+                hasLocal -> albumGroupKey(localArtist, localAlbum)
+                else -> null
+            } ?: continue
 
         buckets.getOrPut(key) { ArrayList() }.add(source)
     }
@@ -138,9 +144,12 @@ fun clusterIdentifyAlbumGroupsFromSources(
         val proposedAlbum = firstProposal?.album?.takeUnless { IdentifyRanking.isGenericAlbum(it) }.orEmpty()
         val proposedArtist = firstProposal?.artist?.takeUnless { IdentifyRanking.isPlaceholderArtist(it) }.orEmpty()
         val proposedArtwork = groupSources.firstNotNullOfOrNull { it.proposal.suggested?.artworkUri }
-        val proposedYear = groupSources.firstNotNullOfOrNull {
-            it.proposal.suggested?.year?.takeIf { y -> y > 0 }
-        } ?: 0
+        val proposedYear =
+            groupSources.firstNotNullOfOrNull {
+                it.proposal.suggested
+                    ?.year
+                    ?.takeIf { y -> y > 0 }
+            } ?: 0
 
         val currentArtist = firstSong.artist
         val currentAlbum = firstSong.album
@@ -148,17 +157,20 @@ fun clusterIdentifyAlbumGroupsFromSources(
         val currentYear = groupSources.firstNotNullOfOrNull { it.song.year.takeIf { y -> y > 0 } } ?: 0
 
         val songIds = groupSources.map { it.song.id }
-        val partition = partitionAlbumBatchSongs(
-            songs = groupSources.map { it.song },
-            batchFields = applyFields
-        )
+        val partition =
+            partitionAlbumBatchSongs(
+                songs = groupSources.map { it.song },
+                batchFields = applyFields,
+            )
         val artworkOnlyIds = partition.artworkOnlyIds
         val otherGapsIds = partition.otherGapsIds
 
         // Extracted candidates from proposals of all songs in this album
-        val extractedCandidates = groupSources.flatMap { it.proposal.candidates }
-            .mapNotNull { it.toCatalogAlbum() }
-            .distinctBy { it.dedupKey }
+        val extractedCandidates =
+            groupSources
+                .flatMap { it.proposal.candidates }
+                .mapNotNull { it.toCatalogAlbum() }
+                .distinctBy { it.dedupKey }
 
         val searched = searchedCandidates[key].orEmpty()
         val mergedCandidates = (searched + extractedCandidates).distinctBy { it.dedupKey }
@@ -179,24 +191,26 @@ fun clusterIdentifyAlbumGroupsFromSources(
             artworkOnlySongIds = artworkOnlyIds,
             otherGapsSongIds = otherGapsIds,
             candidates = mergedCandidates,
-            selectedCandidateIndex = selectedIndex
+            selectedCandidateIndex = selectedIndex,
         )
     }
 }
 
 /** Level 3 helper: converts proposals into group sources with dummy song identity for legacy callers. */
-fun List<IdentifyProposal>.toAlbumGroupSources(): List<IdentifyAlbumGroupSource> = map { proposal ->
-    IdentifyAlbumGroupSource(
-        song = Song(
-            id = proposal.songId,
-            uriString = "",
-            title = proposal.queryTitle,
-            artist = proposal.queryArtist,
-            album = ""
-        ),
-        proposal = proposal
-    )
-}
+fun List<IdentifyProposal>.toAlbumGroupSources(): List<IdentifyAlbumGroupSource> =
+    map { proposal ->
+        IdentifyAlbumGroupSource(
+            song =
+                Song(
+                    id = proposal.songId,
+                    uriString = "",
+                    title = proposal.queryTitle,
+                    artist = proposal.queryArtist,
+                    album = "",
+                ),
+            proposal = proposal,
+        )
+    }
 
 /**
  * Level 3 convenience clustering for proposals without full Song instances.
@@ -207,5 +221,7 @@ fun clusterIdentifyAlbumGroups(proposals: List<IdentifyProposal>): List<Identify
     return clusterIdentifyAlbumGroupsFromSources(proposals.toAlbumGroupSources())
 }
 
-fun albumGroupKey(artist: String, album: String): String = albumArtistKey(artist, album)
-
+fun albumGroupKey(
+    artist: String,
+    album: String,
+): String = albumArtistKey(artist, album)

@@ -27,7 +27,6 @@ import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.PcmWavFixture
 import com.bestiapop.android.testutil.PlaybackDeviceProbe
 import com.bestiapop.android.testutil.SideloadPlaybackAppOps
-import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -36,6 +35,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /**
  * Host-orchestrated task-removal fixture.
@@ -48,7 +48,6 @@ import org.junit.runner.RunWith
 @LargeTest
 @HostOrchestratedProcessDeathTest
 class PlaybackTaskRemovalE2ETest {
-
     @get:Rule
     val deviceAwakeRule = DeviceAwakeRule()
 
@@ -79,9 +78,10 @@ class PlaybackTaskRemovalE2ETest {
     @Test
     @HostOrchestratedProcessDeathTest
     fun cleanupHostFixture() {
-        val marker = markerFile.takeIf(File::isFile)?.let {
-            runCatching { JSONObject(it.readText()) }.getOrNull()
-        }
+        val marker =
+            markerFile.takeIf(File::isFile)?.let {
+                runCatching { JSONObject(it.readText()) }.getOrNull()
+            }
         val runtime = application.playbackRuntime
         val sessionStore = PlaybackSessionStore(context)
         val preferences = PlaybackPreferencesRepository(context)
@@ -101,7 +101,7 @@ class PlaybackTaskRemovalE2ETest {
                         preferences.setAutoplayOnLaunch(it.getBoolean("previousAutoplay"))
                         preferences.setLastShuffleEnabled(it.getBoolean("previousShuffle"))
                         preferences.setLastRepeatMode(
-                            RepeatMode.valueOf(it.getString("previousRepeat"))
+                            RepeatMode.valueOf(it.getString("previousRepeat")),
                         )
                     }
                 }
@@ -109,9 +109,10 @@ class PlaybackTaskRemovalE2ETest {
             { cleanupFixtureRowsAndFiles() },
             { context.stopService(Intent(context, MusicService::class.java)) },
             {
-                context.getSystemService(NotificationManager::class.java)
+                context
+                    .getSystemService(NotificationManager::class.java)
                     .cancel(MusicService.PLAYBACK_NOTIFICATION_ID)
-            }
+            },
         )
     }
 
@@ -138,11 +139,12 @@ class PlaybackTaskRemovalE2ETest {
             val songs = createAndPersistWavSongs()
 
             @Suppress("UNUSED_VARIABLE")
-            val activityKeptForHost = instrumentation.startActivitySync(
-                Intent(context, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                }
-            )
+            val activityKeptForHost =
+                instrumentation.startActivitySync(
+                    Intent(context, MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                    },
+                )
             instrumentation.waitForIdleSync()
             await("MainActivity attaches PlaybackRuntime") {
                 runtime.controllerConnectedForTest
@@ -155,7 +157,7 @@ class PlaybackTaskRemovalE2ETest {
                 runtime.playPlayableCollection(
                     items = songs.map { PlayableItem.Local(it) },
                     startIndex = EXPECTED_CURRENT_INDEX,
-                    rotate = false
+                    rotate = false,
                 )
             }
             await("real WAV playback enters foreground service") {
@@ -181,15 +183,16 @@ class PlaybackTaskRemovalE2ETest {
                 }
             }
 
-            val marker = JSONObject()
-                .put("kind", if (paused) "paused" else "playing")
-                .put("phase1Pid", Process.myPid())
-                .put("previousAutoplay", previousSettings.autoplayOnLaunch)
-                .put("previousShuffle", previousSettings.lastShuffleEnabled)
-                .put("previousRepeat", previousSettings.lastRepeatMode.name)
-                .put("baselinePositionMs", onMain { connected.currentPosition })
-                .put("expectedCurrentIndex", EXPECTED_CURRENT_INDEX)
-                .put("expectedTitles", JSONArray(EXPECTED_TITLES))
+            val marker =
+                JSONObject()
+                    .put("kind", if (paused) "paused" else "playing")
+                    .put("phase1Pid", Process.myPid())
+                    .put("previousAutoplay", previousSettings.autoplayOnLaunch)
+                    .put("previousShuffle", previousSettings.lastShuffleEnabled)
+                    .put("previousRepeat", previousSettings.lastRepeatMode.name)
+                    .put("baselinePositionMs", onMain { connected.currentPosition })
+                    .put("expectedCurrentIndex", EXPECTED_CURRENT_INDEX)
+                    .put("expectedTitles", JSONArray(EXPECTED_TITLES))
             markerFile.writeText(marker.toString())
 
             if (!paused) {
@@ -199,7 +202,7 @@ class PlaybackTaskRemovalE2ETest {
                     expectedTitles = EXPECTED_TITLES,
                     expectedCurrentIndex = EXPECTED_CURRENT_INDEX,
                     phase1Pid = Process.myPid(),
-                    sideloadPolicy = sideloadPolicy
+                    sideloadPolicy = sideloadPolicy,
                 )
                 sideloadPolicy = null
             } else {
@@ -221,7 +224,7 @@ class PlaybackTaskRemovalE2ETest {
                         preferences = preferences,
                         previousAutoplay = previousSettings.autoplayOnLaunch,
                         previousShuffle = previousSettings.lastShuffleEnabled,
-                        previousRepeat = previousSettings.lastRepeatMode
+                        previousRepeat = previousSettings.lastRepeatMode,
                     )
                 }
             }
@@ -234,7 +237,7 @@ class PlaybackTaskRemovalE2ETest {
         preferences: PlaybackPreferencesRepository,
         previousAutoplay: Boolean,
         previousShuffle: Boolean,
-        previousRepeat: RepeatMode
+        previousRepeat: RepeatMode,
     ) {
         runCleanupSteps(
             {
@@ -253,7 +256,7 @@ class PlaybackTaskRemovalE2ETest {
                 }
             },
             { cleanupFixtureRowsAndFiles() },
-            { context.stopService(Intent(context, MusicService::class.java)) }
+            { context.stopService(Intent(context, MusicService::class.java)) },
         )
     }
 
@@ -263,16 +266,17 @@ class PlaybackTaskRemovalE2ETest {
             PcmWavFixture.write(
                 file = file,
                 durationMs = WAV_DURATION_MS,
-                toneHz = 220.0 + index * 90.0
+                toneHz = 220.0 + index * 90.0,
             )
-            val draft = Song(
-                uriString = file.absolutePath,
-                title = title,
-                artist = FIXTURE_ARTIST,
-                album = FIXTURE_ALBUM,
-                durationMs = WAV_DURATION_MS.toLong(),
-                folderPath = fixtureDir.absolutePath
-            )
+            val draft =
+                Song(
+                    uriString = file.absolutePath,
+                    title = title,
+                    artist = FIXTURE_ARTIST,
+                    album = FIXTURE_ALBUM,
+                    durationMs = WAV_DURATION_MS.toLong(),
+                    folderPath = fixtureDir.absolutePath,
+                )
             val id = runBlocking { application.musicRepository.saveUploadedSong(draft) }
             check(id > 0L) { "Could not persist task-removal fixture $title" }
             draft.copy(id = id)
@@ -282,9 +286,11 @@ class PlaybackTaskRemovalE2ETest {
         runBlocking {
             val dao = AppDatabase.getDatabase(context).musicDao()
             val fixturePrefix = fixtureDir.absolutePath + File.separator
-            val ids = dao.getAllSongs()
-                .filter { it.uriString.startsWith(fixturePrefix) }
-                .map(Song::id)
+            val ids =
+                dao
+                    .getAllSongs()
+                    .filter { it.uriString.startsWith(fixturePrefix) }
+                    .map(Song::id)
             if (ids.isNotEmpty()) {
                 dao.deletePlaylistRefsForSongs(ids)
                 dao.deleteSongsByIds(ids)
@@ -301,17 +307,19 @@ class PlaybackTaskRemovalE2ETest {
         ) {
             instrumentation.uiAutomation.grantRuntimePermission(
                 context.packageName,
-                Manifest.permission.POST_NOTIFICATIONS
+                Manifest.permission.POST_NOTIFICATIONS,
             )
         }
     }
 
     private fun connectController(): MediaController = deviceProbe.connectController()
 
-    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? =
-        deviceProbe.musicServiceInfo()
+    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? = deviceProbe.musicServiceInfo()
 
-    private fun await(description: String, condition: () -> Boolean) {
+    private fun await(
+        description: String,
+        condition: () -> Boolean,
+    ) {
         val deadline = SystemClock.elapsedRealtime() + ASYNC_TIMEOUT_MS
         while (SystemClock.elapsedRealtime() < deadline) {
             if (condition()) return
@@ -324,8 +332,11 @@ class PlaybackTaskRemovalE2ETest {
         var firstFailure: Throwable? = null
         steps.forEach { step ->
             runCatching(step).exceptionOrNull()?.let { failure ->
-                if (firstFailure == null) firstFailure = failure
-                else firstFailure?.addSuppressed(failure)
+                if (firstFailure == null) {
+                    firstFailure = failure
+                } else {
+                    firstFailure?.addSuppressed(failure)
+                }
             }
         }
         firstFailure?.let { throw it }
@@ -344,11 +355,12 @@ class PlaybackTaskRemovalE2ETest {
         const val ASYNC_TIMEOUT_MS = 15_000L
         const val POLL_INTERVAL_MS = 25L
 
-        val EXPECTED_TITLES = listOf(
-            "Task removal fixture A",
-            "Task removal fixture B",
-            "Task removal fixture C"
-        )
+        val EXPECTED_TITLES =
+            listOf(
+                "Task removal fixture A",
+                "Task removal fixture B",
+                "Task removal fixture C",
+            )
     }
 }
 
@@ -366,6 +378,7 @@ private object TaskRemovalProcessProbe {
 
     @Volatile
     private var active = false
+
     @Volatile
     private var retainedLease: AutoCloseable? = null
 
@@ -379,7 +392,7 @@ private object TaskRemovalProcessProbe {
         expectedTitles: List<String>,
         expectedCurrentIndex: Int,
         phase1Pid: Int,
-        sideloadPolicy: AutoCloseable?
+        sideloadPolicy: AutoCloseable?,
     ) {
         check(!active) { "Task-removal process probe is already armed" }
         active = true
@@ -388,43 +401,45 @@ private object TaskRemovalProcessProbe {
         val result = File(fixtureDir, RESULT_FILE).apply { delete() }
 
         Thread({
-            val payload = runCatching {
-                awaitFile(signal, HOST_SIGNAL_TIMEOUT_MS)
-                val runtime = application.playbackRuntime
-                check(Process.myPid() == phase1Pid) {
-                    "PID changed inside resident probe: ${Process.myPid()} != $phase1Pid"
+            val payload =
+                runCatching {
+                    awaitFile(signal, HOST_SIGNAL_TIMEOUT_MS)
+                    val runtime = application.playbackRuntime
+                    check(Process.myPid() == phase1Pid) {
+                        "PID changed inside resident probe: ${Process.myPid()} != $phase1Pid"
+                    }
+                    check(runtime.controllerConnectedForTest) {
+                        "PlaybackRuntime lost its MediaController"
+                    }
+                    check(runtime.queue.value.map { it.title } == expectedTitles) {
+                        "Queue changed after task removal: ${runtime.queue.value.map { it.title }}"
+                    }
+                    val currentIndex =
+                        runtime.queue.value.indexOfFirst {
+                            it.queueEntryId == runtime.currentItem.value?.queueEntryId
+                        }
+                    check(currentIndex == expectedCurrentIndex) {
+                        "Current index changed after task removal: $currentIndex"
+                    }
+                    check(runtime.isPlaying.value) { "Playback is no longer active after task removal" }
+                    val positionBefore = runtime.playbackPositionMs.value
+                    await(PROGRESS_TIMEOUT_MS) {
+                        runtime.isPlaying.value &&
+                            runtime.playbackPositionMs.value >= positionBefore + MIN_PROGRESS_MS
+                    }
+                    JSONObject()
+                        .put("passed", true)
+                        .put("pid", Process.myPid())
+                        .put("queue", JSONArray(runtime.queue.value.map { it.title }))
+                        .put("currentIndex", currentIndex)
+                        .put("positionBeforeMs", positionBefore)
+                        .put("positionAfterMs", runtime.playbackPositionMs.value)
+                }.getOrElse { failure ->
+                    JSONObject()
+                        .put("passed", false)
+                        .put("pid", Process.myPid())
+                        .put("error", "${failure.javaClass.simpleName}: ${failure.message}")
                 }
-                check(runtime.controllerConnectedForTest) {
-                    "PlaybackRuntime lost its MediaController"
-                }
-                check(runtime.queue.value.map { it.title } == expectedTitles) {
-                    "Queue changed after task removal: ${runtime.queue.value.map { it.title }}"
-                }
-                val currentIndex = runtime.queue.value.indexOfFirst {
-                    it.queueEntryId == runtime.currentItem.value?.queueEntryId
-                }
-                check(currentIndex == expectedCurrentIndex) {
-                    "Current index changed after task removal: $currentIndex"
-                }
-                check(runtime.isPlaying.value) { "Playback is no longer active after task removal" }
-                val positionBefore = runtime.playbackPositionMs.value
-                await(PROGRESS_TIMEOUT_MS) {
-                    runtime.isPlaying.value &&
-                        runtime.playbackPositionMs.value >= positionBefore + MIN_PROGRESS_MS
-                }
-                JSONObject()
-                    .put("passed", true)
-                    .put("pid", Process.myPid())
-                    .put("queue", JSONArray(runtime.queue.value.map { it.title }))
-                    .put("currentIndex", currentIndex)
-                    .put("positionBeforeMs", positionBefore)
-                    .put("positionAfterMs", runtime.playbackPositionMs.value)
-            }.getOrElse { failure ->
-                JSONObject()
-                    .put("passed", false)
-                    .put("pid", Process.myPid())
-                    .put("error", "${failure.javaClass.simpleName}: ${failure.message}")
-            }
             writeAtomically(result, payload.toString())
             active = false
         }, "BestiaPop-task-removal-host-probe").apply {
@@ -433,11 +448,17 @@ private object TaskRemovalProcessProbe {
         }
     }
 
-    private fun awaitFile(file: File, timeoutMs: Long) {
+    private fun awaitFile(
+        file: File,
+        timeoutMs: Long,
+    ) {
         await(timeoutMs) { file.isFile }
     }
 
-    private fun await(timeoutMs: Long, condition: () -> Boolean) {
+    private fun await(
+        timeoutMs: Long,
+        condition: () -> Boolean,
+    ) {
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
         while (SystemClock.elapsedRealtime() < deadline) {
             if (condition()) return
@@ -446,7 +467,10 @@ private object TaskRemovalProcessProbe {
         throw AssertionError("Timed out after ${timeoutMs}ms")
     }
 
-    private fun writeAtomically(destination: File, contents: String) {
+    private fun writeAtomically(
+        destination: File,
+        contents: String,
+    ) {
         val staged = File(destination.parentFile, "${destination.name}.tmp")
         staged.writeText(contents)
         check(staged.renameTo(destination)) { "Could not publish ${destination.absolutePath}" }

@@ -18,7 +18,6 @@ import java.util.Locale
  * Level 3: Pure utility functions for calculating fast-scroll sections.
  */
 object FastScrollSections {
-
     const val MIN_ITEMS_THRESHOLD = 12
     private val defaultZone: ZoneId by lazy { ZoneId.systemDefault() }
 
@@ -31,7 +30,7 @@ object FastScrollSections {
         itemCenters: FloatArray,
         sectionsCount: Int,
         railHeight: Float = 0f,
-        verticalPaddingPx: Float = 0f
+        verticalPaddingPx: Float = 0f,
     ): Int {
         if (sectionsCount <= 0) return 0
         if (sectionsCount == 1) return 0
@@ -80,21 +79,46 @@ object FastScrollSections {
     /**
      * Normalizes a string's leading character into an alphabet letter (A-Z), "0-9", or "*".
      */
-    fun normalizeSectionChar(input: String?): String =
-        NaturalTextOrder.sectionDescriptor(input).label
+    fun normalizeSectionChar(input: String?): String = NaturalTextOrder.sectionDescriptor(input).label
 
-    private val SPANISH_MONTHS_SHORT = arrayOf(
-        "", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"
-    )
-    private val SPANISH_MONTHS_FULL = arrayOf(
-        "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-    )
+    private val SPANISH_MONTHS_SHORT =
+        arrayOf(
+            "",
+            "Ene",
+            "Feb",
+            "Mar",
+            "Abr",
+            "May",
+            "Jun",
+            "Jul",
+            "Ago",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dic",
+        )
+    private val SPANISH_MONTHS_FULL =
+        arrayOf(
+            "",
+            "Enero",
+            "Febrero",
+            "Marzo",
+            "Abril",
+            "Mayo",
+            "Junio",
+            "Julio",
+            "Agosto",
+            "Septiembre",
+            "Octubre",
+            "Noviembre",
+            "Diciembre",
+        )
 
     private enum class DateGranularity {
         YEAR,
         MONTH,
         DAY,
-        HOUR
+        HOUR,
     }
 
     private data class ParsedItemDate(
@@ -104,7 +128,7 @@ object FastScrollSections {
         val month: Int,
         val day: Int,
         val hour: Int,
-        val previewText: String?
+        val previewText: String?,
     )
 
     /**
@@ -129,7 +153,7 @@ object FastScrollSections {
         totalItems: Int,
         getDateAdded: (index: Int) -> Long,
         getPreviewText: (index: Int) -> String?,
-        isValidItem: (index: Int) -> Boolean = { true }
+        isValidItem: (index: Int) -> Boolean = { true },
     ): List<FastScrollSection> {
         if (totalItems < MIN_ITEMS_THRESHOLD) return emptyList()
 
@@ -142,15 +166,16 @@ object FastScrollSections {
             allFilteredItems += (i to epoch)
             if (epoch > 0L) {
                 val zdt = Instant.ofEpochMilli(epoch).atZone(defaultZone)
-                validItems += ParsedItemDate(
-                    index = i,
-                    epochMs = epoch,
-                    year = zdt.year,
-                    month = zdt.monthValue,
-                    day = zdt.dayOfMonth,
-                    hour = zdt.hour,
-                    previewText = getPreviewText(i)
-                )
+                validItems +=
+                    ParsedItemDate(
+                        index = i,
+                        epochMs = epoch,
+                        year = zdt.year,
+                        month = zdt.monthValue,
+                        day = zdt.dayOfMonth,
+                        hour = zdt.hour,
+                        previewText = getPreviewText(i),
+                    )
             }
         }
 
@@ -162,13 +187,14 @@ object FastScrollSections {
         val distinctDays = validItems.map { Triple(it.year, it.month, it.day) }.distinct().size
         val distinctHours = validItems.map { "${it.year}-${it.month}-${it.day}-${it.hour}" }.distinct().size
 
-        val granularity = when {
-            distinctMonths > 24 -> DateGranularity.YEAR
-            distinctMonths > 1 -> DateGranularity.MONTH
-            distinctDays > 1 -> DateGranularity.DAY
-            distinctHours > 1 -> DateGranularity.HOUR
-            else -> DateGranularity.MONTH
-        }
+        val granularity =
+            when {
+                distinctMonths > 24 -> DateGranularity.YEAR
+                distinctMonths > 1 -> DateGranularity.MONTH
+                distinctDays > 1 -> DateGranularity.DAY
+                distinctHours > 1 -> DateGranularity.HOUR
+                else -> DateGranularity.MONTH
+            }
 
         val today = LocalDate.now(defaultZone)
         val sections = ArrayList<FastScrollSection>()
@@ -176,51 +202,57 @@ object FastScrollSections {
 
         for (item in allFilteredItems) {
             val (idx, epoch) = item
-            val (label, popupLabel, sectionKey) = if (epoch <= 0L) {
-                Triple("#", "Sin fecha", "no-date")
-            } else {
-                val zdt = Instant.ofEpochMilli(epoch).atZone(defaultZone)
-                val year = zdt.year
-                val month = zdt.monthValue
-                val day = zdt.dayOfMonth
-                val hour = zdt.hour
-                val monthShort = SPANISH_MONTHS_SHORT.getOrElse(month) { "Mes" }
-                val monthFull = SPANISH_MONTHS_FULL.getOrElse(month) { "Mes" }
+            val (label, popupLabel, sectionKey) =
+                if (epoch <= 0L) {
+                    Triple("#", "Sin fecha", "no-date")
+                } else {
+                    val zdt = Instant.ofEpochMilli(epoch).atZone(defaultZone)
+                    val year = zdt.year
+                    val month = zdt.monthValue
+                    val day = zdt.dayOfMonth
+                    val hour = zdt.hour
+                    val monthShort = SPANISH_MONTHS_SHORT.getOrElse(month) { "Mes" }
+                    val monthFull = SPANISH_MONTHS_FULL.getOrElse(month) { "Mes" }
 
-                when (granularity) {
-                    DateGranularity.YEAR -> {
-                        val shortYear = if (year >= 2000) "'${year.toString().takeLast(2)}" else year.toString()
-                        Triple(shortYear, year.toString(), year.toString())
-                    }
-                    DateGranularity.MONTH -> {
-                        Triple(monthShort, "$monthFull $year", "$year-$month")
-                    }
-                    DateGranularity.DAY -> {
-                        val itemDate = zdt.toLocalDate()
-                        val dayDiff = ChronoUnit.DAYS.between(itemDate, today)
-                        val (l, p) = when {
-                            dayDiff == 0L -> "Hoy" to "Hoy ($day $monthShort)"
-                            dayDiff == 1L -> "Ayer" to "Ayer ($day $monthShort)"
-                            else -> "$day" to "$day de $monthFull"
+                    when (granularity) {
+                        DateGranularity.YEAR -> {
+                            val shortYear = if (year >= 2000) "'${year.toString().takeLast(2)}" else year.toString()
+                            Triple(shortYear, year.toString(), year.toString())
                         }
-                        Triple(l, p, "$year-$month-$day")
-                    }
-                    DateGranularity.HOUR -> {
-                        val hourStr = String.format(Locale.ROOT, "%02dh", hour)
-                        val timeStr = String.format(Locale.ROOT, "%02d:00", hour)
-                        Triple(hourStr, "$timeStr ($day $monthShort)", "$year-$month-$day-$hour")
+
+                        DateGranularity.MONTH -> {
+                            Triple(monthShort, "$monthFull $year", "$year-$month")
+                        }
+
+                        DateGranularity.DAY -> {
+                            val itemDate = zdt.toLocalDate()
+                            val dayDiff = ChronoUnit.DAYS.between(itemDate, today)
+                            val (l, p) =
+                                when {
+                                    dayDiff == 0L -> "Hoy" to "Hoy ($day $monthShort)"
+                                    dayDiff == 1L -> "Ayer" to "Ayer ($day $monthShort)"
+                                    else -> "$day" to "$day de $monthFull"
+                                }
+                            Triple(l, p, "$year-$month-$day")
+                        }
+
+                        DateGranularity.HOUR -> {
+                            val hourStr = String.format(Locale.ROOT, "%02dh", hour)
+                            val timeStr = String.format(Locale.ROOT, "%02d:00", hour)
+                            Triple(hourStr, "$timeStr ($day $monthShort)", "$year-$month-$day-$hour")
+                        }
                     }
                 }
-            }
 
             if (sectionKey != lastKey) {
                 lastKey = sectionKey
-                sections += FastScrollSection(
-                    label = label,
-                    popupLabel = popupLabel,
-                    itemIndex = idx,
-                    previewText = getPreviewText(idx)
-                )
+                sections +=
+                    FastScrollSection(
+                        label = label,
+                        popupLabel = popupLabel,
+                        itemIndex = idx,
+                        previewText = getPreviewText(idx),
+                    )
             }
         }
 
@@ -230,15 +262,30 @@ object FastScrollSections {
     /**
      * Extracts relative time buckets for recently played songs.
      */
-    fun recentSection(epochMs: Long, now: Long = System.currentTimeMillis()): Pair<String, String> {
+    fun recentSection(
+        epochMs: Long,
+        now: Long = System.currentTimeMillis(),
+    ): Pair<String, String> {
         if (epochMs <= 0L) return "#" to "Sin fecha"
         val diffMs = (now - epochMs).coerceAtLeast(0)
         val diffDays = diffMs / (24 * 60 * 60 * 1000L)
         return when {
-            diffDays == 0L -> "H" to "Hoy"
-            diffDays == 1L -> "A" to "Ayer"
-            diffDays < 7L -> "Sem" to "Esta semana"
-            diffDays < 30L -> "Mes" to "Este mes"
+            diffDays == 0L -> {
+                "H" to "Hoy"
+            }
+
+            diffDays == 1L -> {
+                "A" to "Ayer"
+            }
+
+            diffDays < 7L -> {
+                "Sem" to "Esta semana"
+            }
+
+            diffDays < 30L -> {
+                "Mes" to "Este mes"
+            }
+
             else -> {
                 val date = Instant.ofEpochMilli(epochMs).atZone(defaultZone)
                 val year = date.year.toString()
@@ -252,9 +299,10 @@ object FastScrollSections {
      * Extracts genre sections with compact rail tag and full popup name.
      */
     fun genreSection(genre: String?): Pair<String, String> {
-        val clean = genre?.trim()?.takeIf {
-            it.isNotBlank() && !it.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
-        } ?: return "?" to "Desconocido"
+        val clean =
+            genre?.trim()?.takeIf {
+                it.isNotBlank() && !it.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
+            } ?: return "?" to "Desconocido"
 
         val shortLabel = if (clean.length <= 3) clean else clean.take(2)
         return shortLabel to clean
@@ -267,7 +315,7 @@ object FastScrollSections {
      */
     inline fun buildDeduplicatedSections(
         totalItems: Int,
-        resolveSection: (index: Int) -> FastScrollSection?
+        resolveSection: (index: Int) -> FastScrollSection?,
     ): List<FastScrollSection> {
         if (totalItems < MIN_ITEMS_THRESHOLD) return emptyList()
         val sections = ArrayList<FastScrollSection>()
@@ -290,7 +338,7 @@ object FastScrollSections {
     fun fromLibraryList(
         model: LibraryListModel,
         sortOption: SortOption,
-        emphasizeLastPlayed: Boolean = false
+        emphasizeLastPlayed: Boolean = false,
     ): List<FastScrollSection> {
         val hasHeaders = model.segments.isNotEmpty()
 
@@ -299,10 +347,13 @@ object FastScrollSections {
                 totalItems = model.size,
                 getDateAdded = { index ->
                     when (val item = model.itemAt(index)) {
-                        is LibraryListItem.AlbumHeader ->
+                        is LibraryListItem.AlbumHeader -> {
                             model.songsById[item.songIds.firstOrNull()]?.dateAdded ?: 0L
-                        is LibraryListItem.SongRow ->
+                        }
+
+                        is LibraryListItem.SongRow -> {
                             item.song.dateAdded
+                        }
                     }
                 },
                 getPreviewText = { index ->
@@ -313,7 +364,7 @@ object FastScrollSections {
                 },
                 isValidItem = { index ->
                     if (hasHeaders) model.itemAt(index) is LibraryListItem.AlbumHeader else true
-                }
+                },
             )
         }
 
@@ -323,16 +374,24 @@ object FastScrollSections {
                 null
             } else {
                 when (item) {
-                    is LibraryListItem.AlbumHeader -> when (sortOption) {
-                        SortOption.TITLE, SortOption.ALBUM ->
-                            FastScrollSection(textSection(item.displayName), i, item.displayName)
-                        SortOption.ARTIST ->
-                            FastScrollSection(textSection(item.artistName), i, item.artistName)
-                        SortOption.GENRE ->
-                            FastScrollSection(genreSection(item.sortHint), i, item.displayName)
-                        SortOption.DATE_ADDED -> {
-                            val firstSong = model.songsById[item.songIds.firstOrNull()]
-                            FastScrollSection(dateSection(firstSong?.dateAdded ?: 0L), i, item.displayName)
+                    is LibraryListItem.AlbumHeader -> {
+                        when (sortOption) {
+                            SortOption.TITLE, SortOption.ALBUM -> {
+                                FastScrollSection(textSection(item.displayName), i, item.displayName)
+                            }
+
+                            SortOption.ARTIST -> {
+                                FastScrollSection(textSection(item.artistName), i, item.artistName)
+                            }
+
+                            SortOption.GENRE -> {
+                                FastScrollSection(genreSection(item.sortHint), i, item.displayName)
+                            }
+
+                            SortOption.DATE_ADDED -> {
+                                val firstSong = model.songsById[item.songIds.firstOrNull()]
+                                FastScrollSection(dateSection(firstSong?.dateAdded ?: 0L), i, item.displayName)
+                            }
                         }
                     }
 
@@ -342,16 +401,25 @@ object FastScrollSections {
                             FastScrollSection(recentSection(song.lastPlayedAt), i, "${song.title} • ${song.artist}")
                         } else {
                             when (sortOption) {
-                                SortOption.TITLE ->
+                                SortOption.TITLE -> {
                                     FastScrollSection(textSection(song.title), i, "${song.title} • ${song.artist}")
-                                SortOption.ARTIST ->
+                                }
+
+                                SortOption.ARTIST -> {
                                     FastScrollSection(textSection(song.artist), i, "${song.artist} • ${song.title}")
-                                SortOption.ALBUM ->
+                                }
+
+                                SortOption.ALBUM -> {
                                     FastScrollSection(textSection(song.album), i, "${song.album} • ${song.title}")
-                                SortOption.GENRE ->
+                                }
+
+                                SortOption.GENRE -> {
                                     FastScrollSection(genreSection(song.genre), i, "${song.genre ?: "Desconocido"} • ${song.title}")
-                                SortOption.DATE_ADDED ->
+                                }
+
+                                SortOption.DATE_ADDED -> {
                                     FastScrollSection(dateSection(song.dateAdded), i, song.title)
+                                }
                             }
                         }
                     }
@@ -365,27 +433,34 @@ object FastScrollSections {
      */
     fun fromAlbums(
         albums: List<Album>,
-        sortOption: SortOption
+        sortOption: SortOption,
     ): List<FastScrollSection> {
         if (sortOption == SortOption.DATE_ADDED) {
             return buildDateSections(
                 totalItems = albums.size,
                 getDateAdded = { albums[it].dateAdded ?: 0L },
-                getPreviewText = { "${albums[it].displayName} • ${albums[it].artist}" }
+                getPreviewText = { "${albums[it].displayName} • ${albums[it].artist}" },
             )
         }
 
         return buildDeduplicatedSections(albums.size) { i ->
             val album = albums[i]
             when (sortOption) {
-                SortOption.TITLE, SortOption.ALBUM ->
+                SortOption.TITLE, SortOption.ALBUM -> {
                     FastScrollSection(textSection(album.displayName), i, "${album.displayName} • ${album.artist}")
-                SortOption.ARTIST ->
+                }
+
+                SortOption.ARTIST -> {
                     FastScrollSection(textSection(album.artist), i, "${album.artist} • ${album.displayName}")
-                SortOption.GENRE ->
+                }
+
+                SortOption.GENRE -> {
                     FastScrollSection(genreSection(album.genre), i, "${album.displayName} (${album.genre ?: ""})")
-                SortOption.DATE_ADDED ->
+                }
+
+                SortOption.DATE_ADDED -> {
                     FastScrollSection(dateSection(album.dateAdded ?: 0L), i, album.displayName)
+                }
             }
         }
     }
@@ -395,25 +470,30 @@ object FastScrollSections {
      */
     fun fromArtists(
         artists: List<Artist>,
-        sortOption: SortOption
+        sortOption: SortOption,
     ): List<FastScrollSection> {
         if (sortOption == SortOption.DATE_ADDED) {
             return buildDateSections(
                 totalItems = artists.size,
                 getDateAdded = { artists[it].dateAdded ?: 0L },
-                getPreviewText = { artists[it].name }
+                getPreviewText = { artists[it].name },
             )
         }
 
         return buildDeduplicatedSections(artists.size) { i ->
             val artist = artists[i]
             when (sortOption) {
-                SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM ->
+                SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM -> {
                     FastScrollSection(textSection(artist.name), i, artist.name)
-                SortOption.GENRE ->
+                }
+
+                SortOption.GENRE -> {
                     FastScrollSection(genreSection(artist.genre), i, "${artist.name} (${artist.genre ?: ""})")
-                SortOption.DATE_ADDED ->
+                }
+
+                SortOption.DATE_ADDED -> {
                     FastScrollSection(dateSection(artist.dateAdded ?: 0L), i, artist.name)
+                }
             }
         }
     }
@@ -423,13 +503,13 @@ object FastScrollSections {
      */
     fun fromGenres(
         genres: List<GenreGroup>,
-        sortOption: SortOption
+        sortOption: SortOption,
     ): List<FastScrollSection> {
         if (sortOption == SortOption.DATE_ADDED) {
             return buildDateSections(
                 totalItems = genres.size,
                 getDateAdded = { genres[it].dateAdded ?: 0L },
-                getPreviewText = { genres[it].name }
+                getPreviewText = { genres[it].name },
             )
         }
 

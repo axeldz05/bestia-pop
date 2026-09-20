@@ -30,7 +30,6 @@ internal const val PLAYLIST_SONG_SELECT = """
 
 @Dao
 interface MusicDao {
-
     // Songs
     @Query(IDENTITY_SONG_SELECT)
     fun getAllSongsFlow(): Flow<List<Song>>
@@ -56,8 +55,13 @@ interface MusicDao {
     @Query("SELECT * FROM songs WHERE uriString = :uri LIMIT 1")
     suspend fun getSongByUri(uri: String): Song?
 
-    @Query("SELECT * FROM songs WHERE title = :title COLLATE NOCASE AND artist = :artist COLLATE NOCASE ORDER BY CASE WHEN uriString NOT LIKE 'remote://%' THEN 0 ELSE 1 END ASC LIMIT 1")
-    suspend fun findSongByTitleAndArtist(title: String, artist: String): Song?
+    @Query(
+        "SELECT * FROM songs WHERE title = :title COLLATE NOCASE AND artist = :artist COLLATE NOCASE ORDER BY CASE WHEN uriString NOT LIKE 'remote://%' THEN 0 ELSE 1 END ASC LIMIT 1",
+    )
+    suspend fun findSongByTitleAndArtist(
+        title: String,
+        artist: String,
+    ): Song?
 
     @Query("SELECT * FROM songs WHERE uriString IN (:uris)")
     suspend fun getSongsByUris(uris: List<String>): List<Song>
@@ -65,11 +69,21 @@ interface MusicDao {
     @Query("SELECT * FROM songs WHERE id = :id")
     suspend fun getSongById(id: Long): Song?
 
-    @Query("SELECT * FROM songs WHERE album = :albumName COLLATE NOCASE AND artist = :artistName COLLATE NOCASE AND uriString LIKE 'remote://%'")
-    suspend fun getSavedRemoteAlbumSongs(albumName: String, artistName: String): List<Song>
+    @Query(
+        "SELECT * FROM songs WHERE album = :albumName COLLATE NOCASE AND artist = :artistName COLLATE NOCASE AND uriString LIKE 'remote://%'",
+    )
+    suspend fun getSavedRemoteAlbumSongs(
+        albumName: String,
+        artistName: String,
+    ): List<Song>
 
-    @Query("DELETE FROM songs WHERE album = :albumName COLLATE NOCASE AND artist = :artistName COLLATE NOCASE AND uriString LIKE 'remote://%'")
-    suspend fun deleteSavedRemoteAlbum(albumName: String, artistName: String): Int
+    @Query(
+        "DELETE FROM songs WHERE album = :albumName COLLATE NOCASE AND artist = :artistName COLLATE NOCASE AND uriString LIKE 'remote://%'",
+    )
+    suspend fun deleteSavedRemoteAlbum(
+        albumName: String,
+        artistName: String,
+    ): Int
 
     /**
      * IGNORE, not REPLACE: `songs.uriString` is unique, and REPLACE deletes the conflicting row and
@@ -92,7 +106,7 @@ interface MusicDao {
                artworkUri = :artworkUri, trackNumber = :trackNumber, year = :year,
                durationMs = :durationMs
         WHERE id = :songId
-        """
+        """,
     )
     suspend fun updateSongIdentity(
         songId: Long,
@@ -102,7 +116,7 @@ interface MusicDao {
         artworkUri: String?,
         trackNumber: Int,
         year: Int,
-        durationMs: Long
+        durationMs: Long,
     )
 
     @Query("DELETE FROM songs WHERE id = :songId")
@@ -112,18 +126,34 @@ interface MusicDao {
     suspend fun deleteSongsByIds(songIds: List<Long>)
 
     @Query("UPDATE songs SET artworkUri = :artworkUri, lyrics = :lyrics WHERE id = :songId")
-    suspend fun updateMetadataAndLyrics(songId: Long, artworkUri: String?, lyrics: String?)
+    suspend fun updateMetadataAndLyrics(
+        songId: Long,
+        artworkUri: String?,
+        lyrics: String?,
+    )
 
     @Query("UPDATE songs SET lyrics = :lyrics WHERE id = :songId")
-    suspend fun updateSongLyrics(songId: Long, lyrics: String?)
+    suspend fun updateSongLyrics(
+        songId: Long,
+        lyrics: String?,
+    )
 
     @Query("UPDATE songs SET dateAdded = :dateAdded WHERE id = :songId")
-    suspend fun updateSongDateAdded(songId: Long, dateAdded: Long)
+    suspend fun updateSongDateAdded(
+        songId: Long,
+        dateAdded: Long,
+    )
 
     @Query("UPDATE songs SET uriString = :uriString, folderPath = :folderPath WHERE id = :songId")
-    suspend fun updateSongUri(songId: Long, uriString: String, folderPath: String)
+    suspend fun updateSongUri(
+        songId: Long,
+        uriString: String,
+        folderPath: String,
+    )
 
-    @Query("UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, year = :year, trackNumber = :trackNumber WHERE id = :songId")
+    @Query(
+        "UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, year = :year, trackNumber = :trackNumber WHERE id = :songId",
+    )
     suspend fun updateSongMetadata(
         songId: Long,
         title: String,
@@ -131,18 +161,21 @@ interface MusicDao {
         album: String,
         genre: String,
         year: Int,
-        trackNumber: Int
+        trackNumber: Int,
     )
 
     @Query("UPDATE songs SET trackNumber = :trackNumber WHERE id = :songId")
-    suspend fun updateTrackNumber(songId: Long, trackNumber: Int)
+    suspend fun updateTrackNumber(
+        songId: Long,
+        trackNumber: Int,
+    )
 
     @Query(
         """
         UPDATE songs SET artist = :artist, album = :newAlbum, genre = :genre, year = :year,
         artworkUri = CASE WHEN :artworkUri IS NOT NULL AND :artworkUri != '' THEN :artworkUri ELSE artworkUri END
         WHERE album = :oldAlbum COLLATE NOCASE
-        """
+        """,
     )
     suspend fun updateSongsAlbumMetadata(
         oldAlbum: String,
@@ -150,7 +183,7 @@ interface MusicDao {
         artist: String,
         genre: String,
         year: Int,
-        artworkUri: String?
+        artworkUri: String?,
     )
 
     @Query("$IDENTITY_SONG_SELECT WHERE album = :albumName COLLATE NOCASE")
@@ -160,13 +193,22 @@ interface MusicDao {
     suspend fun getArtworkForAlbum(albumName: String): String?
 
     @Query("UPDATE songs SET artworkUri = :artworkUri WHERE album = :albumName")
-    suspend fun setAlbumArtwork(albumName: String, artworkUri: String?)
+    suspend fun setAlbumArtwork(
+        albumName: String,
+        artworkUri: String?,
+    )
 
     @Query("UPDATE songs SET durationMs = :durationMs WHERE id = :songId")
-    suspend fun updateSongDuration(songId: Long, durationMs: Long)
+    suspend fun updateSongDuration(
+        songId: Long,
+        durationMs: Long,
+    )
 
     @Query("INSERT OR REPLACE INTO song_play_stats (songId, lastPlayedAt) VALUES (:songId, :ts)")
-    suspend fun updateLastPlayedAt(songId: Long, ts: Long)
+    suspend fun updateLastPlayedAt(
+        songId: Long,
+        ts: Long,
+    )
 
     @Query("SELECT * FROM song_play_stats")
     fun getPlayStatsFlow(): Flow<List<SongPlayStat>>
@@ -207,7 +249,7 @@ interface MusicDao {
             createdAt 
         FROM playlists 
         ORDER BY createdAt DESC
-        """
+        """,
     )
     fun getAllPlaylistsFlow(): Flow<List<PlaylistEntity>>
 
@@ -236,7 +278,7 @@ interface MusicDao {
             playlists.createdAt 
         FROM playlists 
         ORDER BY playlists.createdAt DESC
-        """
+        """,
     )
     fun getAllPlaylistSummariesFlow(): Flow<List<PlaylistSummary>>
 
@@ -262,39 +304,57 @@ interface MusicDao {
     suspend fun addSongsToPlaylist(refs: List<PlaylistSongCrossRef>)
 
     @Transaction
-    suspend fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) {
+    suspend fun reorderPlaylistSongs(
+        playlistId: Long,
+        songIds: List<Long>,
+    ) {
         clearPlaylistSongs(playlistId)
-        val refs = songIds.mapIndexed { index, songId ->
-            PlaylistSongCrossRef(
-                playlistId = playlistId,
-                songId = songId,
-                position = index
-            )
-        }
+        val refs =
+            songIds.mapIndexed { index, songId ->
+                PlaylistSongCrossRef(
+                    playlistId = playlistId,
+                    songId = songId,
+                    position = index,
+                )
+            }
         addSongsToPlaylist(refs)
     }
 
     @Query("SELECT MAX(position) FROM playlist_song_cross_ref WHERE playlistId = :playlistId")
     suspend fun getMaxPositionInPlaylist(playlistId: Long): Int?
 
-    @Query("DELETE FROM playlist_song_cross_ref WHERE id = (SELECT id FROM playlist_song_cross_ref WHERE playlistId = :playlistId AND songId = :songId ORDER BY position ASC, id ASC LIMIT 1)")
-    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long)
+    @Query(
+        "DELETE FROM playlist_song_cross_ref WHERE id = (SELECT id FROM playlist_song_cross_ref WHERE playlistId = :playlistId AND songId = :songId ORDER BY position ASC, id ASC LIMIT 1)",
+    )
+    suspend fun removeSongFromPlaylist(
+        playlistId: Long,
+        songId: Long,
+    )
 
     @Query("DELETE FROM playlist_song_cross_ref WHERE playlistId = :playlistId AND songId = :songId")
-    suspend fun removeAllOccurrencesOfSongFromPlaylist(playlistId: Long, songId: Long)
+    suspend fun removeAllOccurrencesOfSongFromPlaylist(
+        playlistId: Long,
+        songId: Long,
+    )
 
     @Query("SELECT playlistId FROM playlist_song_cross_ref WHERE songId = :songId")
     suspend fun getPlaylistIdsForSong(songId: Long): List<Long>
 
     @Query("DELETE FROM playlist_song_cross_ref WHERE songId = :songId AND playlistId IN (:playlistIds)")
-    suspend fun deleteSongFromPlaylists(songId: Long, playlistIds: List<Long>)
+    suspend fun deleteSongFromPlaylists(
+        songId: Long,
+        playlistIds: List<Long>,
+    )
 
     /** No FK/cascade on the cross-ref table, so deleting songs has to clean up their rows. */
     @Query("DELETE FROM playlist_song_cross_ref WHERE songId IN (:songIds)")
     suspend fun deletePlaylistRefsForSongs(songIds: List<Long>)
 
     @Query("UPDATE playlist_song_cross_ref SET songId = :keepId WHERE songId = :dropId")
-    suspend fun remapPlaylistSongId(dropId: Long, keepId: Long)
+    suspend fun remapPlaylistSongId(
+        dropId: Long,
+        keepId: Long,
+    )
 
     /** Song ids that share at least one playlist with [songId] (excluding [songId]). */
     @Query(
@@ -304,7 +364,7 @@ interface MusicDao {
             SELECT playlistId FROM playlist_song_cross_ref WHERE songId = :songId
         )
         AND other.songId != :songId
-        """
+        """,
     )
     suspend fun getCoPlaylistSongIds(songId: Long): List<Long>
 
@@ -329,15 +389,21 @@ interface MusicDao {
             createdAt 
         FROM playlists 
         WHERE playlistId = :playlistId
-        """
+        """,
     )
     fun getPlaylistByIdFlow(playlistId: Long): Flow<PlaylistEntity?>
 
     @Query("UPDATE playlist_pending_tracks SET artworkUri = :artworkUri WHERE id = :id")
-    suspend fun updatePlaylistPendingTrackArtwork(id: Long, artworkUri: String)
+    suspend fun updatePlaylistPendingTrackArtwork(
+        id: Long,
+        artworkUri: String,
+    )
 
     @Query("UPDATE playlists SET coverUri = :coverUri WHERE playlistId = :id AND (coverUri IS NULL OR coverUri = '')")
-    suspend fun updatePlaylistCoverIfEmpty(id: Long, coverUri: String)
+    suspend fun updatePlaylistCoverIfEmpty(
+        id: Long,
+        coverUri: String,
+    )
 
     @Transaction
     @Query("SELECT * FROM playlists WHERE playlistId = :playlistId")
@@ -349,7 +415,7 @@ interface MusicDao {
         INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id
         WHERE refs.playlistId = :playlistId
         ORDER BY refs.position ASC, refs.id ASC
-        """
+        """,
     )
     fun getPlaylistSongsOrderedFlow(playlistId: Long): Flow<List<Song>>
 
@@ -359,7 +425,7 @@ interface MusicDao {
         INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id
         WHERE refs.playlistId = :playlistId
         ORDER BY refs.position ASC, refs.id ASC
-        """
+        """,
     )
     suspend fun getPlaylistSongsOrdered(playlistId: Long): List<Song>
 
@@ -382,12 +448,12 @@ interface MusicDao {
         WHERE playlistId = :playlistId
           AND lower(artist) = lower(:artist)
           AND lower(title) = lower(:title)
-        """
+        """,
     )
     suspend fun deletePlaylistPendingTrackByArtistTitle(
         playlistId: Long,
         artist: String,
-        title: String
+        title: String,
     )
 
     @Query("DELETE FROM playlist_pending_tracks WHERE id = :id")
@@ -414,13 +480,22 @@ interface MusicDao {
     suspend fun getArtistPhotoUri(normalizedName: String): String?
 
     @Query("UPDATE artists SET photoUri = :photoUri WHERE normalizedName = :normalizedName")
-    suspend fun setArtistPhotoUri(normalizedName: String, photoUri: String?)
+    suspend fun setArtistPhotoUri(
+        normalizedName: String,
+        photoUri: String?,
+    )
 
     @Query("UPDATE artists SET name = :name WHERE id = :id")
-    suspend fun updateArtistName(id: Long, name: String)
+    suspend fun updateArtistName(
+        id: Long,
+        name: String,
+    )
 
     @Query("UPDATE genres SET name = :name WHERE id = :id")
-    suspend fun updateGenreName(id: Long, name: String)
+    suspend fun updateGenreName(
+        id: Long,
+        name: String,
+    )
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertGenre(genre: GenreEntity): Long
@@ -471,7 +546,7 @@ interface MusicDao {
         JOIN artists a ON x.artistId = a.id
         WHERE a.normalizedName = :normalizedArtistName
         ORDER BY x.isPrimary DESC, x.position ASC, s.title ASC
-        """
+        """,
     )
     suspend fun getSongsForArtistNormalized(normalizedArtistName: String): List<Song>
 
@@ -485,7 +560,7 @@ interface MusicDao {
         JOIN genres g ON x.genreId = g.id
         WHERE g.normalizedName = :normalizedGenreName
         ORDER BY s.title ASC
-        """
+        """,
     )
     suspend fun getSongsForGenreNormalized(normalizedGenreName: String): List<Song>
 
@@ -496,7 +571,7 @@ interface MusicDao {
         JOIN song_artist_cross_ref x ON s.id = x.songId
         JOIN artists a ON x.artistId = a.id
         WHERE a.normalizedName = :normalizedArtistName AND s.album IS NOT NULL AND TRIM(s.album) != ''
-        """
+        """,
     )
     suspend fun getAlbumsForArtistNormalized(normalizedArtistName: String): List<String>
 }

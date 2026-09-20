@@ -7,13 +7,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackModeClearTest {
-
     @Test
     fun afterRadioStart_disablesShuffleAndRepeatOne() {
-        val result = PlaybackModeClear.afterRadioStart(
-            shuffle = true,
-            repeat = RepeatMode.ONE
-        )
+        val result =
+            PlaybackModeClear.afterRadioStart(
+                shuffle = true,
+                repeat = RepeatMode.ONE,
+            )
 
         assertFalse(result.first)
         assertEquals(RepeatMode.OFF, result.second)
@@ -21,10 +21,11 @@ class PlaybackModeClearTest {
 
     @Test
     fun afterRadioStart_keepsRepeatAll() {
-        val result = PlaybackModeClear.afterRadioStart(
-            shuffle = false,
-            repeat = RepeatMode.ALL
-        )
+        val result =
+            PlaybackModeClear.afterRadioStart(
+                shuffle = false,
+                repeat = RepeatMode.ALL,
+            )
 
         assertFalse(result.first)
         assertEquals(RepeatMode.ALL, result.second)
@@ -32,10 +33,11 @@ class PlaybackModeClearTest {
 
     @Test
     fun afterRadioStart_keepsRepeatOff() {
-        val result = PlaybackModeClear.afterRadioStart(
-            shuffle = true,
-            repeat = RepeatMode.OFF
-        )
+        val result =
+            PlaybackModeClear.afterRadioStart(
+                shuffle = true,
+                repeat = RepeatMode.OFF,
+            )
 
         assertFalse(result.first)
         assertEquals(RepeatMode.OFF, result.second)
@@ -65,11 +67,12 @@ class PlaybackModeClearTest {
 
     @Test
     fun afterManualPlay_allOff_keepsModes() {
-        val settings = PlaybackSettings(
-            clearShuffleOnManualPlay = false,
-            clearRepeatAllOnManualPlay = false,
-            clearRepeatOneOnManualPlay = false
-        )
+        val settings =
+            PlaybackSettings(
+                clearShuffleOnManualPlay = false,
+                clearRepeatAllOnManualPlay = false,
+                clearRepeatOneOnManualPlay = false,
+            )
         val result = PlaybackModeClear.afterManualPlay(true, RepeatMode.ONE, settings)
         assertTrue(result.first)
         assertEquals(RepeatMode.ONE, result.second)

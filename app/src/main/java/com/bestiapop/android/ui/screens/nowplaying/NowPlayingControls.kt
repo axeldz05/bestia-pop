@@ -46,30 +46,31 @@ import com.bestiapop.android.ui.state.NowPlayingTransportActions
 fun NowPlayingTabSelector(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier
-            .height(36.dp)
-            .clip(RoundedCornerShape(18.dp)),
+        modifier =
+            modifier
+                .height(36.dp)
+                .clip(RoundedCornerShape(18.dp)),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(18.dp)
+        shape = RoundedCornerShape(18.dp),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(3.dp)
+            modifier = Modifier.padding(3.dp),
         ) {
             NowPlayingTabPill(
                 selected = selectedTab == 0,
                 icon = Icons.Default.Album,
                 text = "Portada",
-                onClick = { onTabSelected(0) }
+                onClick = { onTabSelected(0) },
             )
             NowPlayingTabPill(
                 selected = selectedTab == 1,
                 icon = Icons.Default.Lyrics,
                 text = "Letra",
-                onClick = { onTabSelected(1) }
+                onClick = { onTabSelected(1) },
             )
         }
     }
@@ -80,35 +81,47 @@ fun NowPlayingTabPill(
     selected: Boolean,
     icon: ImageVector,
     text: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(15.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primaryContainer
-                else Color.Transparent
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 5.dp),
-        contentAlignment = Alignment.Center
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(15.dp))
+                .background(
+                    if (selected) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        Color.Transparent
+                    },
+                ).clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(15.dp),
-                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant
+                tint =
+                    if (selected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
             )
             Spacer(modifier = Modifier.width(5.dp))
             Text(
                 text = text,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                ),
-                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant
+                style =
+                    MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    ),
+                color =
+                    if (selected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
             )
         }
     }
@@ -125,7 +138,7 @@ fun NowPlayingControlsRow(
     actions: NowPlayingTransportActions,
     modifier: Modifier = Modifier,
     playFabSize: Dp = 64.dp,
-    playIconSize: Dp = 36.dp
+    playIconSize: Dp = 36.dp,
 ) = NowPlayingControlsRow(
     isPlaying = isPlaying,
     isShuffle = isShuffle,
@@ -137,7 +150,7 @@ fun NowPlayingControlsRow(
     onToggleRepeatMode = actions.onToggleRepeatMode,
     modifier = modifier,
     playFabSize = playFabSize,
-    playIconSize = playIconSize
+    playIconSize = playIconSize,
 )
 
 /**
@@ -155,19 +168,23 @@ fun NowPlayingControlsRow(
     onToggleRepeatMode: () -> Unit,
     modifier: Modifier = Modifier,
     playFabSize: Dp = 64.dp,
-    playIconSize: Dp = 36.dp
+    playIconSize: Dp = 36.dp,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onToggleShuffle) {
             Icon(
                 imageVector = Icons.Default.Shuffle,
                 contentDescription = "Aleatorio",
-                tint = if (isShuffle) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                tint =
+                    if (isShuffle) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                    },
             )
         }
 
@@ -176,24 +193,25 @@ fun NowPlayingControlsRow(
                 imageVector = Icons.Default.SkipPrevious,
                 contentDescription = "Anterior",
                 tint = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.size(34.dp)
+                modifier = Modifier.size(34.dp),
             )
         }
 
         Surface(
             color = MaterialTheme.colorScheme.primary,
             shape = CircleShape,
-            modifier = Modifier
-                .size(playFabSize)
-                .clip(CircleShape),
-            shadowElevation = 8.dp
+            modifier =
+                Modifier
+                    .size(playFabSize)
+                    .clip(CircleShape),
+            shadowElevation = 8.dp,
         ) {
             IconButton(onClick = onTogglePlayPause) {
                 Icon(
                     imageVector = playPauseVector(isPlaying),
                     contentDescription = "Play/Pause",
                     tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(playIconSize)
+                    modifier = Modifier.size(playIconSize),
                 )
             }
         }
@@ -203,23 +221,25 @@ fun NowPlayingControlsRow(
                 imageVector = Icons.Default.SkipNext,
                 contentDescription = "Siguiente",
                 tint = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.size(34.dp)
+                modifier = Modifier.size(34.dp),
             )
         }
 
         IconButton(onClick = onToggleRepeatMode) {
-            val icon = when (repeatMode) {
-                RepeatMode.OFF, RepeatMode.ALL -> Icons.Default.Repeat
-                RepeatMode.ONE -> Icons.Default.RepeatOne
-            }
-            val tint = when (repeatMode) {
-                RepeatMode.OFF -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
-                else -> MaterialTheme.colorScheme.primary
-            }
+            val icon =
+                when (repeatMode) {
+                    RepeatMode.OFF, RepeatMode.ALL -> Icons.Default.Repeat
+                    RepeatMode.ONE -> Icons.Default.RepeatOne
+                }
+            val tint =
+                when (repeatMode) {
+                    RepeatMode.OFF -> MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                    else -> MaterialTheme.colorScheme.primary
+                }
             Icon(
                 imageVector = icon,
                 contentDescription = "Repetir",
-                tint = tint
+                tint = tint,
             )
         }
     }

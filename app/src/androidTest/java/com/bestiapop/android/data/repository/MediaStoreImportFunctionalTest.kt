@@ -28,17 +28,17 @@ import org.junit.runner.RunWith
 @LargeTest
 @SdkSuppress(minSdkVersion = 29)
 class MediaStoreImportFunctionalTest {
-
     private val context: Context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
     fun firstMediaStoreScan_importsPlayableMetadata_andSecondScanDoesNotDuplicate() =
         runBlocking {
-            val fixture = MediaStoreAudioFixture.create(
-                context = context,
-                relativePath = "Music/SofoInstrumentedImports"
-            )
+            val fixture =
+                MediaStoreAudioFixture.create(
+                    context = context,
+                    relativePath = "Music/SofoInstrumentedImports",
+                )
             try {
                 val harness = MediaStoreRepositoryHarness(context, fixture)
                 try {
@@ -73,68 +73,87 @@ class MediaStoreImportFunctionalTest {
         }
 
     @Test
-    fun appManagedMediaStoreRow_isSkippedByScan_thenResyncImportsItOnce() = runBlocking {
-        val fixture = MediaStoreAudioFixture.create(
-            context = context,
-            relativePath = StorageUtils.RELATIVE_MUSIC_DIR
-        )
-        try {
-            assertEquals(fixture.displayName, fixture.exactFile.name)
-            assertTrue(
-                "Fixture must resolve inside the exact app-managed directory before resync",
-                SongPathNormalizer.isUnderBestiaPop(fixture.exactFile.absolutePath)
-            )
-
-            val harness = MediaStoreRepositoryHarness(
-                context = context,
-                fixture = fixture,
-                managedFixtureFile = fixture.exactFile
-            )
+    fun appManagedMediaStoreRow_isSkippedByScan_thenResyncImportsItOnce() =
+        runBlocking {
+            val fixture =
+                MediaStoreAudioFixture.create(
+                    context = context,
+                    relativePath = StorageUtils.RELATIVE_MUSIC_DIR,
+                )
             try {
-                harness.repository.scanMediaStore()
-                assertTrue(harness.repository.allSongsFlow.first().none(fixture::owns))
+                assertEquals(fixture.displayName, fixture.exactFile.name)
+                assertTrue(
+                    "Fixture must resolve inside the exact app-managed directory before resync",
+                    SongPathNormalizer.isUnderBestiaPop(fixture.exactFile.absolutePath),
+                )
 
-                assertEquals(1, harness.repository.resyncAppManagedMusic().size)
-
-                val imported = harness.repository.allSongsFlow.first().single(fixture::owns)
-                assertEquals(fixture.exactFile.absolutePath, imported.uriString)
-                assertEquals(fixture.exactFile.parent.orEmpty(), imported.folderPath)
-                assertEquals(fixture.exactFile.nameWithoutExtension, imported.title)
-                assertEquals("Unknown Artist", imported.artist)
-                assertEquals("Unknown Album", imported.album)
-                assertTrue(imported.durationMs >= 30_000L)
-                assertPlayable(context, imported)
-
-                assertEquals(0, harness.repository.resyncAppManagedMusic().size)
-                assertEquals(1, harness.repository.allSongsFlow.first().count(fixture::owns))
-            } finally {
+                val harness =
+                    MediaStoreRepositoryHarness(
+                        context = context,
+                        fixture = fixture,
+                        managedFixtureFile = fixture.exactFile,
+                    )
                 try {
-                    harness.removeFixtureRows(fixture)
-                } finally {
-                    harness.close()
-                }
-            }
-        } finally {
-            fixture.close()
-        }
-    }
+                    harness.repository.scanMediaStore()
+                    assertTrue(
+                        harness.repository.allSongsFlow
+                            .first()
+                            .none(fixture::owns),
+                    )
 
-    private fun assertPlayable(context: Context, song: Song) {
+                    assertEquals(1, harness.repository.resyncAppManagedMusic().size)
+
+                    val imported =
+                        harness.repository.allSongsFlow
+                            .first()
+                            .single(fixture::owns)
+                    assertEquals(fixture.exactFile.absolutePath, imported.uriString)
+                    assertEquals(fixture.exactFile.parent.orEmpty(), imported.folderPath)
+                    assertEquals(fixture.exactFile.nameWithoutExtension, imported.title)
+                    assertEquals("Unknown Artist", imported.artist)
+                    assertEquals("Unknown Album", imported.album)
+                    assertTrue(imported.durationMs >= 30_000L)
+                    assertPlayable(context, imported)
+
+                    assertEquals(0, harness.repository.resyncAppManagedMusic().size)
+                    assertEquals(
+                        1,
+                        harness.repository.allSongsFlow
+                            .first()
+                            .count(fixture::owns),
+                    )
+                } finally {
+                    try {
+                        harness.removeFixtureRows(fixture)
+                    } finally {
+                        harness.close()
+                    }
+                }
+            } finally {
+                fixture.close()
+            }
+        }
+
+    private fun assertPlayable(
+        context: Context,
+        song: Song,
+    ) {
         val store = MusicFileStore(context)
         val ref = store.canonicalize(song.uriString, song.folderPath)
         val byteCount = checkNotNull(store.openRead(ref)).use { it.statSize }
         assertTrue(
             "Imported URI must open the complete synthetic WAV",
-            byteCount == -1L || byteCount > PcmWavFixture.HEADER_SIZE_BYTES
+            byteCount == -1L || byteCount > PcmWavFixture.HEADER_SIZE_BYTES,
         )
 
         val retriever = MediaMetadataRetriever()
         try {
             store.applyDataSource(retriever, ref)
-            val duration = retriever
-                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                ?.toLongOrNull()
-                ?: 0L
+            val duration =
+                retriever
+                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()
+                    ?: 0L
             assertTrue("Imported URI must be decodable", duration > 0L)
         } finally {
             retriever.release()

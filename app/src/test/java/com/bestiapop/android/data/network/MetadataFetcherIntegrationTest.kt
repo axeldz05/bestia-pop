@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit
 
 @Category(MediumTest::class)
 class MetadataFetcherIntegrationTest {
-
     @get:Rule
     val server = MockWebServerRule()
 
@@ -24,14 +23,17 @@ class MetadataFetcherIntegrationTest {
     fun setUp() {
         val localBaseUrl = server.url("/").toString()
         MetadataFetcher.configureForTest(
-            http = OkHttpClient.Builder()
-                .callTimeout(1, TimeUnit.SECONDS)
-                .build(),
-            endpoints = MetadataFetcherEndpoints(
-                deezerBaseUrl = localBaseUrl,
-                itunesBaseUrl = localBaseUrl,
-                lyricsBaseUrl = localBaseUrl
-            )
+            http =
+                OkHttpClient
+                    .Builder()
+                    .callTimeout(1, TimeUnit.SECONDS)
+                    .build(),
+            endpoints =
+                MetadataFetcherEndpoints(
+                    deezerBaseUrl = localBaseUrl,
+                    itunesBaseUrl = localBaseUrl,
+                    lyricsBaseUrl = localBaseUrl,
+                ),
         )
     }
 
@@ -41,9 +43,10 @@ class MetadataFetcherIntegrationTest {
     }
 
     @Test
-    fun searchTrack_returnsCatalogIdentityAndEncodedTrackNumber() = runBlocking {
-        enqueueJson(
-            """
+    fun searchTrack_returnsCatalogIdentityAndEncodedTrackNumber() =
+        runBlocking {
+            enqueueJson(
+                """
             {
               "data": [{
                 "id": 101,
@@ -59,46 +62,48 @@ class MetadataFetcherIntegrationTest {
                 }
               }]
             }
-            """
-        )
+            """,
+            )
 
-        val tracks = MetadataFetcher.searchOnlineCatalog("  anonymous song  ", limit = 8)
+            val tracks = MetadataFetcher.searchOnlineCatalog("  anonymous song  ", limit = 8)
 
-        assertEquals(1, tracks.size)
-        with(tracks.single()) {
-            assertEquals("101", id)
-            assertEquals("Track A", title)
-            assertEquals("Artist A", artist)
-            assertEquals("Album A", album)
-            assertEquals(2007, trackNumber)
-            assertEquals(2025, year)
-            assertEquals("Artist A Track A", audioUrl)
+            assertEquals(1, tracks.size)
+            with(tracks.single()) {
+                assertEquals("101", id)
+                assertEquals("Track A", title)
+                assertEquals("Artist A", artist)
+                assertEquals("Album A", album)
+                assertEquals(2007, trackNumber)
+                assertEquals(2025, year)
+                assertEquals("Artist A Track A", audioUrl)
+            }
+            with(server.takeRequest()) {
+                assertEquals("/search", requestUrl?.encodedPath)
+                assertEquals("anonymous song", requestUrl?.queryParameter("q"))
+                assertEquals("8", requestUrl?.queryParameter("limit"))
+                assertEquals("0", requestUrl?.queryParameter("index"))
+                assertEquals("Mozilla/5.0", getHeader("User-Agent"))
+            }
         }
-        with(server.takeRequest()) {
-            assertEquals("/search", requestUrl?.encodedPath)
-            assertEquals("anonymous song", requestUrl?.queryParameter("q"))
-            assertEquals("8", requestUrl?.queryParameter("limit"))
-            assertEquals("0", requestUrl?.queryParameter("index"))
-            assertEquals("Mozilla/5.0", getHeader("User-Agent"))
-        }
-    }
 
     @Test
-    fun searchTrack_emptyOrHttpErrorOnLaterPage_returnsEmpty() = runBlocking {
-        enqueueJson("""{"data":[]}""")
-        assertTrue(MetadataFetcher.searchOnlineCatalog("missing", index = 25).isEmpty())
+    fun searchTrack_emptyOrHttpErrorOnLaterPage_returnsEmpty() =
+        runBlocking {
+            enqueueJson("""{"data":[]}""")
+            assertTrue(MetadataFetcher.searchOnlineCatalog("missing", index = 25).isEmpty())
 
-        server.enqueue(MockResponse().setResponseCode(500))
-        assertTrue(MetadataFetcher.searchOnlineCatalog("broken", index = 25).isEmpty())
+            server.enqueue(MockResponse().setResponseCode(500))
+            assertTrue(MetadataFetcher.searchOnlineCatalog("broken", index = 25).isEmpty())
 
-        assertEquals("missing", server.takeRequest().requestUrl?.queryParameter("q"))
-        assertEquals("broken", server.takeRequest().requestUrl?.queryParameter("q"))
-    }
+            assertEquals("missing", server.takeRequest().requestUrl?.queryParameter("q"))
+            assertEquals("broken", server.takeRequest().requestUrl?.queryParameter("q"))
+        }
 
     @Test
-    fun searchAlbum_returnsDisplayableAlbum() = runBlocking {
-        enqueueJson(
-            """
+    fun searchAlbum_returnsDisplayableAlbum() =
+        runBlocking {
+            enqueueJson(
+                """
             {
               "data": [{
                 "id": 202,
@@ -108,25 +113,26 @@ class MetadataFetcherIntegrationTest {
                 "nb_tracks": 9
               }]
             }
-            """
-        )
+            """,
+            )
 
-        val albums = MetadataFetcher.searchAlbums("album query")
+            val albums = MetadataFetcher.searchAlbums("album query")
 
-        assertEquals(1, albums.size)
-        with(albums.single()) {
-            assertEquals("202", id)
-            assertEquals("Album B", title)
-            assertEquals("Artist B", artist)
-            assertEquals(9, trackCount)
+            assertEquals(1, albums.size)
+            with(albums.single()) {
+                assertEquals("202", id)
+                assertEquals("Album B", title)
+                assertEquals("Artist B", artist)
+                assertEquals(9, trackCount)
+            }
+            assertEquals("/search/album", server.takeRequest().requestUrl?.encodedPath)
         }
-        assertEquals("/search/album", server.takeRequest().requestUrl?.encodedPath)
-    }
 
     @Test
-    fun searchPlaylist_returnsDisplayablePlaylist() = runBlocking {
-        enqueueJson(
-            """
+    fun searchPlaylist_returnsDisplayablePlaylist() =
+        runBlocking {
+            enqueueJson(
+                """
             {
               "data": [{
                 "id": 303,
@@ -136,43 +142,47 @@ class MetadataFetcherIntegrationTest {
                 "nb_tracks": 12
               }]
             }
-            """
-        )
+            """,
+            )
 
-        val playlists = MetadataFetcher.searchPlaylists("playlist query")
+            val playlists = MetadataFetcher.searchPlaylists("playlist query")
 
-        assertEquals(1, playlists.size)
-        with(playlists.single()) {
-            assertEquals("303", id)
-            assertEquals("Playlist C", title)
-            assertEquals("Curator C", creator)
-            assertEquals(12, trackCount)
+            assertEquals(1, playlists.size)
+            with(playlists.single()) {
+                assertEquals("303", id)
+                assertEquals("Playlist C", title)
+                assertEquals("Curator C", creator)
+                assertEquals(12, trackCount)
+            }
+            assertEquals("/search/playlist", server.takeRequest().requestUrl?.encodedPath)
         }
-        assertEquals("/search/playlist", server.takeRequest().requestUrl?.encodedPath)
-    }
 
     @Test
-    fun searchIdentifyFallbacks_queriesItunesJpAndMusicBrainz() = runBlocking {
-        val local = server.url("/").toString().trimEnd('/')
-        val http = OkHttpClient.Builder()
-            .callTimeout(1, TimeUnit.SECONDS)
-            .build()
-        MusicBrainzClient.configureForTest(
-            http = http,
-            endpoints = MusicBrainzEndpoints(
-                apiBaseUrl = "$local/ws/2",
-                coverArtBaseUrl = local
-            ),
-            minIntervalMs = 0L
-        )
-        YouTubeExtractor.configureForTest(
-            http,
-            YouTubeEndpoints(webBaseUrl = "$local/", googleApiBaseUrl = "$local/")
-        )
-        try {
-            enqueueJson("""{"results":[]}""")
-            enqueueJson(
-                """
+    fun searchIdentifyFallbacks_queriesItunesJpAndMusicBrainz() =
+        runBlocking {
+            val local = server.url("/").toString().trimEnd('/')
+            val http =
+                OkHttpClient
+                    .Builder()
+                    .callTimeout(1, TimeUnit.SECONDS)
+                    .build()
+            MusicBrainzClient.configureForTest(
+                http = http,
+                endpoints =
+                    MusicBrainzEndpoints(
+                        apiBaseUrl = "$local/ws/2",
+                        coverArtBaseUrl = local,
+                    ),
+                minIntervalMs = 0L,
+            )
+            YouTubeExtractor.configureForTest(
+                http,
+                YouTubeEndpoints(webBaseUrl = "$local/", googleApiBaseUrl = "$local/"),
+            )
+            try {
+                enqueueJson("""{"results":[]}""")
+                enqueueJson(
+                    """
                 {"results":[{
                   "trackName":"Yodaka",
                   "artistName":"Kinoko Teikoku",
@@ -180,51 +190,58 @@ class MetadataFetcherIntegrationTest {
                   "trackTimeMillis":313827,
                   "trackId":"99"
                 }]}
-                """
-            )
-            enqueueJson("""{"recordings":[]}""")
-            enqueueJson("""{}""")
-            server.enqueue(
-                MockResponse()
-                    .setResponseCode(200)
-                    .setHeader("Content-Type", "text/html")
-                    .setBody("<html></html>")
-            )
+                """,
+                )
+                enqueueJson("""{"recordings":[]}""")
+                enqueueJson("""{}""")
+                server.enqueue(
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "text/html")
+                        .setBody("<html></html>"),
+                )
 
-            val tracks = MetadataFetcher.searchIdentifyFallbacks("Yodaka", durationMs = 313_861L)
-            assertTrue(tracks.any { it.title.contains("Yodaka") && it.artist.contains("Kinoko") })
+                val tracks = MetadataFetcher.searchIdentifyFallbacks("Yodaka", durationMs = 313_861L)
+                assertTrue(tracks.any { it.title.contains("Yodaka") && it.artist.contains("Kinoko") })
 
-            val requests = List(5) { server.takeRequest() }
-            assertTrue(
-                requests.any { it.requestUrl?.queryParameter("country") == "JP" }
-            )
-            val mb = requests.first { it.requestUrl?.encodedPath?.contains("recording") == true }
-            assertTrue(mb.getHeader("User-Agent").orEmpty().contains("BestiaPop"))
-            assertTrue(mb.requestUrl?.queryParameter("query").orEmpty().contains("Yodaka"))
-        } finally {
-            MusicBrainzClient.resetTestOverrides()
-            YouTubeExtractor.resetTestOverrides()
+                val requests = List(5) { server.takeRequest() }
+                assertTrue(
+                    requests.any { it.requestUrl?.queryParameter("country") == "JP" },
+                )
+                val mb = requests.first { it.requestUrl?.encodedPath?.contains("recording") == true }
+                assertTrue(mb.getHeader("User-Agent").orEmpty().contains("BestiaPop"))
+                assertTrue(
+                    mb.requestUrl
+                        ?.queryParameter("query")
+                        .orEmpty()
+                        .contains("Yodaka"),
+                )
+            } finally {
+                MusicBrainzClient.resetTestOverrides()
+                YouTubeExtractor.resetTestOverrides()
+            }
         }
-    }
 
     @Test
-    fun albumAndPlaylistHttpErrors_returnEmpty() = runBlocking {
-        server.enqueue(MockResponse().setResponseCode(500))
-        server.enqueue(MockResponse().setResponseCode(500))
-        server.enqueue(MockResponse().setResponseCode(500))
+    fun albumAndPlaylistHttpErrors_returnEmpty() =
+        runBlocking {
+            server.enqueue(MockResponse().setResponseCode(500))
+            server.enqueue(MockResponse().setResponseCode(500))
+            server.enqueue(MockResponse().setResponseCode(500))
 
-        assertTrue(MetadataFetcher.searchAlbums("unavailable album").isEmpty())
-        assertTrue(MetadataFetcher.searchPlaylists("unavailable playlist").isEmpty())
+            assertTrue(MetadataFetcher.searchAlbums("unavailable album").isEmpty())
+            assertTrue(MetadataFetcher.searchPlaylists("unavailable playlist").isEmpty())
 
-        assertEquals("/search/album", server.takeRequest().requestUrl?.encodedPath)
-        assertEquals("/search", server.takeRequest().requestUrl?.encodedPath)
-        assertEquals("/search/playlist", server.takeRequest().requestUrl?.encodedPath)
-    }
+            assertEquals("/search/album", server.takeRequest().requestUrl?.encodedPath)
+            assertEquals("/search", server.takeRequest().requestUrl?.encodedPath)
+            assertEquals("/search/playlist", server.takeRequest().requestUrl?.encodedPath)
+        }
 
     @Test
-    fun genresAndGlobalChart_useBrowseEndpoints() = runBlocking {
-        enqueueJson(
-            """
+    fun genresAndGlobalChart_useBrowseEndpoints() =
+        runBlocking {
+            enqueueJson(
+                """
             {
               "data": [{
                 "id": 404,
@@ -232,10 +249,10 @@ class MetadataFetcherIntegrationTest {
                 "picture_big": "https://fixtures.invalid/genre-d.jpg"
               }]
             }
-            """
-        )
-        enqueueJson(
-            """
+            """,
+            )
+            enqueueJson(
+                """
             {
               "data": [{
                 "id": 405,
@@ -245,38 +262,40 @@ class MetadataFetcherIntegrationTest {
                 "album": {"title": "Chart Album"}
               }]
             }
-            """
-        )
+            """,
+            )
 
-        val genres = MetadataFetcher.listGenres()
-        val chart = MetadataFetcher.fetchChartTracks(limit = 6)
+            val genres = MetadataFetcher.listGenres()
+            val chart = MetadataFetcher.fetchChartTracks(limit = 6)
 
-        assertEquals("Genre D", genres.single().name)
-        assertEquals("Chart Track", chart.single().title)
-        assertEquals("/genre", server.takeRequest().requestUrl?.encodedPath)
-        with(server.takeRequest()) {
-            assertEquals("/chart/0/tracks", requestUrl?.encodedPath)
-            assertEquals("6", requestUrl?.queryParameter("limit"))
+            assertEquals("Genre D", genres.single().name)
+            assertEquals("Chart Track", chart.single().title)
+            assertEquals("/genre", server.takeRequest().requestUrl?.encodedPath)
+            with(server.takeRequest()) {
+                assertEquals("/chart/0/tracks", requestUrl?.encodedPath)
+                assertEquals("6", requestUrl?.queryParameter("limit"))
+            }
         }
-    }
 
     @Test
-    fun genresAndGlobalChart_httpErrorsReturnEmpty() = runBlocking {
-        server.enqueue(MockResponse().setResponseCode(500))
-        server.enqueue(MockResponse().setResponseCode(500))
+    fun genresAndGlobalChart_httpErrorsReturnEmpty() =
+        runBlocking {
+            server.enqueue(MockResponse().setResponseCode(500))
+            server.enqueue(MockResponse().setResponseCode(500))
 
-        assertTrue(MetadataFetcher.listGenres().isEmpty())
-        assertTrue(MetadataFetcher.fetchChartTracks().isEmpty())
+            assertTrue(MetadataFetcher.listGenres().isEmpty())
+            assertTrue(MetadataFetcher.fetchChartTracks().isEmpty())
 
-        assertEquals("/genre", server.takeRequest().requestUrl?.encodedPath)
-        assertEquals("/chart/0/tracks", server.takeRequest().requestUrl?.encodedPath)
-    }
+            assertEquals("/genre", server.takeRequest().requestUrl?.encodedPath)
+            assertEquals("/chart/0/tracks", server.takeRequest().requestUrl?.encodedPath)
+        }
 
     @Test
-    fun genreChartEmpty_fallsBackToGenreSearch() = runBlocking {
-        enqueueJson("""{"data":[]}""")
-        enqueueJson(
-            """
+    fun genreChartEmpty_fallsBackToGenreSearch() =
+        runBlocking {
+            enqueueJson("""{"data":[]}""")
+            enqueueJson(
+                """
             {
               "data": [{
                 "id": 505,
@@ -285,30 +304,31 @@ class MetadataFetcherIntegrationTest {
                 "album": {"title": "Genre Album"}
               }]
             }
-            """
-        )
+            """,
+            )
 
-        val tracks = MetadataFetcher.searchTracksByGenre(
-            genreId = 88,
-            genreName = "Genre E",
-            limit = 4
-        )
+            val tracks =
+                MetadataFetcher.searchTracksByGenre(
+                    genreId = 88,
+                    genreName = "Genre E",
+                    limit = 4,
+                )
 
-        assertEquals("Genre Track", tracks.single().title)
-        assertEquals("/chart/88/tracks", server.takeRequest().requestUrl?.encodedPath)
-        with(server.takeRequest()) {
-            assertEquals("/search", requestUrl?.encodedPath)
-            assertEquals("genre:\"Genre E\"", requestUrl?.queryParameter("q"))
-            assertEquals("4", requestUrl?.queryParameter("limit"))
+            assertEquals("Genre Track", tracks.single().title)
+            assertEquals("/chart/88/tracks", server.takeRequest().requestUrl?.encodedPath)
+            with(server.takeRequest()) {
+                assertEquals("/search", requestUrl?.encodedPath)
+                assertEquals("genre:\"Genre E\"", requestUrl?.queryParameter("q"))
+                assertEquals("4", requestUrl?.queryParameter("limit"))
+            }
         }
-    }
 
     private fun enqueueJson(body: String) {
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody(body.trimIndent())
+                .setBody(body.trimIndent()),
         )
     }
 }

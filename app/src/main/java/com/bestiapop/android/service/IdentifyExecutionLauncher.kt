@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.first
 
 internal enum class IdentifyExecutionBackend {
     USER_INITIATED_JOB,
-    FOREGROUND_SERVICE
+    FOREGROUND_SERVICE,
 }
 
 internal fun identifyExecutionBackend(sdkInt: Int): IdentifyExecutionBackend =
@@ -25,7 +25,7 @@ internal fun identifyExecutionBackend(sdkInt: Int): IdentifyExecutionBackend =
 
 internal class IdentifyExecutionLease(
     private val backend: IdentifyExecutionBackend,
-    private val release: (IdentifyExecutionBackend) -> Unit
+    private val release: (IdentifyExecutionBackend) -> Unit,
 ) : AutoCloseable {
     private var closed = false
 
@@ -41,14 +41,19 @@ internal object IdentifyExecutionLauncher {
 
     private sealed interface BackendStatus {
         data object Idle : BackendStatus
+
         data object Pending : BackendStatus
+
         data object Running : BackendStatus
-        data class Failed(val error: Throwable) : BackendStatus
+
+        data class Failed(
+            val error: Throwable,
+        ) : BackendStatus
     }
 
     private data class BackendState(
         val leaseCount: MutableStateFlow<Int> = MutableStateFlow(0),
-        val status: MutableStateFlow<BackendStatus> = MutableStateFlow(BackendStatus.Idle)
+        val status: MutableStateFlow<BackendStatus> = MutableStateFlow(BackendStatus.Idle),
     )
 
     private val lock = Any()
@@ -56,19 +61,25 @@ internal object IdentifyExecutionLauncher {
 
     suspend fun acquire(context: Context): IdentifyExecutionLease {
         val backend = identifyExecutionBackend(Build.VERSION.SDK_INT)
-        val shouldStart = synchronized(lock) {
-            val state = states.getValue(backend)
-            state.leaseCount.value++
-            when (state.status.value) {
-                BackendStatus.Idle,
-                is BackendStatus.Failed -> {
-                    state.status.value = BackendStatus.Pending
-                    true
+        val shouldStart =
+            synchronized(lock) {
+                val state = states.getValue(backend)
+                state.leaseCount.value++
+                when (state.status.value) {
+                    BackendStatus.Idle,
+                    is BackendStatus.Failed,
+                    -> {
+                        state.status.value = BackendStatus.Pending
+                        true
+                    }
+
+                    BackendStatus.Pending,
+                    BackendStatus.Running,
+                    -> {
+                        false
+                    }
                 }
-                BackendStatus.Pending,
-                BackendStatus.Running -> false
             }
-        }
         try {
             if (shouldStart) {
                 try {
@@ -81,9 +92,10 @@ internal object IdentifyExecutionLauncher {
                 }
             }
             when (
-                val status = states.getValue(backend).status.first {
-                    it == BackendStatus.Running || it is BackendStatus.Failed
-                }
+                val status =
+                    states.getValue(backend).status.first {
+                        it == BackendStatus.Running || it is BackendStatus.Failed
+                    }
             ) {
                 is BackendStatus.Failed -> throw status.error
                 else -> Unit
@@ -105,24 +117,29 @@ internal object IdentifyExecutionLauncher {
         } while (!closeIfIdle(backend))
     }
 
-    fun closeIfIdle(backend: IdentifyExecutionBackend): Boolean = synchronized(lock) {
-        val state = states.getValue(backend)
-        if (state.leaseCount.value != 0) {
-            false
-        } else {
-            state.status.value = BackendStatus.Idle
-            true
-        }
-    }
-
-    fun markRunning(backend: IdentifyExecutionBackend, running: Boolean) {
+    fun closeIfIdle(backend: IdentifyExecutionBackend): Boolean =
         synchronized(lock) {
             val state = states.getValue(backend)
-            state.status.value = if (running) {
-                BackendStatus.Running
+            if (state.leaseCount.value != 0) {
+                false
             } else {
-                BackendStatus.Idle
+                state.status.value = BackendStatus.Idle
+                true
             }
+        }
+
+    fun markRunning(
+        backend: IdentifyExecutionBackend,
+        running: Boolean,
+    ) {
+        synchronized(lock) {
+            val state = states.getValue(backend)
+            state.status.value =
+                if (running) {
+                    BackendStatus.Running
+                } else {
+                    BackendStatus.Idle
+                }
         }
     }
 
@@ -133,7 +150,10 @@ internal object IdentifyExecutionLauncher {
         }
     }
 
-    private fun startBackend(context: Context, backend: IdentifyExecutionBackend) {
+    private fun startBackend(
+        context: Context,
+        backend: IdentifyExecutionBackend,
+    ) {
         when (backend) {
             IdentifyExecutionBackend.USER_INITIATED_JOB -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -142,24 +162,27 @@ internal object IdentifyExecutionLauncher {
                     error("UIDT requiere Android 14+")
                 }
             }
-            IdentifyExecutionBackend.FOREGROUND_SERVICE ->
+
+            IdentifyExecutionBackend.FOREGROUND_SERVICE -> {
                 ContextCompat.startForegroundService(
                     context,
-                    Intent(context, IdentifyForegroundService::class.java)
+                    Intent(context, IdentifyForegroundService::class.java),
                 )
+            }
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun scheduleUserInitiatedJob(context: Context) {
         val scheduler = context.getSystemService(JobScheduler::class.java)
-        val info = JobInfo.Builder(
-            UIDT_JOB_ID,
-            ComponentName(context, IdentifyJobService::class.java)
-        )
-            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-            .setUserInitiated(true)
-            .build()
+        val info =
+            JobInfo
+                .Builder(
+                    UIDT_JOB_ID,
+                    ComponentName(context, IdentifyJobService::class.java),
+                ).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setUserInitiated(true)
+                .build()
         check(scheduler.schedule(info) == JobScheduler.RESULT_SUCCESS) {
             "No se pudo iniciar la identificación en segundo plano"
         }

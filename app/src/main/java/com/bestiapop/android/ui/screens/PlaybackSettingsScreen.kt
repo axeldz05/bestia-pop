@@ -12,7 +12,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -20,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.preferences.MAX_STREAM_SKIP_GRACE_SECONDS
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -33,38 +33,44 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
     val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
-    val oemScreenOffCleanupIntent = remember(context) {
-        BackgroundExecutionProbe.oemScreenOffCleanupIntent(context)
-    }
-    val restrictionGuidance = remember {
-        BackgroundExecutionProbe.restrictionGuidance()
-    }
+    val oemScreenOffCleanupIntent =
+        remember(context) {
+            BackgroundExecutionProbe.oemScreenOffCleanupIntent(context)
+        }
+    val restrictionGuidance =
+        remember {
+            BackgroundExecutionProbe.restrictionGuidance()
+        }
 
     SettingsScrollColumn(
-        intro = "Elegí qué se restaura al abrir la app y si al reproducir o saltar se sale del aleatorio y la repetición. Los switches de recordar no cambian la sesión actual."
+        intro =
+            "Elegí qué se restaura al abrir la app y si al reproducir o saltar se sale del aleatorio " +
+                "y la repetición. Los switches de recordar no cambian la sesión actual.",
     ) {
         SettingsSwitchRow(
             title = "Reproducir al abrir",
-            subtitle = if (settings.autoplayOnLaunch) {
-                "Al abrir la app, seguir la última cola automáticamente (local o stream)"
-            } else {
-                "Al abrir la app, mostrar la última canción sin reproducir"
-            },
+            subtitle =
+                if (settings.autoplayOnLaunch) {
+                    "Al abrir la app, seguir la última cola automáticamente (local o stream)"
+                } else {
+                    "Al abrir la app, mostrar la última canción sin reproducir"
+                },
             checked = settings.autoplayOnLaunch,
-            onCheckedChange = { viewModel.setAutoplayOnLaunch(it) }
+            onCheckedChange = { viewModel.setAutoplayOnLaunch(it) },
         )
 
         Spacer(modifier = Modifier.height(20.dp))
 
         SettingsSwitchRow(
             title = "Recordar aleatorio",
-            subtitle = if (settings.rememberShuffleOnLaunch) {
-                "Al abrir la app, conservar si el modo aleatorio estaba activo"
-            } else {
-                "Al abrir la app, el aleatorio arranca apagado"
-            },
+            subtitle =
+                if (settings.rememberShuffleOnLaunch) {
+                    "Al abrir la app, conservar si el modo aleatorio estaba activo"
+                } else {
+                    "Al abrir la app, el aleatorio arranca apagado"
+                },
             checked = settings.rememberShuffleOnLaunch,
-            onCheckedChange = { viewModel.setRememberShuffleOnLaunch(it) }
+            onCheckedChange = { viewModel.setRememberShuffleOnLaunch(it) },
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -74,7 +80,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = settings.rememberRepeatOnLaunch,
             onCheckedChange = { viewModel.setRememberRepeatOnLaunch(it) },
             onSubtitle = "Al abrir la app, conservar el último modo (todo / una / off)",
-            offSubtitle = "Al abrir la app, la repetición arranca apagada"
+            offSubtitle = "Al abrir la app, la repetición arranca apagada",
         )
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -83,7 +89,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         Text(
             text = "Canción, álbum, playlist o un ítem de la cola.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -92,7 +98,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = settings.openNowPlayingOnPlay,
             onCheckedChange = { viewModel.setOpenNowPlayingOnPlay(it) },
             onSubtitle = "Al elegir qué reproducir, se abre automáticamente la pantalla de reproducción",
-            offSubtitle = "La reproducción inicia en la barra inferior sin abrir la pantalla completa"
+            offSubtitle = "La reproducción inicia en la barra inferior sin abrir la pantalla completa",
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -102,7 +108,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = settings.clearShuffleOnManualPlay,
             onCheckedChange = { viewModel.setClearShuffleOnManualPlay(it) },
             onSubtitle = "Al elegir qué reproducir, se apaga el aleatorio",
-            offSubtitle = "El aleatorio se mantiene si ya estaba activo"
+            offSubtitle = "El aleatorio se mantiene si ya estaba activo",
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -112,7 +118,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = settings.clearRepeatAllOnManualPlay,
             onCheckedChange = { viewModel.setClearRepeatAllOnManualPlay(it) },
             onSubtitle = "Al elegir qué reproducir, se apaga repetir todo",
-            offSubtitle = "Repetir todo se mantiene si ya estaba activo"
+            offSubtitle = "Repetir todo se mantiene si ya estaba activo",
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -122,7 +128,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = settings.clearRepeatOneOnManualPlay,
             onCheckedChange = { viewModel.setClearRepeatOneOnManualPlay(it) },
             onSubtitle = "Al elegir qué reproducir, se apaga repetir una",
-            offSubtitle = "Repetir una se mantiene si ya estaba activo"
+            offSubtitle = "Repetir una se mantiene si ya estaba activo",
         )
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -134,7 +140,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = settings.clearShuffleOnSkip,
             onCheckedChange = { viewModel.setClearShuffleOnSkip(it) },
             onSubtitle = "Siguiente o anterior apaga el aleatorio (la cola no se reordena)",
-            offSubtitle = "Siguiente o anterior no cambia el aleatorio"
+            offSubtitle = "Siguiente o anterior no cambia el aleatorio",
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -144,7 +150,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = settings.clearRepeatOneOnSkip,
             onCheckedChange = { viewModel.setClearRepeatOneOnSkip(it) },
             onSubtitle = "Siguiente o anterior sale de repetir una y pasa de tema",
-            offSubtitle = "Se mantiene repetir una"
+            offSubtitle = "Se mantiene repetir una",
         )
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -153,7 +159,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         Text(
             text = "Fundido gradual de volumen entre el final de una canción y el inicio de la siguiente.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -163,21 +169,23 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = settings.crossfadeEnabled,
             onCheckedChange = { viewModel.setCrossfadeEnabled(it) },
             onSubtitle = "Transición fluida de $crossfadeDurationSeconds s (${crossfadeDurationSeconds * 1000} ms)",
-            offSubtitle = "Reproducción sin fundido de volumen"
+            offSubtitle = "Reproducción sin fundido de volumen",
         )
 
         if (settings.crossfadeEnabled) {
             Spacer(modifier = Modifier.height(12.dp))
+            val secondUnit = if (crossfadeDurationSeconds == 1) "segundo" else "segundos"
+            val durationMs = crossfadeDurationSeconds * 1000
             Text(
-                text = "Duración: $crossfadeDurationSeconds ${if (crossfadeDurationSeconds == 1) "segundo" else "segundos"} (${crossfadeDurationSeconds * 1000} ms)",
+                text = "Duración: $crossfadeDurationSeconds $secondUnit ($durationMs ms)",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Slider(
                 value = crossfadeDurationSeconds.toFloat(),
                 onValueChange = { viewModel.setCrossfadeDurationSeconds(it.roundToInt()) },
                 valueRange = 1f..10f,
-                steps = 8
+                steps = 8,
             )
         }
 
@@ -185,27 +193,29 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         PlaybackSettingsSectionTitle("Canciones online")
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Cuánto insistir con una canción de internet antes de pasar a la siguiente. " +
-                "Mientras dura, vuelve a pedir el audio para que arranque en vez de saltearla.",
+            text =
+                "Cuánto insistir con una canción de internet antes de pasar a la siguiente. " +
+                    "Mientras dura, vuelve a pedir el audio para que arranque en vez de saltearla.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(12.dp))
         val streamGraceSeconds = settings.streamSkipGraceSeconds
         Text(
-            text = if (streamGraceSeconds <= 0) {
-                "Saltear al primer error"
-            } else {
-                "Insistir $streamGraceSeconds ${if (streamGraceSeconds == 1) "segundo" else "segundos"}"
-            },
+            text =
+                if (streamGraceSeconds <= 0) {
+                    "Saltear al primer error"
+                } else {
+                    "Insistir $streamGraceSeconds ${if (streamGraceSeconds == 1) "segundo" else "segundos"}"
+                },
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Slider(
             value = streamGraceSeconds.toFloat(),
             onValueChange = { viewModel.setStreamSkipGraceSeconds(it.roundToInt()) },
             valueRange = 0f..MAX_STREAM_SKIP_GRACE_SECONDS.toFloat(),
-            steps = MAX_STREAM_SKIP_GRACE_SECONDS - 1
+            steps = MAX_STREAM_SKIP_GRACE_SECONDS - 1,
         )
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -214,7 +224,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         Text(
             text = "Android administra por separado la actividad en segundo plano y la optimización de batería.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -222,12 +232,12 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             Text(
                 text = "Actividad en segundo plano restringida",
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.error
+                color = MaterialTheme.colorScheme.error,
             )
             Text(
                 text = restrictionGuidance.body,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             TextButton(onClick = { BackgroundExecutionProbe.openApplicationDetails(context) }) {
                 Text("Abrir ficha de la app")
@@ -238,7 +248,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
                 subtitle = "Android no marcó la app como restringida",
                 checked = true,
                 onCheckedChange = {},
-                enabled = false
+                enabled = false,
             )
         }
 
@@ -247,12 +257,14 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             Text(
                 text = "Cerrar al apagar la pantalla",
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.error
+                color = MaterialTheme.colorScheme.error,
             )
             Text(
-                text = "Este teléfono puede cortar la reproducción al bloquear o apagar la pantalla. Desactivá esa opción en Batería para BestiaPop.",
+                text =
+                    "Este teléfono puede cortar la reproducción al bloquear o apagar la pantalla. " +
+                        "Desactivá esa opción en Batería para BestiaPop.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (oemScreenOffCleanupIntent != null) {
                 TextButton(onClick = { BackgroundExecutionProbe.openOemScreenOffCleanupSettings(context) }) {
@@ -269,7 +281,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
                 subtitle = "Doze no debería suspender la reproducción ni las transferencias",
                 checked = true,
                 onCheckedChange = {},
-                enabled = false
+                enabled = false,
             )
         } else {
             TextButton(onClick = {
@@ -288,7 +300,7 @@ private fun requestIgnoreBatteryOptimizations(context: Context) {
         context.startActivity(
             Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                 data = "package:${context.packageName}".toUri()
-            }
+            },
         )
     } catch (_: ActivityNotFoundException) {
         context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
@@ -300,7 +312,6 @@ private fun PlaybackSettingsSectionTitle(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.onBackground
+        color = MaterialTheme.colorScheme.onBackground,
     )
 }
-

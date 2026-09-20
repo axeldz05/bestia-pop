@@ -7,7 +7,6 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class LibraryUiPreferencesCodecTest {
-
     @Test
     fun sanitizeSortAndView_unknownFallsBackToDefault() {
         assertEquals(DEFAULT_SORT_OPTION_NAME, LibraryUiPreferencesCodec.sanitizeSortOptionName(null))
@@ -34,43 +33,44 @@ class LibraryUiPreferencesCodecTest {
         assertEquals("RECENT", LibraryUiPreferencesCodec.sanitizeBrowseFilterName("RECENT"))
         assertEquals(
             DEFAULT_BROWSE_FILTER_NAME,
-            LibraryUiPreferencesCodec.sanitizeBrowseFilterName("NOPE")
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName("NOPE"),
         )
         assertEquals(
             "ALBUMS",
-            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, LIBRARY_TAB_ALBUMS)
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, LIBRARY_TAB_ALBUMS),
         )
         assertEquals(
             "ARTISTS",
-            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, LIBRARY_TAB_ARTISTS)
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, LIBRARY_TAB_ARTISTS),
         )
         assertEquals(
             "SONGS",
-            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, LIBRARY_TAB_SONGS)
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, LIBRARY_TAB_SONGS),
         )
         assertEquals(
             "SONGS",
-            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, -1)
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, -1),
         )
         // Explicit name wins over legacy tab
         assertEquals(
             "GENRES",
-            LibraryUiPreferencesCodec.sanitizeBrowseFilterName("GENRES", LIBRARY_TAB_ARTISTS)
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName("GENRES", LIBRARY_TAB_ARTISTS),
         )
     }
 
     @Test
     fun sanitizeNavSnapshot_roundTripKeepsValidFields() {
-        val snap = LibraryUiPreferencesCodec.sanitizeNavSnapshot(
-            navIndex = NAV_PLAYLISTS,
-            browseFilterName = "ARTISTS",
-            libraryArtistName = "  Queen  ",
-            libraryAlbumName = "A Night at the Opera",
-            libraryGenreName = " Rock ",
-            playlistDetailKind = PLAYLIST_DETAIL_LOCAL,
-            playlistLocalId = 42L,
-            playlistLbMbid = "should-clear"
-        )
+        val snap =
+            LibraryUiPreferencesCodec.sanitizeNavSnapshot(
+                navIndex = NAV_PLAYLISTS,
+                browseFilterName = "ARTISTS",
+                libraryArtistName = "  Queen  ",
+                libraryAlbumName = "A Night at the Opera",
+                libraryGenreName = " Rock ",
+                playlistDetailKind = PLAYLIST_DETAIL_LOCAL,
+                playlistLocalId = 42L,
+                playlistLbMbid = "should-clear",
+            )
         assertEquals(NAV_PLAYLISTS, snap.navIndex)
         assertEquals("ARTISTS", snap.browseFilterName)
         assertEquals("Queen", snap.libraryArtistName)
@@ -83,22 +83,24 @@ class LibraryUiPreferencesCodecTest {
 
     @Test
     fun sanitizeNavSnapshot_legacyTabWithoutFilterName() {
-        val snap = LibraryUiPreferencesCodec.sanitizeNavSnapshot(
-            libraryTab = LIBRARY_TAB_ALBUMS
-        )
+        val snap =
+            LibraryUiPreferencesCodec.sanitizeNavSnapshot(
+                libraryTab = LIBRARY_TAB_ALBUMS,
+            )
         assertEquals("ALBUMS", snap.browseFilterName)
     }
 
     @Test
     fun sanitizeNavSnapshot_invalidIndexTabAndKind_fallBack() {
-        val snap = LibraryUiPreferencesCodec.sanitizeNavSnapshot(
-            navIndex = 99,
-            browseFilterName = "weird",
-            libraryTab = -1,
-            playlistDetailKind = "weird",
-            playlistLocalId = 0L,
-            playlistLbMbid = "   "
-        )
+        val snap =
+            LibraryUiPreferencesCodec.sanitizeNavSnapshot(
+                navIndex = 99,
+                browseFilterName = "weird",
+                libraryTab = -1,
+                playlistDetailKind = "weird",
+                playlistLocalId = 0L,
+                playlistLbMbid = "   ",
+            )
         assertEquals(NAV_LIBRARY, snap.navIndex)
         assertEquals(DEFAULT_BROWSE_FILTER_NAME, snap.browseFilterName)
         assertEquals(PLAYLIST_DETAIL_NONE, snap.playlistDetailKind)
@@ -108,23 +110,26 @@ class LibraryUiPreferencesCodecTest {
 
     @Test
     fun pruneOrphanPlaylistDetail_localWithoutId_andLbWithoutMbid() {
-        val localOrphan = LibraryUiPreferencesCodec.pruneOrphanPlaylistDetail(
-            UiNavSnapshot(playlistDetailKind = PLAYLIST_DETAIL_LOCAL, playlistLocalId = null)
-        )
+        val localOrphan =
+            LibraryUiPreferencesCodec.pruneOrphanPlaylistDetail(
+                UiNavSnapshot(playlistDetailKind = PLAYLIST_DETAIL_LOCAL, playlistLocalId = null),
+            )
         assertEquals(PLAYLIST_DETAIL_NONE, localOrphan.playlistDetailKind)
 
-        val lbOrphan = LibraryUiPreferencesCodec.pruneOrphanPlaylistDetail(
-            UiNavSnapshot(playlistDetailKind = PLAYLIST_DETAIL_LB, playlistLbMbid = null)
-        )
+        val lbOrphan =
+            LibraryUiPreferencesCodec.pruneOrphanPlaylistDetail(
+                UiNavSnapshot(playlistDetailKind = PLAYLIST_DETAIL_LB, playlistLbMbid = null),
+            )
         assertEquals(PLAYLIST_DETAIL_NONE, lbOrphan.playlistDetailKind)
 
-        val cf = LibraryUiPreferencesCodec.pruneOrphanPlaylistDetail(
-            UiNavSnapshot(
-                playlistDetailKind = PLAYLIST_DETAIL_CF,
-                playlistLocalId = 9L,
-                playlistLbMbid = "mbid"
+        val cf =
+            LibraryUiPreferencesCodec.pruneOrphanPlaylistDetail(
+                UiNavSnapshot(
+                    playlistDetailKind = PLAYLIST_DETAIL_CF,
+                    playlistLocalId = 9L,
+                    playlistLbMbid = "mbid",
+                ),
             )
-        )
         assertEquals(PLAYLIST_DETAIL_CF, cf.playlistDetailKind)
         assertNull(cf.playlistLocalId)
         assertNull(cf.playlistLbMbid)
@@ -132,44 +137,48 @@ class LibraryUiPreferencesCodecTest {
 
     @Test
     fun pruneLibraryStack_dropsMissingLevels() {
-        val bothOk = LibraryUiPreferencesCodec.pruneLibraryStack(
-            albumName = "Opera",
-            artistName = "Queen",
-            genreName = "Rock",
-            albumExists = { it == "Opera" },
-            artistExists = { it == "Queen" },
-            genreExists = { it == "Rock" }
-        )
+        val bothOk =
+            LibraryUiPreferencesCodec.pruneLibraryStack(
+                albumName = "Opera",
+                artistName = "Queen",
+                genreName = "Rock",
+                albumExists = { it == "Opera" },
+                artistExists = { it == "Queen" },
+                genreExists = { it == "Rock" },
+            )
         assertEquals("Opera", bothOk.albumName)
         assertEquals("Queen", bothOk.artistName)
         assertEquals("Rock", bothOk.genreName)
 
-        val albumGone = LibraryUiPreferencesCodec.pruneLibraryStack(
-            albumName = "Missing",
-            artistName = "Queen",
-            albumExists = { false },
-            artistExists = { it == "Queen" }
-        )
+        val albumGone =
+            LibraryUiPreferencesCodec.pruneLibraryStack(
+                albumName = "Missing",
+                artistName = "Queen",
+                albumExists = { false },
+                artistExists = { it == "Queen" },
+            )
         assertNull(albumGone.albumName)
         assertEquals("Queen", albumGone.artistName)
 
-        val artistGone = LibraryUiPreferencesCodec.pruneLibraryStack(
-            albumName = "Opera",
-            artistName = "Ghost",
-            albumExists = { it == "Opera" },
-            artistExists = { false }
-        )
+        val artistGone =
+            LibraryUiPreferencesCodec.pruneLibraryStack(
+                albumName = "Opera",
+                artistName = "Ghost",
+                albumExists = { it == "Opera" },
+                artistExists = { false },
+            )
         assertEquals("Opera", artistGone.albumName)
         assertNull(artistGone.artistName)
 
-        val bothGone = LibraryUiPreferencesCodec.pruneLibraryStack(
-            albumName = "A",
-            artistName = "B",
-            genreName = "C",
-            albumExists = { false },
-            artistExists = { false },
-            genreExists = { false }
-        )
+        val bothGone =
+            LibraryUiPreferencesCodec.pruneLibraryStack(
+                albumName = "A",
+                artistName = "B",
+                genreName = "C",
+                albumExists = { false },
+                artistExists = { false },
+                genreExists = { false },
+            )
         assertNull(bothGone.albumName)
         assertNull(bothGone.artistName)
         assertNull(bothGone.genreName)
@@ -177,31 +186,34 @@ class LibraryUiPreferencesCodecTest {
 
     @Test
     fun libraryStackLookups_matchIgnoreCaseAfterOnePass() {
-        val songs = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Queen", album = "Opera", genre = "Rock"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Eagles", album = "Hotel", genre = "")
-        )
+        val songs =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Queen", album = "Opera", genre = "Rock"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Eagles", album = "Hotel", genre = ""),
+            )
         val lookups = LibraryStackLookups.fromSongs(songs)
-        val kept = LibraryUiPreferencesCodec.pruneLibraryStack(
-            albumName = "opera",
-            artistName = "eagles",
-            genreName = Song.UNKNOWN_GENRE,
-            albumExists = lookups.albumExists,
-            artistExists = lookups.artistExists,
-            genreExists = lookups.genreExists
-        )
+        val kept =
+            LibraryUiPreferencesCodec.pruneLibraryStack(
+                albumName = "opera",
+                artistName = "eagles",
+                genreName = Song.UNKNOWN_GENRE,
+                albumExists = lookups.albumExists,
+                artistExists = lookups.artistExists,
+                genreExists = lookups.genreExists,
+            )
         assertEquals("opera", kept.albumName)
         assertEquals("eagles", kept.artistName)
         assertEquals(Song.UNKNOWN_GENRE, kept.genreName)
 
-        val dropped = LibraryUiPreferencesCodec.pruneLibraryStack(
-            albumName = "Missing",
-            artistName = "Ghost",
-            genreName = "Jazz",
-            albumExists = lookups.albumExists,
-            artistExists = lookups.artistExists,
-            genreExists = lookups.genreExists
-        )
+        val dropped =
+            LibraryUiPreferencesCodec.pruneLibraryStack(
+                albumName = "Missing",
+                artistName = "Ghost",
+                genreName = "Jazz",
+                albumExists = lookups.albumExists,
+                artistExists = lookups.artistExists,
+                genreExists = lookups.genreExists,
+            )
         assertNull(dropped.albumName)
         assertNull(dropped.artistName)
         assertNull(dropped.genreName)
@@ -217,16 +229,18 @@ class LibraryUiPreferencesCodecTest {
 
     @Test
     fun blobsSettings_encodeAndDecode_roundTrip() {
-        val custom = LibraryBlobsSettings(
-            items = listOf(
-                LibraryBlobConfig(LibraryBrowseFilter.ALBUMS, enabled = true),
-                LibraryBlobConfig(LibraryBrowseFilter.SONGS, enabled = false),
-                LibraryBlobConfig(LibraryBrowseFilter.ARTISTS, enabled = true),
-                LibraryBlobConfig(LibraryBrowseFilter.GENRES, enabled = false),
-                LibraryBlobConfig(LibraryBrowseFilter.PLAYLISTS, enabled = true),
-                LibraryBlobConfig(LibraryBrowseFilter.RECENT, enabled = false)
+        val custom =
+            LibraryBlobsSettings(
+                items =
+                    listOf(
+                        LibraryBlobConfig(LibraryBrowseFilter.ALBUMS, enabled = true),
+                        LibraryBlobConfig(LibraryBrowseFilter.SONGS, enabled = false),
+                        LibraryBlobConfig(LibraryBrowseFilter.ARTISTS, enabled = true),
+                        LibraryBlobConfig(LibraryBrowseFilter.GENRES, enabled = false),
+                        LibraryBlobConfig(LibraryBrowseFilter.PLAYLISTS, enabled = true),
+                        LibraryBlobConfig(LibraryBrowseFilter.RECENT, enabled = false),
+                    ),
             )
-        )
         val encoded = LibraryUiPreferencesCodec.encodeBlobsSettings(custom)
         assertEquals("ALBUMS:1,SONGS:0,ARTISTS:1,GENRES:0,PLAYLISTS:1,RECENT:0", encoded)
 

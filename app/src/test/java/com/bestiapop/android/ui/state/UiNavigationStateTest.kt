@@ -8,7 +8,6 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class UiNavigationStateTest {
-
     @Test
     fun libraryStack_updatesNestedPathAtomically() {
         val artist = LibraryBrowseStack().openArtist("Queen")
@@ -26,12 +25,13 @@ class UiNavigationStateTest {
 
     @Test
     fun snapshotRoundTrip_usesPersistedTabAndTypedDestinations() {
-        val state = UiNavigationState(
-            selectedNavIndex = NAV_DOWNLOADS,
-            libraryBrowseFilter = LibraryBrowseFilter.ARTISTS,
-            libraryStack = LibraryBrowseStack(artistName = "Queen", albumName = "Opera"),
-            playlistDetail = PlaylistDetailNav.ListenBrainz("mbid")
-        )
+        val state =
+            UiNavigationState(
+                selectedNavIndex = NAV_DOWNLOADS,
+                libraryBrowseFilter = LibraryBrowseFilter.ARTISTS,
+                libraryStack = LibraryBrowseStack(artistName = "Queen", albumName = "Opera"),
+                playlistDetail = PlaylistDetailNav.ListenBrainz("mbid"),
+            )
 
         val snapshot = state.toSnapshot(persistedNavIndex = NAV_PLAYLISTS)
         val restored = UiNavigationState.fromSnapshot(snapshot)
@@ -45,9 +45,10 @@ class UiNavigationStateTest {
     @Test
     fun applyPruned_replacesAllStackLevelsTogether() {
         val stack = LibraryBrowseStack("Artist", "Album", "Genre")
-        val pruned = stack.applyPruned(
-            PrunedLibraryStack(albumName = null, artistName = "Artist", genreName = null)
-        )
+        val pruned =
+            stack.applyPruned(
+                PrunedLibraryStack(albumName = null, artistName = "Artist", genreName = null),
+            )
 
         assertEquals(LibraryBrowseStack(artistName = "Artist"), pruned)
     }

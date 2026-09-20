@@ -29,35 +29,37 @@ private val VALID_SORT_OPTION_NAMES = setOf("TITLE", "ARTIST", "ALBUM", "GENRE",
 private val VALID_SORT_DIRECTION_NAMES = setOf("ASC", "DESC")
 private val VALID_VIEW_MODE_NAMES = setOf("FLAT", "ALBUM_GROUPS")
 private val VALID_BROWSE_FILTER_NAMES = setOf("SONGS", "ALBUMS", "ARTISTS", "GENRES", "PLAYLISTS", "RECENT")
-private val VALID_PLAYLIST_DETAIL_KINDS = setOf(
-    PLAYLIST_DETAIL_NONE,
-    PLAYLIST_DETAIL_LOCAL,
-    PLAYLIST_DETAIL_LB,
-    PLAYLIST_DETAIL_CF
-)
+private val VALID_PLAYLIST_DETAIL_KINDS =
+    setOf(
+        PLAYLIST_DETAIL_NONE,
+        PLAYLIST_DETAIL_LOCAL,
+        PLAYLIST_DETAIL_LB,
+        PLAYLIST_DETAIL_CF,
+    )
 
 enum class DiscoverSourcePreference {
     BOTH,
     DEEZER,
-    LISTENBRAINZ
+    LISTENBRAINZ,
 }
 
 const val DEFAULT_DISCOVER_SOURCE_NAME = "BOTH"
 
-fun parseDiscoverSourcePreference(name: String?): DiscoverSourcePreference = when (name?.uppercase()) {
-    "DEEZER" -> DiscoverSourcePreference.DEEZER
-    "LISTENBRAINZ" -> DiscoverSourcePreference.LISTENBRAINZ
-    else -> DiscoverSourcePreference.BOTH
-}
+fun parseDiscoverSourcePreference(name: String?): DiscoverSourcePreference =
+    when (name?.uppercase()) {
+        "DEEZER" -> DiscoverSourcePreference.DEEZER
+        "LISTENBRAINZ" -> DiscoverSourcePreference.LISTENBRAINZ
+        else -> DiscoverSourcePreference.BOTH
+    }
 
 enum class FastScrollSide {
     RIGHT,
-    LEFT
+    LEFT,
 }
 
 data class FastScrollSettings(
     val enabled: Boolean = true,
-    val side: FastScrollSide = FastScrollSide.RIGHT
+    val side: FastScrollSide = FastScrollSide.RIGHT,
 )
 
 enum class SubmenuSwipeAction {
@@ -66,39 +68,42 @@ enum class SubmenuSwipeAction {
     START_RADIO,
     SEARCH_SIMILAR,
     ADD_TO_PLAYLIST,
-    DISABLED;
+    DISABLED,
+    ;
 
-    fun label(): String = when (this) {
-        ENQUEUE_ALL -> "Añadir a la cola"
-        PLAY_NEXT -> "Reproducir siguiente"
-        START_RADIO -> "Iniciar radio"
-        SEARCH_SIMILAR -> "Buscar similares"
-        ADD_TO_PLAYLIST -> "Añadir a playlist"
-        DISABLED -> "Desactivado"
-    }
+    fun label(): String =
+        when (this) {
+            ENQUEUE_ALL -> "Añadir a la cola"
+            PLAY_NEXT -> "Reproducir siguiente"
+            START_RADIO -> "Iniciar radio"
+            SEARCH_SIMILAR -> "Buscar similares"
+            ADD_TO_PLAYLIST -> "Añadir a playlist"
+            DISABLED -> "Desactivado"
+        }
 
-    fun description(): String = when (this) {
-        ENQUEUE_ALL -> "Añade la canción o colección al final de la cola activa"
-        PLAY_NEXT -> "Inserta la canción o colección para reproducir a continuación"
-        START_RADIO -> "Inicia una sesión de radio con sugerencias basadas en el elemento"
-        SEARCH_SIMILAR -> "Abre la pestaña Descubrir buscando contenido relacionado"
-        ADD_TO_PLAYLIST -> "Abre el selector para guardar las canciones en una playlist"
-        DISABLED -> "No realiza ninguna acción al deslizar hacia la izquierda"
-    }
+    fun description(): String =
+        when (this) {
+            ENQUEUE_ALL -> "Añade la canción o colección al final de la cola activa"
+            PLAY_NEXT -> "Inserta la canción o colección para reproducir a continuación"
+            START_RADIO -> "Inicia una sesión de radio con sugerencias basadas en el elemento"
+            SEARCH_SIMILAR -> "Abre la pestaña Descubrir buscando contenido relacionado"
+            ADD_TO_PLAYLIST -> "Abre el selector para guardar las canciones en una playlist"
+            DISABLED -> "No realiza ninguna acción al deslizar hacia la izquierda"
+        }
 }
 
 data class SubmenuGestureSettings(
     val swipeBackEnabled: Boolean = true,
-    val swipeLeftAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+    val swipeLeftAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL,
 )
 
 data class LibraryBlobConfig(
     val filter: LibraryBrowseFilter,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
 )
 
 data class LibraryBlobsSettings(
-    val items: List<LibraryBlobConfig> = defaultLibraryBlobConfigs()
+    val items: List<LibraryBlobConfig> = defaultLibraryBlobConfigs(),
 ) {
     val enabledFilters: List<LibraryBrowseFilter>
         get() = items.filter { it.enabled }.map { it.filter }.ifEmpty { listOf(LibraryBrowseFilter.SONGS) }
@@ -107,13 +112,12 @@ data class LibraryBlobsSettings(
         get() = enabledFilters.first()
 }
 
-fun defaultLibraryBlobConfigs(): List<LibraryBlobConfig> =
-    LibraryBrowseFilter.entries.map { LibraryBlobConfig(it, enabled = true) }
+fun defaultLibraryBlobConfigs(): List<LibraryBlobConfig> = LibraryBrowseFilter.entries.map { LibraryBlobConfig(it, enabled = true) }
 
 data class LibraryDisplaySettings(
     val sortOptionName: String = DEFAULT_SORT_OPTION_NAME,
     val sortDirectionName: String = DEFAULT_SORT_DIRECTION_NAME,
-    val viewModeName: String = DEFAULT_VIEW_MODE_NAME
+    val viewModeName: String = DEFAULT_VIEW_MODE_NAME,
 )
 
 data class UiNavSnapshot(
@@ -124,20 +128,20 @@ data class UiNavSnapshot(
     val libraryGenreName: String? = null,
     val playlistDetailKind: String = PLAYLIST_DETAIL_NONE,
     val playlistLocalId: Long? = null,
-    val playlistLbMbid: String? = null
+    val playlistLbMbid: String? = null,
 )
 
 data class PrunedLibraryStack(
     val albumName: String?,
     val artistName: String?,
-    val genreName: String? = null
+    val genreName: String? = null,
 )
 
 /** O(1) existence checks for restored nested browse after a single pass over the catalog. */
 data class LibraryStackLookups(
     val albumExists: (String) -> Boolean,
     val artistExists: (String) -> Boolean,
-    val genreExists: (String) -> Boolean
+    val genreExists: (String) -> Boolean,
 ) {
     companion object {
         fun fromSongs(songs: List<Song>): LibraryStackLookups {
@@ -153,39 +157,41 @@ data class LibraryStackLookups(
             return LibraryStackLookups(
                 albumExists = { it.lowercase() in albums },
                 artistExists = { it.lowercase() in artists },
-                genreExists = { it.lowercase() in genres }
+                genreExists = { it.lowercase() in genres },
             )
         }
     }
 }
 
 object LibraryUiPreferencesCodec {
-    fun sanitizeSortOptionName(name: String?): String =
-        name?.takeIf { it in VALID_SORT_OPTION_NAMES } ?: DEFAULT_SORT_OPTION_NAME
+    fun sanitizeSortOptionName(name: String?): String = name?.takeIf { it in VALID_SORT_OPTION_NAMES } ?: DEFAULT_SORT_OPTION_NAME
 
     /** DATE_ADDED / RECENT-style sorts default DESC; others ASC. */
     fun defaultSortDirectionName(sortOptionName: String?): String =
         if (sanitizeSortOptionName(sortOptionName) == "DATE_ADDED") "DESC" else "ASC"
 
-    fun sanitizeSortDirectionName(name: String?, sortOptionName: String? = null): String =
+    fun sanitizeSortDirectionName(
+        name: String?,
+        sortOptionName: String? = null,
+    ): String =
         name?.takeIf { it in VALID_SORT_DIRECTION_NAMES }
             ?: defaultSortDirectionName(sortOptionName)
 
-    fun sanitizeViewModeName(name: String?): String =
-        name?.takeIf { it in VALID_VIEW_MODE_NAMES } ?: DEFAULT_VIEW_MODE_NAME
+    fun sanitizeViewModeName(name: String?): String = name?.takeIf { it in VALID_VIEW_MODE_NAMES } ?: DEFAULT_VIEW_MODE_NAME
 
-    fun sanitizeNavIndex(index: Int?): Int =
-        index?.takeIf { it in NAV_LIBRARY..NAV_SETTINGS } ?: NAV_LIBRARY
+    fun sanitizeNavIndex(index: Int?): Int = index?.takeIf { it in NAV_LIBRARY..NAV_SETTINGS } ?: NAV_LIBRARY
 
     /** @deprecated Prefer [sanitizeBrowseFilterName]. */
-    fun sanitizeLibraryTab(tab: Int?): Int =
-        tab?.takeIf { it in LIBRARY_TAB_SONGS..LIBRARY_TAB_ARTISTS } ?: LIBRARY_TAB_SONGS
+    fun sanitizeLibraryTab(tab: Int?): Int = tab?.takeIf { it in LIBRARY_TAB_SONGS..LIBRARY_TAB_ARTISTS } ?: LIBRARY_TAB_SONGS
 
     /**
      * Prefer explicit filter name; else map legacy tab 0/1/2 → SONGS/ALBUMS/ARTISTS.
      * Unknown names → SONGS.
      */
-    fun sanitizeBrowseFilterName(name: String?, legacyTab: Int? = null): String {
+    fun sanitizeBrowseFilterName(
+        name: String?,
+        legacyTab: Int? = null,
+    ): String {
         name?.takeIf { it in VALID_BROWSE_FILTER_NAMES }?.let { return it }
         return when (sanitizeLibraryTab(legacyTab)) {
             LIBRARY_TAB_ALBUMS -> "ALBUMS"
@@ -194,14 +200,14 @@ object LibraryUiPreferencesCodec {
         }
     }
 
-    fun browseFilterNameToLegacyTab(name: String): Int = when (name) {
-        "ALBUMS" -> LIBRARY_TAB_ALBUMS
-        "ARTISTS" -> LIBRARY_TAB_ARTISTS
-        else -> LIBRARY_TAB_SONGS
-    }
+    fun browseFilterNameToLegacyTab(name: String): Int =
+        when (name) {
+            "ALBUMS" -> LIBRARY_TAB_ALBUMS
+            "ARTISTS" -> LIBRARY_TAB_ARTISTS
+            else -> LIBRARY_TAB_SONGS
+        }
 
-    fun blankToNull(value: String?): String? =
-        value?.trim()?.takeIf { it.isNotEmpty() }
+    fun blankToNull(value: String?): String? = value?.trim()?.takeIf { it.isNotEmpty() }
 
     fun sanitizeNavSnapshot(
         navIndex: Int? = null,
@@ -212,10 +218,11 @@ object LibraryUiPreferencesCodec {
         libraryGenreName: String? = null,
         playlistDetailKind: String? = null,
         playlistLocalId: Long? = null,
-        playlistLbMbid: String? = null
+        playlistLbMbid: String? = null,
     ): UiNavSnapshot {
-        val kind = playlistDetailKind?.takeIf { it in VALID_PLAYLIST_DETAIL_KINDS }
-            ?: PLAYLIST_DETAIL_NONE
+        val kind =
+            playlistDetailKind?.takeIf { it in VALID_PLAYLIST_DETAIL_KINDS }
+                ?: PLAYLIST_DETAIL_NONE
         return pruneOrphanPlaylistDetail(
             UiNavSnapshot(
                 navIndex = sanitizeNavIndex(navIndex),
@@ -225,43 +232,50 @@ object LibraryUiPreferencesCodec {
                 libraryGenreName = blankToNull(libraryGenreName),
                 playlistDetailKind = kind,
                 playlistLocalId = playlistLocalId?.takeIf { it > 0L },
-                playlistLbMbid = blankToNull(playlistLbMbid)
-            )
+                playlistLbMbid = blankToNull(playlistLbMbid),
+            ),
         )
     }
 
-    fun pruneOrphanPlaylistDetail(snapshot: UiNavSnapshot): UiNavSnapshot {
-        return when (snapshot.playlistDetailKind) {
-            PLAYLIST_DETAIL_LOCAL -> if (snapshot.playlistLocalId == null) {
-                snapshot.copy(
-                    playlistDetailKind = PLAYLIST_DETAIL_NONE,
-                    playlistLbMbid = null
-                )
-            } else {
-                snapshot.copy(playlistLbMbid = null)
+    fun pruneOrphanPlaylistDetail(snapshot: UiNavSnapshot): UiNavSnapshot =
+        when (snapshot.playlistDetailKind) {
+            PLAYLIST_DETAIL_LOCAL -> {
+                if (snapshot.playlistLocalId == null) {
+                    snapshot.copy(
+                        playlistDetailKind = PLAYLIST_DETAIL_NONE,
+                        playlistLbMbid = null,
+                    )
+                } else {
+                    snapshot.copy(playlistLbMbid = null)
+                }
             }
 
-            PLAYLIST_DETAIL_LB -> if (snapshot.playlistLbMbid == null) {
-                snapshot.copy(
-                    playlistDetailKind = PLAYLIST_DETAIL_NONE,
-                    playlistLocalId = null
-                )
-            } else {
-                snapshot.copy(playlistLocalId = null)
+            PLAYLIST_DETAIL_LB -> {
+                if (snapshot.playlistLbMbid == null) {
+                    snapshot.copy(
+                        playlistDetailKind = PLAYLIST_DETAIL_NONE,
+                        playlistLocalId = null,
+                    )
+                } else {
+                    snapshot.copy(playlistLocalId = null)
+                }
             }
 
-            PLAYLIST_DETAIL_CF -> snapshot.copy(
-                playlistLocalId = null,
-                playlistLbMbid = null
-            )
+            PLAYLIST_DETAIL_CF -> {
+                snapshot.copy(
+                    playlistLocalId = null,
+                    playlistLbMbid = null,
+                )
+            }
 
-            else -> snapshot.copy(
-                playlistDetailKind = PLAYLIST_DETAIL_NONE,
-                playlistLocalId = null,
-                playlistLbMbid = null
-            )
+            else -> {
+                snapshot.copy(
+                    playlistDetailKind = PLAYLIST_DETAIL_NONE,
+                    playlistLocalId = null,
+                    playlistLbMbid = null,
+                )
+            }
         }
-    }
 
     fun pruneLibraryStack(
         albumName: String?,
@@ -269,7 +283,7 @@ object LibraryUiPreferencesCodec {
         genreName: String? = null,
         albumExists: (String) -> Boolean,
         artistExists: (String) -> Boolean,
-        genreExists: (String) -> Boolean = { false }
+        genreExists: (String) -> Boolean = { false },
     ): PrunedLibraryStack {
         val album = albumName?.takeIf(albumExists)
         val artist = artistName?.takeIf(artistExists)

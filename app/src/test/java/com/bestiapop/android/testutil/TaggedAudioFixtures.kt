@@ -9,16 +9,18 @@ import java.io.File
 
 object TaggedAudioFixtures {
     fun copySilenceMp3(dest: File) {
-        val stream = checkNotNull(
-            javaClass.getResourceAsStream("/com/bestiapop/android/data/util/silence.mp3")
-        ) { "Missing silence.mp3 test resource" }
+        val stream =
+            checkNotNull(
+                javaClass.getResourceAsStream("/com/bestiapop/android/data/util/silence.mp3"),
+            ) { "Missing silence.mp3 test resource" }
         dest.outputStream().use { out -> stream.copyTo(out) }
     }
 
     fun pixelJpeg(): ByteArray {
-        val stream = checkNotNull(
-            javaClass.getResourceAsStream("/com/bestiapop/android/data/util/pixel.jpg")
-        ) { "Missing pixel.jpg test resource" }
+        val stream =
+            checkNotNull(
+                javaClass.getResourceAsStream("/com/bestiapop/android/data/util/pixel.jpg"),
+            ) { "Missing pixel.jpg test resource" }
         return stream.use { it.readBytes() }
     }
 
@@ -31,19 +33,20 @@ object TaggedAudioFixtures {
         year: Int = 2023,
         trackNumber: Int = 2,
         lyrics: String? = "目にブラックホールがあります",
-        artworkJpeg: ByteArray? = pixelJpeg()
+        artworkJpeg: ByteArray? = pixelJpeg(),
     ): File {
         copySilenceMp3(dest)
-        val song = Song(
-            uriString = dest.absolutePath,
-            title = title,
-            artist = artist,
-            album = album,
-            genre = genre,
-            year = year,
-            trackNumber = trackNumber,
-            folderPath = dest.parent.orEmpty()
-        )
+        val song =
+            Song(
+                uriString = dest.absolutePath,
+                title = title,
+                artist = artist,
+                album = album,
+                genre = genre,
+                year = year,
+                trackNumber = trackNumber,
+                folderPath = dest.parent.orEmpty(),
+            )
         val write = AudioTagWriter.write(song, dest)
         check(write is com.bestiapop.android.data.util.TagWriteResult.Success) {
             "Failed to write tags: $write"

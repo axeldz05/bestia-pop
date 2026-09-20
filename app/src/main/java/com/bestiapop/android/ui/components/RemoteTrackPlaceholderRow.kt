@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.bestiapop.android.data.model.ActiveDownload
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,6 +24,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.theme.ListDensity
 
@@ -44,7 +44,7 @@ fun RemoteTrackPlaceholderRow(
     onCancelDownload: (() -> Unit)? = null,
     swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val canSwipe = onSwipeAction != null && swipeAction != SubmenuSwipeAction.DISABLED
 
@@ -52,64 +52,67 @@ fun RemoteTrackPlaceholderRow(
         action = swipeAction,
         onSwipeAction = { onSwipeAction?.invoke() },
         enabled = canSwipe,
-        modifier = modifier
+        modifier = modifier,
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .alpha(if (onClick == null && onDownload == null) 0.55f else 0.85f)
-                .padding(
-                    horizontal = ListDensity.rowHorizontalPadding,
-                    vertical = ListDensity.rowVerticalPadding
-                ),
-            verticalAlignment = Alignment.CenterVertically
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .alpha(if (onClick == null && onDownload == null) 0.55f else 0.85f)
+                    .padding(
+                        horizontal = ListDensity.rowHorizontalPadding,
+                        vertical = ListDensity.rowVerticalPadding,
+                    ),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-                .padding(ListDensity.rowInnerPadding),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            ArtworkThumbnail(
-                artworkUri = artworkUri,
-                size = ListDensity.artworkSong,
-                cornerRadius = ListDensity.corner,
-                fallbackIcon = leadingIcon,
-                contentDescription = title
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                TrackTextColumn(
-                    title = title,
-                    subtitle = artist,
-                    titleStyle = MaterialTheme.typography.titleSmall,
-                    titleWeight = FontWeight.SemiBold
+            Row(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                        .padding(ListDensity.rowInnerPadding),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ArtworkThumbnail(
+                    artworkUri = artworkUri,
+                    size = ListDensity.artworkSong,
+                    cornerRadius = ListDensity.corner,
+                    fallbackIcon = leadingIcon,
+                    contentDescription = title,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TrackStorageIcon(isStreaming = true, size = 13.dp)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = badge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (onClick == null) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
-                        }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    TrackTextColumn(
+                        title = title,
+                        subtitle = artist,
+                        titleStyle = MaterialTheme.typography.titleSmall,
+                        titleWeight = FontWeight.SemiBold,
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TrackStorageIcon(isStreaming = true, size = 13.dp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = badge,
+                            style = MaterialTheme.typography.labelSmall,
+                            color =
+                                if (onClick == null) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+                                },
+                        )
+                    }
                 }
             }
-        }
-        if (onDownload != null || download != null) {
-            DownloadStateTrailing(
-                state = download?.state,
-                percent = download?.progressPercent ?: 0,
-                onRetry = onRetry,
-                onDismiss = onCancelDownload,
-                onDownload = onDownload
-            )
+            if (onDownload != null || download != null) {
+                DownloadStateTrailing(
+                    state = download?.state,
+                    percent = download?.progressPercent ?: 0,
+                    onRetry = onRetry,
+                    onDismiss = onCancelDownload,
+                    onDownload = onDownload,
+                )
+            }
         }
     }
-}
 }

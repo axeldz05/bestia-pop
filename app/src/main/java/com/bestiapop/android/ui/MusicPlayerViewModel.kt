@@ -3,9 +3,12 @@ package com.bestiapop.android.ui
 import android.Manifest
 import android.app.Application
 import android.content.ComponentName
+import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -18,70 +21,103 @@ import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.rematchLocals
-import com.bestiapop.android.data.model.*
+import com.bestiapop.android.data.model.ActiveDownload
+import com.bestiapop.android.data.model.ActiveDownloadSource
+import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.Artist
+import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.CatalogAlbum
+import com.bestiapop.android.data.model.CatalogCategory
+import com.bestiapop.android.data.model.CatalogGenre
+import com.bestiapop.android.data.model.CatalogPlaylist
+import com.bestiapop.android.data.model.CatalogTrackCandidate
+import com.bestiapop.android.data.model.ColorSchemeData
+import com.bestiapop.android.data.model.CustomTheme
+import com.bestiapop.android.data.model.DiscoverPlaybackOrigin
+import com.bestiapop.android.data.model.DownloadConflict
+import com.bestiapop.android.data.model.DownloadLane
+import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.data.model.GenreGroup
+import com.bestiapop.android.data.model.IdentifyApplyFields
+import com.bestiapop.android.data.model.IdentifyCandidate
+import com.bestiapop.android.data.model.IdentifySearchFilters
+import com.bestiapop.android.data.model.LibraryJobProgress
+import com.bestiapop.android.data.model.OfflineMessages
+import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.data.model.Playlist
+import com.bestiapop.android.data.model.PlaylistMessages
+import com.bestiapop.android.data.model.PlaylistPendingTrack
+import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.data.model.WifiTransferState
+import com.bestiapop.android.data.model.isRemote
+import com.bestiapop.android.data.model.isSavedRemote
+import com.bestiapop.android.data.model.isStreamHistory
+import com.bestiapop.android.data.model.lane
+import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
+import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.network.ListenBrainzClient
+import com.bestiapop.android.data.network.LyricsTranslationSource
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
+import com.bestiapop.android.data.preferences.DEFAULT_CROSSFADE_DURATION_SECONDS
+import com.bestiapop.android.data.preferences.DEFAULT_STREAM_SKIP_GRACE_SECONDS
+import com.bestiapop.android.data.preferences.DiscoverSourcePreference
 import com.bestiapop.android.data.preferences.DownloadPreferencesRepository
 import com.bestiapop.android.data.preferences.DownloadSettings
+import com.bestiapop.android.data.preferences.FastScrollSettings
+import com.bestiapop.android.data.preferences.FastScrollSide
 import com.bestiapop.android.data.preferences.IdentifyReviewStore
-import com.bestiapop.android.data.preferences.PersistedIdentifyReviewQueue
-import com.bestiapop.android.ui.identify.IdentifyReviewCoordinator
+import com.bestiapop.android.data.preferences.JapanesePhoneticMode
+import com.bestiapop.android.data.preferences.LibraryBlobsSettings
 import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
+import com.bestiapop.android.data.preferences.LibraryStackLookups
 import com.bestiapop.android.data.preferences.LibraryTagWritePreferencesRepository
 import com.bestiapop.android.data.preferences.LibraryTagWriteSettings
 import com.bestiapop.android.data.preferences.LibraryUiPreferencesCodec
-import com.bestiapop.android.data.preferences.LibraryStackLookups
-import com.bestiapop.android.data.preferences.DEFAULT_CROSSFADE_DURATION_SECONDS
-import com.bestiapop.android.data.preferences.DEFAULT_STREAM_SKIP_GRACE_SECONDS
+import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
+import com.bestiapop.android.data.preferences.ListenBrainzSettings
+import com.bestiapop.android.data.preferences.LyricsPreferencesRepository
+import com.bestiapop.android.data.preferences.LyricsSettings
 import com.bestiapop.android.data.preferences.NAV_DISCOVER
 import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.data.preferences.NAV_SETTINGS
-import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
-import com.bestiapop.android.data.preferences.SearchHistoryPreferencesRepository
-import com.bestiapop.android.domain.usecase.GetDiscoverRecommendationsUseCase
-import com.bestiapop.android.domain.usecase.GetTopRelatedItemsUseCase
-import com.bestiapop.android.domain.usecase.DiscoverFeed
-import com.bestiapop.android.domain.usecase.RelatedAlbumItem
-import com.bestiapop.android.domain.usecase.TopRelatedFeed
-import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
-import com.bestiapop.android.data.preferences.DiscoverSourcePreference
-import com.bestiapop.android.data.preferences.FastScrollSettings
-import com.bestiapop.android.data.preferences.FastScrollSide
-import com.bestiapop.android.data.preferences.SubmenuGestureSettings
-import com.bestiapop.android.data.preferences.SubmenuSwipeAction
-import com.bestiapop.android.data.preferences.LibraryBlobsSettings
-import com.bestiapop.android.data.preferences.UiNavSnapshot
-import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
-import com.bestiapop.android.data.preferences.ListenBrainzSettings
-import com.bestiapop.android.data.preferences.LyricsPreferencesRepository
-import com.bestiapop.android.data.preferences.LyricsSettings
-import com.bestiapop.android.data.preferences.JapanesePhoneticMode
+import com.bestiapop.android.data.preferences.PersistedIdentifyReviewQueue
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
+import com.bestiapop.android.data.preferences.SearchHistoryPreferencesRepository
+import com.bestiapop.android.data.preferences.SubmenuGestureSettings
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.data.preferences.TelemetryPreferencesRepository
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
-import com.bestiapop.android.data.network.LyricsTranslationSource
+import com.bestiapop.android.data.preferences.UiNavSnapshot
+import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
 import com.bestiapop.android.data.system.BACKGROUND_RESTRICTION_CONFIRM_MS
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.data.system.BackgroundExecutionStatus
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.data.util.looksLikeStoragePath
-import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.radio.RadioEngine
+import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.usecase.BuildSimilarPlaylistPreviewUseCase
+import com.bestiapop.android.domain.usecase.DiscoverFeed
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
+import com.bestiapop.android.domain.usecase.GetDiscoverRecommendationsUseCase
+import com.bestiapop.android.domain.usecase.GetTopRelatedItemsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
-import com.bestiapop.android.data.model.IdentifyApplyFields
-import com.bestiapop.android.data.model.IdentifySearchFilters
+import com.bestiapop.android.domain.usecase.RelatedAlbumItem
+import com.bestiapop.android.domain.usecase.TopRelatedFeed
 import com.bestiapop.android.domain.util.IdentifyAlbumGroup
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
+import com.bestiapop.android.domain.util.KnownAlbumMatch
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.albumArtistKey
 import com.bestiapop.android.domain.util.albumGroupKey
@@ -92,7 +128,6 @@ import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
 import com.bestiapop.android.domain.util.findAlbumMergeTarget
 import com.bestiapop.android.domain.util.gapApplyFields
 import com.bestiapop.android.domain.util.isTrackNumberLabel
-import com.bestiapop.android.domain.util.KnownAlbumMatch
 import com.bestiapop.android.domain.util.knownAlbumQueryOf
 import com.bestiapop.android.domain.util.needsGapIdentify
 import com.bestiapop.android.domain.util.normalizeAlbumName
@@ -102,71 +137,72 @@ import com.bestiapop.android.service.ProcessDownloadEvent
 import com.bestiapop.android.service.ProcessDownloadRequest
 import com.bestiapop.android.service.ProcessIdentifyEvent
 import com.bestiapop.android.service.WebServerService
+import com.bestiapop.android.ui.identify.IdentifyReviewCoordinator
+import com.bestiapop.android.ui.state.AudioVolumeCoordinator
 import com.bestiapop.android.ui.state.CatalogCollectionKind
-import com.bestiapop.android.ui.state.ItemLibraryStatus
 import com.bestiapop.android.ui.state.CatalogCollectionUiState
+import com.bestiapop.android.ui.state.CatalogDownloadCoordinator
+import com.bestiapop.android.ui.state.CatalogInspectionCoordinator
 import com.bestiapop.android.ui.state.CatalogSearchUiState
-import com.bestiapop.android.ui.state.toPlayableItems
+import com.bestiapop.android.ui.state.DiscoverFeedCoordinator
+import com.bestiapop.android.ui.state.GroupPlaybackAction
+import com.bestiapop.android.ui.state.IdentifyPersistEcho
 import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
 import com.bestiapop.android.ui.state.IdentifySetupState
+import com.bestiapop.android.ui.state.ItemLibraryStatus
+import com.bestiapop.android.ui.state.LibraryBrowseFilter
+import com.bestiapop.android.ui.state.LibraryBrowseStack
+import com.bestiapop.android.ui.state.LibraryEditCoordinator
+import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.state.LibraryListModel
+import com.bestiapop.android.ui.state.LibraryProjectionState
+import com.bestiapop.android.ui.state.LibraryScanCoordinator
+import com.bestiapop.android.ui.state.LibraryViewMode
+import com.bestiapop.android.ui.state.ListenBrainzIntegrationCoordinator
+import com.bestiapop.android.ui.state.LoadableUiState
+import com.bestiapop.android.ui.state.LyricsCoordinator
+import com.bestiapop.android.ui.state.LyricsTranslationState
+import com.bestiapop.android.ui.state.PendingAlbumMerge
+import com.bestiapop.android.ui.state.PlaybackExecutionCoordinator
+import com.bestiapop.android.ui.state.PlaylistCoordinator
+import com.bestiapop.android.ui.state.PlaylistDetailNav
+import com.bestiapop.android.ui.state.RadioPlaybackState
+import com.bestiapop.android.ui.state.SimilarPlaylistCoordinator
+import com.bestiapop.android.ui.state.SimilarPlaylistPreviewState
+import com.bestiapop.android.ui.state.SubmenuActionCoordinator
+import com.bestiapop.android.ui.state.UiNavigationCoordinator
+import com.bestiapop.android.ui.state.UiNavigationState
 import com.bestiapop.android.ui.state.attachKnownAlbumMatches
 import com.bestiapop.android.ui.state.hasMediumSuggestion
-import com.bestiapop.android.ui.state.IdentifyPersistEcho
 import com.bestiapop.android.ui.state.identifyPersistEcho
 import com.bestiapop.android.ui.state.identifyReviewFromPersisted
 import com.bestiapop.android.ui.state.identifySearchDraft
 import com.bestiapop.android.ui.state.identifySearchFilterAlbum
 import com.bestiapop.android.ui.state.identifySearchFilterArtist
 import com.bestiapop.android.ui.state.identifySearchFilterYear
+import com.bestiapop.android.ui.state.lbMbidOrNull
 import com.bestiapop.android.ui.state.leftoverIdentifyReview
+import com.bestiapop.android.ui.state.mapToUiState
 import com.bestiapop.android.ui.state.mergeIncomingReviewItems
 import com.bestiapop.android.ui.state.seedIdentifySearch
+import com.bestiapop.android.ui.state.stateInUi
+import com.bestiapop.android.ui.state.toPlayableItems
 import com.bestiapop.android.ui.state.withGapApplyFields
 import com.bestiapop.android.ui.state.withItemSearchChrome
-import com.bestiapop.android.ui.state.LibraryBrowseFilter
-import com.bestiapop.android.ui.state.LibraryBrowseStack
-import com.bestiapop.android.ui.state.LibraryListItem
-import com.bestiapop.android.ui.state.LibraryListModel
-import com.bestiapop.android.ui.state.LibraryProjectionState
-import com.bestiapop.android.ui.state.LibraryViewMode
-import com.bestiapop.android.ui.state.LoadableUiState
-import com.bestiapop.android.ui.state.DiscoverFeedCoordinator
-import com.bestiapop.android.ui.state.LibraryEditCoordinator
-import com.bestiapop.android.ui.state.PendingAlbumMerge
-import com.bestiapop.android.ui.state.LyricsCoordinator
-import com.bestiapop.android.ui.state.LyricsTranslationState
-import com.bestiapop.android.ui.state.AudioVolumeCoordinator
-import com.bestiapop.android.ui.state.CatalogDownloadCoordinator
-import com.bestiapop.android.ui.state.CatalogInspectionCoordinator
-import com.bestiapop.android.ui.state.PlaylistCoordinator
-import com.bestiapop.android.ui.state.PlaylistDetailNav
-import com.bestiapop.android.ui.state.RadioPlaybackState
-import com.bestiapop.android.ui.state.SimilarPlaylistCoordinator
-import com.bestiapop.android.ui.state.SimilarPlaylistPreviewState
-import com.bestiapop.android.ui.state.GroupPlaybackAction
-import com.bestiapop.android.ui.state.LibraryScanCoordinator
-import com.bestiapop.android.ui.state.ListenBrainzIntegrationCoordinator
-import com.bestiapop.android.ui.state.PlaybackExecutionCoordinator
-import com.bestiapop.android.ui.state.SubmenuActionCoordinator
-import com.bestiapop.android.ui.state.UiNavigationCoordinator
-import com.bestiapop.android.ui.state.UiNavigationState
-import com.bestiapop.android.ui.state.lbMbidOrNull
-import com.bestiapop.android.ui.state.mapToUiState
-import com.bestiapop.android.ui.state.stateInUi
+import com.bestiapop.android.ui.theme.DynamicThemeEngine
 import com.bestiapop.android.ui.theme.ThemePresets
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import com.bestiapop.android.ui.theme.DynamicThemeEngine
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -179,37 +215,34 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-
-import android.content.Context
-import android.media.AudioManager
-import android.widget.Toast
+import kotlin.coroutines.cancellation.CancellationException
 
 enum class SortOption {
     TITLE,
     ARTIST,
     ALBUM,
     GENRE,
-    DATE_ADDED
+    DATE_ADDED,
 }
 
 enum class SortDirection {
     ASC,
-    DESC;
+    DESC,
+    ;
 
     companion object {
         fun defaultFor(option: SortOption): SortDirection =
@@ -222,8 +255,9 @@ enum class SortDirection {
 
 @OptIn(UnstableApi::class)
 @kotlin.OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
-
+class MusicPlayerViewModel(
+    application: Application,
+) : AndroidViewModel(application) {
     private val app = application as BestiaPopApplication
     private val repository = app.musicRepository
     private val playbackRuntime: PlaybackRuntime = app.playbackRuntime
@@ -240,9 +274,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val identifyReviewStore = IdentifyReviewStore(application)
     private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
     private val connectivityObserver = ConnectivityObserver(application)
-    private val networkPreferences = com.bestiapop.android.data.preferences.NetworkPreferencesRepository(application)
-    val isOfflineMode: StateFlow<Boolean> = networkPreferences.offlineModeFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, networkPreferences.initialOfflineMode)
+    private val networkPreferences =
+        com.bestiapop.android.data.preferences
+            .NetworkPreferencesRepository(application)
+    val isOfflineMode: StateFlow<Boolean> =
+        networkPreferences.offlineModeFlow
+            .stateIn(viewModelScope, SharingStarted.Eagerly, networkPreferences.initialOfflineMode)
 
     fun setOfflineMode(enabled: Boolean) {
         viewModelScope.launch {
@@ -259,30 +296,32 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     // Theme state
-    val configuredThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
-        .stateInUi(viewModelScope, themeRepository.initialTheme)
+    val configuredThemeState: StateFlow<CustomTheme> =
+        themeRepository.selectedThemeFlow
+            .stateInUi(viewModelScope, themeRepository.initialTheme)
 
-    val currentThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
-        .flatMapLatest { selectedTheme ->
-            if (selectedTheme.id == ThemePresets.DYNAMIC_THEME_ID) {
-                val initialState = DynamicThemeEngine.DynamicThemeState(
-                    theme = selectedTheme,
-                    artworkUri = themeRepository.lastDynamicArtworkUri
-                )
-                DynamicThemeEngine.dynamicThemeFlow(
-                    context = application,
-                    artworkUriFlow = playbackRuntime.currentItem.map { it?.artworkUri },
-                    initialState = initialState,
-                    isDark = selectedTheme.isDark,
-                    onThemeChanged = { nextState ->
-                        themeRepository.saveDynamicTheme(nextState.theme, nextState.artworkUri)
-                    }
-                )
-            } else {
-                flowOf(selectedTheme)
-            }
-        }
-        .stateInUi(viewModelScope, themeRepository.initialTheme)
+    val currentThemeState: StateFlow<CustomTheme> =
+        themeRepository.selectedThemeFlow
+            .flatMapLatest { selectedTheme ->
+                if (selectedTheme.id == ThemePresets.DYNAMIC_THEME_ID) {
+                    val initialState =
+                        DynamicThemeEngine.DynamicThemeState(
+                            theme = selectedTheme,
+                            artworkUri = themeRepository.lastDynamicArtworkUri,
+                        )
+                    DynamicThemeEngine.dynamicThemeFlow(
+                        context = application,
+                        artworkUriFlow = playbackRuntime.currentItem.map { it?.artworkUri },
+                        initialState = initialState,
+                        isDark = selectedTheme.isDark,
+                        onThemeChanged = { nextState ->
+                            themeRepository.saveDynamicTheme(nextState.theme, nextState.artworkUri)
+                        },
+                    )
+                } else {
+                    flowOf(selectedTheme)
+                }
+            }.stateInUi(viewModelScope, themeRepository.initialTheme)
 
     // ListenBrainz state
     val listenBrainzSettings: StateFlow<ListenBrainzSettings> =
@@ -335,111 +374,118 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val crossfadeDurationSeconds: StateFlow<Int> =
         playbackPref(DEFAULT_CROSSFADE_DURATION_SECONDS) { it.crossfadeDurationSeconds }
 
-    val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
-        .stateInUi(viewModelScope, 0)
+    val pendingListenCount: StateFlow<Int> =
+        pendingListenDao
+            .countFlow()
+            .stateInUi(viewModelScope, 0)
 
     // Raw songs & playlists
-    val rawSongs = repository.allSongsFlow
-        .stateInUi(
-            viewModelScope,
-            emptyList()
-        )
+    val rawSongs =
+        repository.allSongsFlow
+            .stateInUi(
+                viewModelScope,
+                emptyList(),
+            )
 
     private val uiAttached = AtomicBoolean(false)
 
-    val identifyCoordinator = IdentifyReviewCoordinator(
-        scope = viewModelScope,
-        repository = repository,
-        identifyReviewStore = identifyReviewStore,
-        processIdentifyRuntime = processIdentifyRuntime,
-        rawSongs = rawSongs,
-        awaitCatalogLoaded = { awaitFirstCatalogLoaded() },
-        clearCatalogPreview = { clearCatalogPreview() },
-        toast = { toast(it) },
-        uiAttached = { uiAttached.get() },
-        isOnline = { connectivityObserver.isCurrentlyOnline() }
-    )
+    val identifyCoordinator =
+        IdentifyReviewCoordinator(
+            scope = viewModelScope,
+            repository = repository,
+            identifyReviewStore = identifyReviewStore,
+            processIdentifyRuntime = processIdentifyRuntime,
+            rawSongs = rawSongs,
+            awaitCatalogLoaded = { awaitFirstCatalogLoaded() },
+            clearCatalogPreview = { clearCatalogPreview() },
+            toast = { toast(it) },
+            uiAttached = { uiAttached.get() },
+            isOnline = { connectivityObserver.isCurrentlyOnline() },
+        )
     val identifyReview: StateFlow<IdentifyReviewState> = identifyCoordinator.identifyReview
     val identifySetup: StateFlow<IdentifySetupState?> = identifyCoordinator.identifySetup
+
     private data class LibraryLookupIndex(
         val localSongsByMatchKey: Map<String, Song> = emptyMap(),
         val allSongsByMatchKey: Map<String, Song> = emptyMap(),
         val allSongsById: Map<Long, Song> = emptyMap(),
         val albumStatusByArtistAndAlbum: Map<String, ItemLibraryStatus> = emptyMap(),
-        val albumStatusByTitle: Map<String, ItemLibraryStatus> = emptyMap()
+        val albumStatusByTitle: Map<String, ItemLibraryStatus> = emptyMap(),
     )
 
-    private val libraryLookupIndex: StateFlow<LibraryLookupIndex> = rawSongs
-        .map { songs ->
-            val byId = HashMap<Long, Song>(songs.size)
-            val allByMatchKey = HashMap<String, Song>(songs.size)
-            val localByMatchKey = HashMap<String, Song>(songs.size)
-            val albumStatusByArtistAndAlbum = HashMap<String, ItemLibraryStatus>()
-            val albumStatusByTitle = HashMap<String, ItemLibraryStatus>()
+    private val libraryLookupIndex: StateFlow<LibraryLookupIndex> =
+        rawSongs
+            .map { songs ->
+                val byId = HashMap<Long, Song>(songs.size)
+                val allByMatchKey = HashMap<String, Song>(songs.size)
+                val localByMatchKey = HashMap<String, Song>(songs.size)
+                val albumStatusByArtistAndAlbum = HashMap<String, ItemLibraryStatus>()
+                val albumStatusByTitle = HashMap<String, ItemLibraryStatus>()
 
-            for (song in songs) {
-                if (song.id > 0L) {
-                    byId[song.id] = song
-                }
-                if (!song.isRemote) {
-                    val canonical = TrackMatchKeys.matchKey(song.artist, song.title)
-                    if (canonical.isNotEmpty()) {
-                        allByMatchKey[canonical] = song
-                        localByMatchKey[canonical] = song
+                for (song in songs) {
+                    if (song.id > 0L) {
+                        byId[song.id] = song
+                    }
+                    if (!song.isRemote) {
+                        val canonical = TrackMatchKeys.matchKey(song.artist, song.title)
+                        if (canonical.isNotEmpty()) {
+                            allByMatchKey[canonical] = song
+                            localByMatchKey[canonical] = song
+                        }
                     }
                 }
-            }
-            for (song in songs) {
-                if (!song.isRemote) {
-                    for (candKey in TrackMatchKeys.candidateMatchKeys(song)) {
-                        allByMatchKey.putIfAbsent(candKey, song)
-                        localByMatchKey.putIfAbsent(candKey, song)
+                for (song in songs) {
+                    if (!song.isRemote) {
+                        for (candKey in TrackMatchKeys.candidateMatchKeys(song)) {
+                            allByMatchKey.putIfAbsent(candKey, song)
+                            localByMatchKey.putIfAbsent(candKey, song)
+                        }
                     }
                 }
-            }
-            for (song in songs) {
-                if (song.isRemote && !song.isStreamHistory) {
-                    for (candKey in TrackMatchKeys.candidateMatchKeys(song)) {
-                        allByMatchKey.putIfAbsent(candKey, song)
+                for (song in songs) {
+                    if (song.isRemote && !song.isStreamHistory) {
+                        for (candKey in TrackMatchKeys.candidateMatchKeys(song)) {
+                            allByMatchKey.putIfAbsent(candKey, song)
+                        }
+                    }
+                    val artistAlbumKey = albumArtistKey(song.artist, song.album)
+                    val status =
+                        when {
+                            !song.isRemote -> ItemLibraryStatus.DOWNLOADED
+                            song.isSavedRemote -> ItemLibraryStatus.SAVED_REMOTE
+                            else -> ItemLibraryStatus.NOT_IN_LIBRARY
+                        }
+                    if (status != ItemLibraryStatus.NOT_IN_LIBRARY) {
+                        if (albumStatusByArtistAndAlbum[artistAlbumKey] != ItemLibraryStatus.DOWNLOADED) {
+                            albumStatusByArtistAndAlbum[artistAlbumKey] = status
+                        }
+                        val albumKey = albumIdentityKey(song.album)
+                        if (albumStatusByTitle[albumKey] != ItemLibraryStatus.DOWNLOADED) {
+                            albumStatusByTitle[albumKey] = status
+                        }
                     }
                 }
-                val artistAlbumKey = albumArtistKey(song.artist, song.album)
-                val status = when {
-                    !song.isRemote -> ItemLibraryStatus.DOWNLOADED
-                    song.isSavedRemote -> ItemLibraryStatus.SAVED_REMOTE
-                    else -> ItemLibraryStatus.NOT_IN_LIBRARY
-                }
-                if (status != ItemLibraryStatus.NOT_IN_LIBRARY) {
-                    if (albumStatusByArtistAndAlbum[artistAlbumKey] != ItemLibraryStatus.DOWNLOADED) {
-                        albumStatusByArtistAndAlbum[artistAlbumKey] = status
-                    }
-                    val albumKey = albumIdentityKey(song.album)
-                    if (albumStatusByTitle[albumKey] != ItemLibraryStatus.DOWNLOADED) {
-                        albumStatusByTitle[albumKey] = status
-                    }
-                }
-            }
 
-            LibraryLookupIndex(
-                localSongsByMatchKey = localByMatchKey,
-                allSongsByMatchKey = allByMatchKey,
-                allSongsById = byId,
-                albumStatusByArtistAndAlbum = albumStatusByArtistAndAlbum,
-                albumStatusByTitle = albumStatusByTitle
+                LibraryLookupIndex(
+                    localSongsByMatchKey = localByMatchKey,
+                    allSongsByMatchKey = allByMatchKey,
+                    allSongsById = byId,
+                    albumStatusByArtistAndAlbum = albumStatusByArtistAndAlbum,
+                    albumStatusByTitle = albumStatusByTitle,
+                )
+            }.flowOn(Dispatchers.Default)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.Eagerly,
+                initialValue = LibraryLookupIndex(),
             )
-        }
-        .flowOn(Dispatchers.Default)
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.Eagerly,
-            initialValue = LibraryLookupIndex()
-        )
 
     /** Level 2: Resolves an iterable of song IDs into the corresponding Songs in O(1) per song. */
     fun songsForIds(ids: Iterable<Long>): List<Song> {
         val index = libraryLookupIndex.value.allSongsById
         return ids.mapNotNull { index[it] }
     }
+
     val playlists = repository.playlistsFlow
 
     // Sorting & Searching
@@ -455,75 +501,86 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _libraryViewMode = MutableStateFlow(LibraryViewMode.ALBUM_GROUPS)
     val libraryViewMode = _libraryViewMode.asStateFlow()
 
-    private val uiNavigationCoordinator = UiNavigationCoordinator(
-        scope = viewModelScope,
-        libraryPreferences = libraryPreferences,
-        onClearSearchQuery = { setSearchQuery("") },
-        onCloseDiscoverSessionUi = { closeDiscoverSessionUi() },
-        onOpenListenBrainzPlaylist = { listenBrainzIntegrationCoordinator.openListenBrainzPlaylist(it) },
-        onOpenCfRecommendations = { openCfRecommendations() },
-        onRestoreListenBrainzPlaylist = { listenBrainzIntegrationCoordinator.loadListenBrainzPlaylist(it, forRestore = true) },
-        onRestoreCfRecommendations = { loadCfRecommendationsForRestore() },
-        isLbPlaylistDetailLoaded = { listenBrainzIntegrationCoordinator.lbPlaylistDetail.value.data != null || listenBrainzIntegrationCoordinator.lbPlaylistDetail.value.isLoading },
-        isCfRecommendationsLoaded = { cfRecommendations.value.data != null || cfRecommendations.value.isLoading },
-        toast = ::toast
-    )
+    private val uiNavigationCoordinator =
+        UiNavigationCoordinator(
+            scope = viewModelScope,
+            libraryPreferences = libraryPreferences,
+            onClearSearchQuery = { setSearchQuery("") },
+            onCloseDiscoverSessionUi = { closeDiscoverSessionUi() },
+            onOpenListenBrainzPlaylist = { listenBrainzIntegrationCoordinator.openListenBrainzPlaylist(it) },
+            onOpenCfRecommendations = { openCfRecommendations() },
+            onRestoreListenBrainzPlaylist = { listenBrainzIntegrationCoordinator.loadListenBrainzPlaylist(it, forRestore = true) },
+            onRestoreCfRecommendations = { loadCfRecommendationsForRestore() },
+            isLbPlaylistDetailLoaded = {
+                listenBrainzIntegrationCoordinator.lbPlaylistDetail.value.data != null ||
+                    listenBrainzIntegrationCoordinator.lbPlaylistDetail.value.isLoading
+            },
+            isCfRecommendationsLoaded = { cfRecommendations.value.data != null || cfRecommendations.value.isLoading },
+            toast = ::toast,
+        )
     val navigation: StateFlow<UiNavigationState> = uiNavigationCoordinator.navigation
     val selectedNavIndex: StateFlow<Int> = uiNavigationCoordinator.selectedNavIndex
     val pendingSettingsSection: StateFlow<String?> = uiNavigationCoordinator.pendingSettingsSection
 
-    private val _libraryPrefsReady = MutableStateFlow(true)
-    private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
-    private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
-    val libraryProjection = LibraryProjectionState(
-        scope = viewModelScope,
-        rawSongs = repository.allSongsFlow,
-        albumOverrides = repository.albumOverridesFlow,
-        searchQuery = searchQuery,
-        sortOption = sortOption,
-        sortDirection = sortDirection,
-        artistPhotos = _artistPhotos,
-        useCase = getLibrarySongsUseCase,
-        overlayOpen = identifyReview.map { it.isOpen }.distinctUntilChanged(),
-        viewMode = _libraryViewMode,
-        browseFilter = navigation.map { it.libraryBrowseFilter }.distinctUntilChanged(),
-        playStats = repository.songPlayStatsFlow,
-        prefsReady = _libraryPrefsReady
-    )
+    private val libraryPrefsReady = MutableStateFlow(true)
+    private val getLibrarySongsUseCase =
+        com.bestiapop.android.domain.usecase
+            .GetLibrarySongsUseCase()
+    private val artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
+    val libraryProjection =
+        LibraryProjectionState(
+            scope = viewModelScope,
+            rawSongs = repository.allSongsFlow,
+            albumOverrides = repository.albumOverridesFlow,
+            searchQuery = searchQuery,
+            sortOption = sortOption,
+            sortDirection = sortDirection,
+            artistPhotos = artistPhotos,
+            useCase = getLibrarySongsUseCase,
+            overlayOpen = identifyReview.map { it.isOpen }.distinctUntilChanged(),
+            viewMode = _libraryViewMode,
+            browseFilter = navigation.map { it.libraryBrowseFilter }.distinctUntilChanged(),
+            playStats = repository.songPlayStatsFlow,
+            prefsReady = libraryPrefsReady,
+        )
 
     fun buildLibraryListModel(
         songs: List<Song>,
         viewMode: LibraryViewMode,
         sortOption: SortOption = this.sortOption.value,
-        sortDirection: SortDirection = this.sortDirection.value
-    ): LibraryListModel =
-        libraryProjection.buildListModel(songs, viewMode, sortOption, sortDirection)
+        sortDirection: SortDirection = this.sortDirection.value,
+    ): LibraryListModel = libraryProjection.buildListModel(songs, viewMode, sortOption, sortDirection)
 
     fun buildLibraryListItems(
         songs: List<Song>,
         viewMode: LibraryViewMode,
         sortOption: SortOption = this.sortOption.value,
-        sortDirection: SortDirection = this.sortDirection.value
-    ): List<LibraryListItem> =
-        libraryProjection.buildListItems(songs, viewMode, sortOption, sortDirection)
+        sortDirection: SortDirection = this.sortDirection.value,
+    ): List<LibraryListItem> = libraryProjection.buildListItems(songs, viewMode, sortOption, sortDirection)
 
-    fun sortSongsWithinAlbum(songs: List<Song>): List<Song> =
-        getLibrarySongsUseCase.sortSongsWithinAlbum(songs)
+    fun sortSongsWithinAlbum(songs: List<Song>): List<Song> = getLibrarySongsUseCase.sortSongsWithinAlbum(songs)
 
-    fun songsForAlbum(songs: List<Song>, albumName: String): List<Song> =
-        getLibrarySongsUseCase.songsForAlbum(songs, albumName)
+    fun songsForAlbum(
+        songs: List<Song>,
+        albumName: String,
+    ): List<Song> = getLibrarySongsUseCase.songsForAlbum(songs, albumName)
 
-    fun songsForArtist(songs: List<Song>, artistName: String): List<Song> =
-        getLibrarySongsUseCase.songsForArtist(songs, artistName)
+    fun songsForArtist(
+        songs: List<Song>,
+        artistName: String,
+    ): List<Song> = getLibrarySongsUseCase.songsForArtist(songs, artistName)
 
-    fun songsForGenre(songs: List<Song>, genreName: String): List<Song> =
-        getLibrarySongsUseCase.songsMatchingGenre(songs, genreName)
+    fun songsForGenre(
+        songs: List<Song>,
+        genreName: String,
+    ): List<Song> = getLibrarySongsUseCase.songsMatchingGenre(songs, genreName)
 
-    fun songsFromLibraryListItems(items: List<LibraryListItem>): List<Song> =
-        getLibrarySongsUseCase.songsFromListItems(items)
+    fun songsFromLibraryListItems(items: List<LibraryListItem>): List<Song> = getLibrarySongsUseCase.songsFromListItems(items)
 
-    fun songsInOrder(pool: List<Song>, ids: List<Long>): List<Song> =
-        getLibrarySongsUseCase.songsInOrder(pool, ids)
+    fun songsInOrder(
+        pool: List<Song>,
+        ids: List<Long>,
+    ): List<Song> = getLibrarySongsUseCase.songsInOrder(pool, ids)
 
     fun songsForBrowseProjection(
         filter: LibraryBrowseFilter,
@@ -531,20 +588,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewMode: LibraryViewMode,
         albums: List<Album>,
         artists: List<Artist>,
-        genres: List<GenreGroup>
-    ): List<Song> = getLibrarySongsUseCase.songsForBrowseProjection(
-        filter = filter,
-        songs = songs,
-        viewMode = viewMode,
-        albums = albums,
-        artists = artists,
-        genres = genres,
-        sortOption = sortOption.value,
-        sortDirection = sortDirection.value
-    )
+        genres: List<GenreGroup>,
+    ): List<Song> =
+        getLibrarySongsUseCase.songsForBrowseProjection(
+            filter = filter,
+            songs = songs,
+            viewMode = viewMode,
+            albums = albums,
+            artists = artists,
+            genres = genres,
+            sortOption = sortOption.value,
+            sortDirection = sortDirection.value,
+        )
 
-    fun playCurrentLibraryBrowse(shuffle: Boolean) =
-        playbackExecutionCoordinator.playCurrentLibraryBrowse(shuffle)
+    fun playCurrentLibraryBrowse(shuffle: Boolean) = playbackExecutionCoordinator.playCurrentLibraryBrowse(shuffle)
 
     // Process-owned playback state. ViewModel only exposes/observes it.
     val currentItem = playbackRuntime.currentItem
@@ -566,44 +623,45 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val radioLoading = playbackRuntime.radioLoading
     val radioMode = playbackRuntime.radioMode
     val radioStatusLabel = playbackRuntime.radioStatusLabel
-    val radioState: StateFlow<RadioPlaybackState> = combine(
-        radioActive,
-        radioLoading,
-        radioMode,
-        radioStatusLabel
-    ) { active, loading, mode, statusLabel ->
-        RadioPlaybackState(
-            active = active,
-            loading = loading,
-            mode = mode,
-            statusLabel = statusLabel
-        )
-    }.stateInUi(viewModelScope, RadioPlaybackState())
-
+    val radioState: StateFlow<RadioPlaybackState> =
+        combine(
+            radioActive,
+            radioLoading,
+            radioMode,
+            radioStatusLabel,
+        ) { active, loading, mode, statusLabel ->
+            RadioPlaybackState(
+                active = active,
+                loading = loading,
+                mode = mode,
+                statusLabel = statusLabel,
+            )
+        }.stateInUi(viewModelScope, RadioPlaybackState())
 
     private val radioEngine = app.radioEngine
     private val buildSimilarPlaylistPreviewUseCase =
         BuildSimilarPlaylistPreviewUseCase(radioEngine, repository)
 
-    private val similarPlaylistCoordinator = SimilarPlaylistCoordinator(
-        scope = viewModelScope,
-        useCase = buildSimilarPlaylistPreviewUseCase,
-        isNetworkOnline = { connectivityObserver.isCurrentlyOnline() },
-        resolvePreferredRadioMode = ::resolvePreferredRadioMode,
-        getListenBrainzSettings = { listenBrainzSettings.value },
-        getAllSongs = { repository.allSongsFlow.first() },
-        onPlaylistCreated = { playlistId, localCount, pendingCount, downloadMissing ->
-            toastPlaylistSaved(localCount, pending = pendingCount)
-            setSelectedNavIndex(NAV_PLAYLISTS)
-            openLocalPlaylist(playlistId)
-            if (downloadMissing && pendingCount > 0) {
-                downloadPlaylistPendingTracks(playlistId)
-            }
-        },
-        playPlayableCollection = { playPlayableCollection(it, startIndex = 0, rotate = false) },
-        addPlayableBatch = ::addPlayableBatch,
-        toast = ::toast
-    )
+    private val similarPlaylistCoordinator =
+        SimilarPlaylistCoordinator(
+            scope = viewModelScope,
+            useCase = buildSimilarPlaylistPreviewUseCase,
+            isNetworkOnline = { connectivityObserver.isCurrentlyOnline() },
+            resolvePreferredRadioMode = ::resolvePreferredRadioMode,
+            getListenBrainzSettings = { listenBrainzSettings.value },
+            getAllSongs = { repository.allSongsFlow.first() },
+            onPlaylistCreated = { playlistId, localCount, pendingCount, downloadMissing ->
+                toastPlaylistSaved(localCount, pending = pendingCount)
+                setSelectedNavIndex(NAV_PLAYLISTS)
+                openLocalPlaylist(playlistId)
+                if (downloadMissing && pendingCount > 0) {
+                    downloadPlaylistPendingTracks(playlistId)
+                }
+            },
+            playPlayableCollection = { playPlayableCollection(it, startIndex = 0, rotate = false) },
+            addPlayableBatch = ::addPlayableBatch,
+            toast = ::toast,
+        )
     val similarPlaylistPreview: StateFlow<SimilarPlaylistPreviewState?> = similarPlaylistCoordinator.state
 
     private val _suggestedQueueTracks = MutableStateFlow<List<PlayableItem>>(emptyList())
@@ -651,25 +709,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val queueFocusEpoch = playbackRuntime.queueFocusEpoch
 
     private val audioManager = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val audioVolumeCoordinator = AudioVolumeCoordinator(
-        audioManager = audioManager,
-        playbackPreferences = playbackPreferences,
-        scope = viewModelScope,
-        isBoostPrefEnabled = { volumeBoostEnabled.value },
-        getPlaybackSettings = { playbackSettings.value }
-    )
+    private val audioVolumeCoordinator =
+        AudioVolumeCoordinator(
+            audioManager = audioManager,
+            playbackPreferences = playbackPreferences,
+            scope = viewModelScope,
+            isBoostPrefEnabled = { volumeBoostEnabled.value },
+            getPlaybackSettings = { playbackSettings.value },
+        )
     val volumeLevel: StateFlow<Float> = audioVolumeCoordinator.volumeLevel
     val volumeBoostHudVisible: StateFlow<Boolean> = audioVolumeCoordinator.volumeBoostHudVisible
 
-    val lyricsCoordinator = LyricsCoordinator(
-        scope = viewModelScope,
-        repository = repository,
-        lyricsPreferences = lyricsPreferences,
-        updateCurrentSongLyrics = { songId, lyrics -> playbackRuntime.updateCurrentSongLyrics(songId, lyrics) },
-        updateCurrentItemLyrics = { lyrics -> playbackRuntime.updateCurrentItemLyrics(lyrics) },
-        isOnline = { connectivityObserver.isCurrentlyOnline() },
-        toast = ::toast
-    )
+    val lyricsCoordinator =
+        LyricsCoordinator(
+            scope = viewModelScope,
+            repository = repository,
+            lyricsPreferences = lyricsPreferences,
+            updateCurrentSongLyrics = { songId, lyrics -> playbackRuntime.updateCurrentSongLyrics(songId, lyrics) },
+            updateCurrentItemLyrics = { lyrics -> playbackRuntime.updateCurrentItemLyrics(lyrics) },
+            isOnline = { connectivityObserver.isCurrentlyOnline() },
+            toast = ::toast,
+        )
     val lyricsSettings: StateFlow<LyricsSettings> = lyricsCoordinator.settings
     val lyricsTranslationState: StateFlow<LyricsTranslationState> = lyricsCoordinator.translationState
     val isFetchingLyrics: StateFlow<Boolean> = lyricsCoordinator.isFetching
@@ -677,8 +737,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val searchHistoryPreferences = SearchHistoryPreferencesRepository(application)
 
-    val recentSearches: StateFlow<List<String>> = searchHistoryPreferences.recentSearchesFlow
-        .stateInUi(viewModelScope, emptyList())
+    val recentSearches: StateFlow<List<String>> =
+        searchHistoryPreferences.recentSearchesFlow
+            .stateInUi(viewModelScope, emptyList())
 
     val discoverSource: StateFlow<DiscoverSourcePreference> =
         libraryPreferences.discoverSourceFlow
@@ -696,40 +757,42 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         libraryPreferences.libraryBlobsSettingsFlow
             .stateInUi(viewModelScope, LibraryBlobsSettings())
 
-    private val playbackExecutionCoordinator = PlaybackExecutionCoordinator(
-        scope = viewModelScope,
-        playbackRuntime = playbackRuntime,
-        repository = repository,
-        libraryProjection = libraryProjection,
-        getLibrarySongsUseCase = getLibrarySongsUseCase,
-        getLocalSongsByMatchKey = { libraryLookupIndex.value.localSongsByMatchKey },
-        getLibraryBrowseFilter = { navigation.value.libraryBrowseFilter },
-        getPlaylistDetail = { navigation.value.playlistDetail },
-        getLibraryViewMode = { _libraryViewMode.value },
-        getSortOption = { _sortOption.value },
-        getSortDirection = { _sortDirection.value },
-        playlistsFlow = playlists,
-        isOpenNowPlayingOnPlay = { playbackSettings.value.openNowPlayingOnPlay },
-        togglePlayPause = { togglePlayPause() },
-        isPlaying = isPlaying
-    )
+    private val playbackExecutionCoordinator =
+        PlaybackExecutionCoordinator(
+            scope = viewModelScope,
+            playbackRuntime = playbackRuntime,
+            repository = repository,
+            libraryProjection = libraryProjection,
+            getLibrarySongsUseCase = getLibrarySongsUseCase,
+            getLocalSongsByMatchKey = { libraryLookupIndex.value.localSongsByMatchKey },
+            getLibraryBrowseFilter = { navigation.value.libraryBrowseFilter },
+            getPlaylistDetail = { navigation.value.playlistDetail },
+            getLibraryViewMode = { _libraryViewMode.value },
+            getSortOption = { _sortOption.value },
+            getSortDirection = { _sortDirection.value },
+            playlistsFlow = playlists,
+            isOpenNowPlayingOnPlay = { playbackSettings.value.openNowPlayingOnPlay },
+            togglePlayPause = { togglePlayPause() },
+            isPlaying = isPlaying,
+        )
     val catalogPreviewKey: StateFlow<String?> = playbackExecutionCoordinator.catalogPreviewKey
     val openNowPlayingEvents: SharedFlow<Unit> = playbackExecutionCoordinator.openNowPlayingEvents
 
-    private val discoverFeedCoordinator = DiscoverFeedCoordinator(
-        scope = viewModelScope,
-        repository = repository,
-        listenBrainzPreferences = listenBrainzPreferences,
-        libraryPreferences = libraryPreferences,
-        onClearExternalState = {
-            closeListenBrainzPlaylist()
-            val detail = navigation.value.playlistDetail
-            if (detail is PlaylistDetailNav.ListenBrainz || detail is PlaylistDetailNav.CfRecommendations) {
-                updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.None) }
-                persistNavSnapshot()
-            }
-        }
-    )
+    private val discoverFeedCoordinator =
+        DiscoverFeedCoordinator(
+            scope = viewModelScope,
+            repository = repository,
+            listenBrainzPreferences = listenBrainzPreferences,
+            libraryPreferences = libraryPreferences,
+            onClearExternalState = {
+                closeListenBrainzPlaylist()
+                val detail = navigation.value.playlistDetail
+                if (detail is PlaylistDetailNav.ListenBrainz || detail is PlaylistDetailNav.CfRecommendations) {
+                    updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.None) }
+                    persistNavSnapshot()
+                }
+            },
+        )
     val discoverFeed: StateFlow<DiscoverFeed> = discoverFeedCoordinator.discoverFeed
     val isLoadingDiscoverFeed: StateFlow<Boolean> = discoverFeedCoordinator.isLoadingDiscoverFeed
     val topRelatedFeed: StateFlow<TopRelatedFeed> = discoverFeedCoordinator.topRelatedFeed
@@ -737,117 +800,126 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val lbDiscover: StateFlow<LoadableUiState<List<LbPlaylistSummary>>> = discoverFeedCoordinator.lbDiscover
     val cfRecommendations: StateFlow<LoadableUiState<MatchedCfRecommendations?>> = discoverFeedCoordinator.cfRecommendations
 
-    private val listenBrainzIntegrationCoordinator = ListenBrainzIntegrationCoordinator(
-        scope = viewModelScope,
-        repository = repository,
-        listenBrainzPreferences = listenBrainzPreferences,
-        playbackRuntime = playbackRuntime,
-        discoverFeedCoordinator = discoverFeedCoordinator,
-        enqueuePendingDownloads = { id, tracks, toastQueued ->
-            enqueuePendingDownloads(id, tracks, toastQueued)
-        },
-        getCurrentPlaylistDetail = { navigation.value.playlistDetail },
-        toast = ::toast,
-        toastPlaylistSaved = ::toastPlaylistSaved
-    )
+    private val listenBrainzIntegrationCoordinator =
+        ListenBrainzIntegrationCoordinator(
+            scope = viewModelScope,
+            repository = repository,
+            listenBrainzPreferences = listenBrainzPreferences,
+            playbackRuntime = playbackRuntime,
+            discoverFeedCoordinator = discoverFeedCoordinator,
+            enqueuePendingDownloads = { id, tracks, toastQueued ->
+                enqueuePendingDownloads(id, tracks, toastQueued)
+            },
+            getCurrentPlaylistDetail = { navigation.value.playlistDetail },
+            toast = ::toast,
+            toastPlaylistSaved = ::toastPlaylistSaved,
+        )
     val tokenValidation: StateFlow<LoadableUiState<String?>> = listenBrainzIntegrationCoordinator.tokenValidation
     val lbPlaylistDetail: StateFlow<LoadableUiState<MatchedLbPlaylist?>> = listenBrainzIntegrationCoordinator.lbPlaylistDetail
 
-    private val libraryEditCoordinator = LibraryEditCoordinator(
-        scope = viewModelScope,
-        repository = repository,
-        updateAlbumArtworkInQueue = { albumName, artworkUri -> playbackRuntime.updateAlbumArtworkInQueue(albumName, artworkUri) },
-        onSongsDeleted = { ids -> pruneIdentifyReview(ids) },
-        toast = ::toast
-    )
+    private val libraryEditCoordinator =
+        LibraryEditCoordinator(
+            scope = viewModelScope,
+            repository = repository,
+            updateAlbumArtworkInQueue = { albumName, artworkUri -> playbackRuntime.updateAlbumArtworkInQueue(albumName, artworkUri) },
+            onSongsDeleted = { ids -> pruneIdentifyReview(ids) },
+            toast = ::toast,
+        )
     val pendingAlbumMerge: StateFlow<PendingAlbumMerge?> = libraryEditCoordinator.pendingAlbumMerge
 
-    private val catalogSearchCoordinator = com.bestiapop.android.ui.state.CatalogSearchCoordinator(
-        scope = viewModelScope,
-        isOnline = { connectivityObserver.isCurrentlyOnline() },
-        onNotifyToast = ::toast,
-        onSaveRecentSearch = ::addRecentSearch
-    )
+    private val catalogSearchCoordinator =
+        com.bestiapop.android.ui.state.CatalogSearchCoordinator(
+            scope = viewModelScope,
+            isOnline = { connectivityObserver.isCurrentlyOnline() },
+            onNotifyToast = ::toast,
+            onSaveRecentSearch = ::addRecentSearch,
+        )
     val catalogSearch: StateFlow<CatalogSearchUiState> = catalogSearchCoordinator.state
 
-    private val playlistCoordinator = PlaylistCoordinator(
-        scope = viewModelScope,
-        repository = repository,
-        onPlaylistDeleted = { id ->
-            val detail = navigation.value.playlistDetail
-            if (detail is PlaylistDetailNav.Local && detail.id == id) {
-                closePlaylistDetail()
-            }
-        }
-    )
+    private val playlistCoordinator =
+        PlaylistCoordinator(
+            scope = viewModelScope,
+            repository = repository,
+            onPlaylistDeleted = { id ->
+                val detail = navigation.value.playlistDetail
+                if (detail is PlaylistDetailNav.Local && detail.id == id) {
+                    closePlaylistDetail()
+                }
+            },
+        )
 
-    private val catalogInspectionCoordinator: CatalogInspectionCoordinator = CatalogInspectionCoordinator(
-        scope = viewModelScope,
-        playOnlineCatalogTrackAsStream = ::playOnlineCatalogTrackAsStream,
-        onResetBatchPlaylistTarget = { catalogDownloadCoordinator.resetBatchPlaylistTarget() }
-    )
+    private val catalogInspectionCoordinator: CatalogInspectionCoordinator =
+        CatalogInspectionCoordinator(
+            scope = viewModelScope,
+            playOnlineCatalogTrackAsStream = ::playOnlineCatalogTrackAsStream,
+            onResetBatchPlaylistTarget = { catalogDownloadCoordinator.resetBatchPlaylistTarget() },
+        )
     val catalogCollection: StateFlow<CatalogCollectionUiState> = catalogInspectionCoordinator.catalogCollection
 
-    private val catalogDownloadCoordinator: CatalogDownloadCoordinator = CatalogDownloadCoordinator(
-        scope = viewModelScope,
-        processDownloadRuntime = processDownloadRuntime,
-        repository = repository,
-        toast = ::toast,
-        toastDownloadsQueued = { alreadyQueued, count ->
-            toastDownloadsQueued(count = count.takeIf { it > 1 }, alreadyQueued = alreadyQueued)
-        },
-        toastSongAlreadyInLibrary = { toastSongInLibrary(it, LibraryToastKind.ALREADY) },
-        playOnlineCatalogTrackAsStream = ::playOnlineCatalogTrackAsStream,
-        playSong = ::playSong,
-        rematchDiscover = ::rematchDiscoverAfterLibraryChange,
-        launchCycleYouTubeMatch = { query, current, wasPreviewing, apply ->
-            catalogInspectionCoordinator.launchCycleYouTubeMatch(query, current, wasPreviewing, apply)
-        },
-        isOnline = { connectivityObserver.isCurrentlyOnline() }
-    )
+    private val catalogDownloadCoordinator: CatalogDownloadCoordinator =
+        CatalogDownloadCoordinator(
+            scope = viewModelScope,
+            processDownloadRuntime = processDownloadRuntime,
+            repository = repository,
+            toast = ::toast,
+            toastDownloadsQueued = { alreadyQueued, count ->
+                toastDownloadsQueued(count = count.takeIf { it > 1 }, alreadyQueued = alreadyQueued)
+            },
+            toastSongAlreadyInLibrary = { toastSongInLibrary(it, LibraryToastKind.ALREADY) },
+            playOnlineCatalogTrackAsStream = ::playOnlineCatalogTrackAsStream,
+            playSong = ::playSong,
+            rematchDiscover = ::rematchDiscoverAfterLibraryChange,
+            launchCycleYouTubeMatch = { query, current, wasPreviewing, apply ->
+                catalogInspectionCoordinator.launchCycleYouTubeMatch(query, current, wasPreviewing, apply)
+            },
+            isOnline = { connectivityObserver.isCurrentlyOnline() },
+        )
 
-    private val submenuActionCoordinator = SubmenuActionCoordinator(
-        scope = viewModelScope,
-        addPlayableBatch = ::addPlayableBatch,
-        playNextPlayableBatch = ::playNextPlayableBatch,
-        startRadioForSong = { startRadio(it) },
-        startRadioForStream = { startRadio() },
-        playPlayableCollection = { items, index -> playPlayableCollection(items, startIndex = index) },
-        searchCatalog = ::searchCatalog,
-        navigateToDiscover = {
-            runIfOnline {
-                setSelectedNavIndex(NAV_DISCOVER)
-            }
-        },
-        toast = ::toast,
-        getLibrarySongs = { libraryProjection.songs.value },
-        resolveAlbumArtwork = { libraryProjection.resolveAlbumArtwork(it) },
-        getLocalSongsByMatchKey = { libraryLookupIndex.value.localSongsByMatchKey },
-        getAllSongsByMatchKey = { libraryLookupIndex.value.allSongsByMatchKey },
-        getCatalogCollection = { catalogInspectionCoordinator.catalogCollection.value },
-        findLocalSongFor = ::findLocalSongFor
-    )
+    private val submenuActionCoordinator =
+        SubmenuActionCoordinator(
+            scope = viewModelScope,
+            addPlayableBatch = ::addPlayableBatch,
+            playNextPlayableBatch = ::playNextPlayableBatch,
+            startRadioForSong = { startRadio(it) },
+            startRadioForStream = { startRadio() },
+            playPlayableCollection = { items, index -> playPlayableCollection(items, startIndex = index) },
+            searchCatalog = ::searchCatalog,
+            navigateToDiscover = {
+                runIfOnline {
+                    setSelectedNavIndex(NAV_DISCOVER)
+                }
+            },
+            toast = ::toast,
+            getLibrarySongs = { libraryProjection.songs.value },
+            resolveAlbumArtwork = { libraryProjection.resolveAlbumArtwork(it) },
+            getLocalSongsByMatchKey = { libraryLookupIndex.value.localSongsByMatchKey },
+            getAllSongsByMatchKey = { libraryLookupIndex.value.allSongsByMatchKey },
+            getCatalogCollection = { catalogInspectionCoordinator.catalogCollection.value },
+            findLocalSongFor = ::findLocalSongFor,
+        )
 
     val activeDownloads: StateFlow<List<ActiveDownload>> = processDownloadRuntime.downloads
-    val activeDownloadBadgeCount: StateFlow<Int> = activeDownloads
-        .map { activeDownloadBadgeCount(it) }
-        .distinctUntilChanged()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = activeDownloadBadgeCount(activeDownloads.value)
-        )
+    val activeDownloadBadgeCount: StateFlow<Int> =
+        activeDownloads
+            .map { activeDownloadBadgeCount(it) }
+            .distinctUntilChanged()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = activeDownloadBadgeCount(activeDownloads.value),
+            )
     val downloadConflict: StateFlow<DownloadConflict?> = processDownloadRuntime.downloadConflict
 
-    private val libraryScanCoordinator = LibraryScanCoordinator(
-        context = application,
-        scope = viewModelScope,
-        repository = repository,
-        libraryPreferences = libraryPreferences,
-        identifyProgress = processIdentifyRuntime.progress,
-        identifyImportedGaps = { identifyImportedGaps(it) },
-        toast = ::toast
-    )
+    private val libraryScanCoordinator =
+        LibraryScanCoordinator(
+            context = application,
+            scope = viewModelScope,
+            repository = repository,
+            libraryPreferences = libraryPreferences,
+            identifyProgress = processIdentifyRuntime.progress,
+            identifyImportedGaps = { identifyImportedGaps(it) },
+            toast = ::toast,
+        )
     val libraryJobProgress: StateFlow<LibraryJobProgress?> = libraryScanCoordinator.libraryJobProgress
     private val identifiedWifiSongIds = mutableSetOf<Long>()
     private val _pendingOpenDownloads = MutableStateFlow(false)
@@ -916,14 +988,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _backgroundExecutionStatus.value = snapshot
             return
         }
-        _backgroundExecutionStatus.value = snapshot.copy(
-            runAnyInBackgroundIgnored = current.runAnyInBackgroundIgnored,
-            oemScreenOffCleanupEnabled = current.oemScreenOffCleanupEnabled
-        )
-        backgroundExecutionConfirmJob = viewModelScope.launch {
-            delay(BACKGROUND_RESTRICTION_CONFIRM_MS)
-            _backgroundExecutionStatus.value = BackgroundExecutionProbe.current(getApplication())
-        }
+        _backgroundExecutionStatus.value =
+            snapshot.copy(
+                runAnyInBackgroundIgnored = current.runAnyInBackgroundIgnored,
+                oemScreenOffCleanupEnabled = current.oemScreenOffCleanupEnabled,
+            )
+        backgroundExecutionConfirmJob =
+            viewModelScope.launch {
+                delay(BACKGROUND_RESTRICTION_CONFIRM_MS)
+                _backgroundExecutionStatus.value = BackgroundExecutionProbe.current(getApplication())
+            }
     }
 
     fun consumeOpenDownloads() {
@@ -939,10 +1013,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun setVolume(ratio: Float) = audioVolumeCoordinator.setVolume(ratio)
+
     fun setVolumeBoostEnabled(enabled: Boolean) = audioVolumeCoordinator.setVolumeBoostEnabled(enabled)
+
     fun setVolumeBoostAmount(amount: Float) = audioVolumeCoordinator.setVolumeBoostAmount(amount)
+
     fun showVolumeBoostHud() = audioVolumeCoordinator.showVolumeBoostHud()
+
     fun hideVolumeBoostHud() = audioVolumeCoordinator.hideVolumeBoostHud()
+
     fun isVolumeBoostActive(): Boolean = audioVolumeCoordinator.isVolumeBoostActive()
 
     fun setDownloadOnMeteredNetwork(enabled: Boolean) {
@@ -974,7 +1053,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun consumePendingSettingsSection(): String? = uiNavigationCoordinator.consumePendingSettingsSection()
 
     fun setStereoLeftGain(gain: Float) = audioVolumeCoordinator.setStereoLeftGain(gain)
+
     fun setStereoRightGain(gain: Float) = audioVolumeCoordinator.setStereoRightGain(gain)
+
     fun resetStereoBalance() = audioVolumeCoordinator.resetStereoBalance()
 
     fun setRememberShuffleOnLaunch(enabled: Boolean) {
@@ -1036,7 +1117,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun <T> playbackPref(
         initial: T,
-        select: (PlaybackSettings) -> T
+        select: (PlaybackSettings) -> T,
     ): StateFlow<T> = playbackSettings.mapToUiState(viewModelScope, initial, transform = select)
 
     init {
@@ -1107,26 +1188,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             playlistCoordinator.enrichAllPlaylistsPendingArtworks()
         }
 
-
         viewModelScope.launch {
             WebServerService.transfers
                 .debounce(400)
                 .collect { list ->
-                    val newIds = list.mapNotNull { transfer ->
-                        val id = transfer.songId
-                        if (transfer.state == WifiTransferState.DONE &&
-                            id != null &&
-                            id !in identifiedWifiSongIds
-                        ) {
-                            id
-                        } else {
-                            null
+                    val newIds =
+                        list.mapNotNull { transfer ->
+                            val id = transfer.songId
+                            if (transfer.state == WifiTransferState.DONE &&
+                                id != null &&
+                                id !in identifiedWifiSongIds
+                            ) {
+                                id
+                            } else {
+                                null
+                            }
                         }
-                    }
                     if (newIds.isEmpty()) return@collect
-                    val songs = withContext(Dispatchers.IO) {
-                        repository.getSongsByIds(newIds)
-                    }
+                    val songs =
+                        withContext(Dispatchers.IO) {
+                            repository.getSongsByIds(newIds)
+                        }
                     if (songs.isEmpty()) return@collect
                     identifiedWifiSongIds += songs.map { it.id }
                     identifyImportedGaps(songs)
@@ -1154,20 +1236,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             combine(
                 activeDownloads.map { rows ->
-                    rows.asSequence()
+                    rows
+                        .asSequence()
                         .filter {
                             it.source.lane == DownloadLane.AUTOSAVE &&
-                                    it.state == CandidateDownloadState.SUCCESS
-                        }
-                        .mapNotNull { it.resultSongId }
+                                it.state == CandidateDownloadState.SUCCESS
+                        }.mapNotNull { it.resultSongId }
                         .toSet()
                 },
                 lbPlaylistDetail.map { it.data != null },
-                cfRecommendations.map { it.data != null }
+                cfRecommendations.map { it.data != null },
             ) { savedSongIds, hasLbDetail, hasCfDetail ->
                 Triple(savedSongIds, hasLbDetail, hasCfDetail)
-            }
-                .distinctUntilChanged()
+            }.distinctUntilChanged()
                 .collect { (savedSongIds, hasLbDetail, hasCfDetail) ->
                     if (savedSongIds.isNotEmpty() && (hasLbDetail || hasCfDetail)) {
                         rematchDiscoverAfterLibraryChange()
@@ -1179,13 +1260,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         // change, which restarted these network passes over the whole library each time.
         viewModelScope.launch(Dispatchers.IO) {
             awaitFirstLibraryIdle()
-            rawSongs.map { songs -> songs.mapTo(LinkedHashSet()) { it.artist } }
+            rawSongs
+                .map { songs -> songs.mapTo(LinkedHashSet()) { it.artist } }
                 .distinctUntilChanged()
                 .collect { artists ->
                     val newPhotos = mutableMapOf<String, String>()
-                    val unattempted = artists.filter {
-                        !IdentifyRanking.isPlaceholderArtist(it) && it !in artistPhotoAttempted
-                    }
+                    val unattempted =
+                        artists.filter {
+                            !IdentifyRanking.isPlaceholderArtist(it) && it !in artistPhotoAttempted
+                        }
                     for (artist in unattempted) {
                         artistPhotoAttempted.add(artist)
                         val photoUrl = MetadataFetcher.fetchArtistPhotoUrl(artist)
@@ -1194,13 +1277,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         }
                     }
                     if (newPhotos.isNotEmpty()) {
-                        _artistPhotos.update { it + newPhotos }
+                        artistPhotos.update { it + newPhotos }
                     }
                 }
         }
     }
 
-    fun updateSongDuration(songId: Long, durationMs: Long) {
+    fun updateSongDuration(
+        songId: Long,
+        durationMs: Long,
+    ) {
         viewModelScope.launch {
             repository.updateSongDuration(songId, durationMs)
         }
@@ -1229,15 +1315,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         lyricsCoordinator.cancelGoogleTranslatePrompt()
     }
 
-    fun confirmGoogleTranslate(song: Song, lines: List<String>) {
+    fun confirmGoogleTranslate(
+        song: Song,
+        lines: List<String>,
+    ) {
         lyricsCoordinator.confirmGoogleTranslate(song, lines)
     }
 
-    fun toggleLyricsTranslation(song: Song, lines: List<String>) {
+    fun toggleLyricsTranslation(
+        song: Song,
+        lines: List<String>,
+    ) {
         lyricsCoordinator.toggleLyricsTranslation(song, lines)
     }
 
-    fun ensureRomanization(songId: Long, lines: List<String>) {
+    fun ensureRomanization(
+        songId: Long,
+        lines: List<String>,
+    ) {
         lyricsCoordinator.ensureRomanization(songId, lines)
     }
 
@@ -1249,7 +1344,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         lyricsCoordinator.clearFetchError()
     }
 
-    fun ensureLyrics(song: Song, force: Boolean = false) {
+    fun ensureLyrics(
+        song: Song,
+        force: Boolean = false,
+    ) {
         lyricsCoordinator.ensureLyrics(song, force)
     }
 
@@ -1265,7 +1363,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         song: Song,
         playlistOrQueue: List<Song> = emptyList(),
         applyManualModes: Boolean = true,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) = playbackExecutionCoordinator.playSong(song, playlistOrQueue, applyManualModes, openNowPlaying)
 
     fun playPlayableCollection(
@@ -1277,27 +1375,33 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startShuffled: Boolean = false,
         origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
         resumeAtMs: Long? = null,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) = playbackExecutionCoordinator.playPlayableCollection(
-        items, startIndex, fromRadio, rotate, applyManualModes, startShuffled, origin, resumeAtMs, openNowPlaying
+        items,
+        startIndex,
+        fromRadio,
+        rotate,
+        applyManualModes,
+        startShuffled,
+        origin,
+        resumeAtMs,
+        openNowPlaying,
     )
 
-    fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String =
-        playbackExecutionCoordinator.catalogPreviewKeyForTrack(track)
+    fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String = playbackExecutionCoordinator.catalogPreviewKeyForTrack(track)
 
     fun playOnlineCatalogTrackAsStream(
         track: OnlineCatalogTrack,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) = playbackExecutionCoordinator.playOnlineCatalogTrackAsStream(track, openNowPlaying)
 
     /** Returns matched local (non-remote) Song from library index in O(1) time. */
-    fun findLocalSongFor(meta: TrackMeta): Song? =
-        playbackExecutionCoordinator.findLocalSongFor(meta)
+    fun findLocalSongFor(meta: TrackMeta): Song? = playbackExecutionCoordinator.findLocalSongFor(meta)
 
     /** Plays local version if available in library; otherwise falls back to online stream. */
     fun playCatalogOrLocalTrack(
         track: OnlineCatalogTrack,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) = playbackExecutionCoordinator.playCatalogOrLocalTrack(track, openNowPlaying)
 
     /** Plays collection of candidates, resolving any available local tracks to avoid streaming. */
@@ -1305,28 +1409,34 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         candidates: List<CatalogTrackCandidate>,
         startIndex: Int = 0,
         startShuffled: Boolean = false,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) = playbackExecutionCoordinator.playCatalogCandidates(candidates, startIndex, startShuffled, openNowPlaying)
 
     /** Plays a single catalog candidate using local file if present, or streaming. */
     fun playCatalogCandidate(
         candidate: CatalogTrackCandidate,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) = playbackExecutionCoordinator.playCatalogCandidate(candidate, openNowPlaying)
 
     /** Level 2: Downloads a single catalog candidate preserving all candidate matches and identity. */
     fun downloadCatalogCandidate(
         candidate: CatalogTrackCandidate,
         source: ActiveDownloadSource = ActiveDownloadSource.CATALOG,
-        targetPlaylistId: Long? = null
+        targetPlaylistId: Long? = null,
     ) {
         val targetTrack = candidate.currentTrack ?: candidate.effectiveTrack
-        val resolvedPlaylistId = targetPlaylistId ?: (catalogCollection.value.takeIf { it.kind == CatalogCollectionKind.PLAYLIST }?.let {
-            catalogDownloadCoordinator.currentBatchPlaylistId
-        })
-        val explicitId = if (source == ActiveDownloadSource.BATCH) {
-            TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title)
-        } else null
+        val resolvedPlaylistId =
+            targetPlaylistId ?: (
+                catalogCollection.value.takeIf { it.kind == CatalogCollectionKind.PLAYLIST }?.let {
+                    catalogDownloadCoordinator.currentBatchPlaylistId
+                }
+            )
+        val explicitId =
+            if (source == ActiveDownloadSource.BATCH) {
+                TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title)
+            } else {
+                null
+            }
         downloadOnlineTrack(
             track = targetTrack,
             source = source,
@@ -1334,19 +1444,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             existingCandidates = candidate.candidates,
             currentCandidateIndex = candidate.currentCandidateIndex,
             lookupIdentity = candidate.identity,
-            explicitId = explicitId
+            explicitId = explicitId,
         )
     }
 
     /** Returns status of track in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
     fun getTrackLibraryStatus(meta: TrackMeta): ItemLibraryStatus {
-        val song = TrackMatchKeys.lookupLocalSong(libraryLookupIndex.value.allSongsByMatchKey, meta)
-            ?: return ItemLibraryStatus.NOT_IN_LIBRARY
+        val song =
+            TrackMatchKeys.lookupLocalSong(libraryLookupIndex.value.allSongsByMatchKey, meta)
+                ?: return ItemLibraryStatus.NOT_IN_LIBRARY
         return if (song.isRemote) ItemLibraryStatus.SAVED_REMOTE else ItemLibraryStatus.DOWNLOADED
     }
 
     /** Returns status of album in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
-    fun getAlbumLibraryStatus(albumTitle: String, artistName: String): ItemLibraryStatus {
+    fun getAlbumLibraryStatus(
+        albumTitle: String,
+        artistName: String,
+    ): ItemLibraryStatus {
         val indices = libraryLookupIndex.value
         val key = albumArtistKey(artistName, albumTitle)
         val albumKey = albumIdentityKey(albumTitle)
@@ -1356,106 +1470,114 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /** Level 2: Returns status of album in library for a [CatalogAlbum]. */
-    fun getAlbumLibraryStatus(album: CatalogAlbum): ItemLibraryStatus =
-        getAlbumLibraryStatus(album.title, album.artist)
+    fun getAlbumLibraryStatus(album: CatalogAlbum): ItemLibraryStatus = getAlbumLibraryStatus(album.title, album.artist)
 
     /** Level 2: Returns status of album in library for a local [Album]. */
-    fun getAlbumLibraryStatus(album: Album): ItemLibraryStatus =
-        getAlbumLibraryStatus(album.name, album.artist)
+    fun getAlbumLibraryStatus(album: Album): ItemLibraryStatus = getAlbumLibraryStatus(album.name, album.artist)
 
     /** Preview local file while reviewing identify candidates (toggle if already current). */
-    fun previewIdentifyLocalSong(song: Song) =
-        playbackExecutionCoordinator.previewIdentifyLocalSong(song)
+    fun previewIdentifyLocalSong(song: Song) = playbackExecutionCoordinator.previewIdentifyLocalSong(song)
 
     /** Stream-preview a ranked identify candidate via YouTube (same path as catalog). */
-    fun previewIdentifyCandidate(candidate: IdentifyCandidate) =
-        playbackExecutionCoordinator.previewIdentifyCandidate(candidate)
+    fun previewIdentifyCandidate(candidate: IdentifyCandidate) = playbackExecutionCoordinator.previewIdentifyCandidate(candidate)
 
-    fun clearCatalogPreview() =
-        playbackExecutionCoordinator.clearCatalogPreview()
+    fun clearCatalogPreview() = playbackExecutionCoordinator.clearCatalogPreview()
 
     /** Stops active catalog preview and pauses playback if currently playing. */
-    fun stopCatalogPreview() =
-        playbackExecutionCoordinator.stopCatalogPreview()
+    fun stopCatalogPreview() = playbackExecutionCoordinator.stopCatalogPreview()
 
     // Unified Collection / Group Pipeline ("Everything is a Playlist")
-    fun playCollection(songs: List<Song>, startIndex: Int = 0, startShuffled: Boolean = false) =
-        playbackExecutionCoordinator.playCollection(songs, startIndex, startShuffled)
+    fun playCollection(
+        songs: List<Song>,
+        startIndex: Int = 0,
+        startShuffled: Boolean = false,
+    ) = playbackExecutionCoordinator.playCollection(songs, startIndex, startShuffled)
 
-    fun playCollection(songs: List<Song>, startShuffled: Boolean) =
-        playbackExecutionCoordinator.playCollection(songs, startShuffled)
+    fun playCollection(
+        songs: List<Song>,
+        startShuffled: Boolean,
+    ) = playbackExecutionCoordinator.playCollection(songs, startShuffled)
 
-    fun playCollection(songs: List<Song>, startSong: Song) =
-        playbackExecutionCoordinator.playCollection(songs, startSong)
+    fun playCollection(
+        songs: List<Song>,
+        startSong: Song,
+    ) = playbackExecutionCoordinator.playCollection(songs, startSong)
 
     /**
      * Level 1: Core pipeline for executing playback actions on any collection of songs.
      */
-    fun executeGroupPlayback(songs: List<Song>, action: GroupPlaybackAction) =
-        playbackExecutionCoordinator.executeGroupPlayback(songs, action)
+    fun executeGroupPlayback(
+        songs: List<Song>,
+        action: GroupPlaybackAction,
+    ) = playbackExecutionCoordinator.executeGroupPlayback(songs, action)
 
     // Unified Group / Aggregate Actions ("Everything is a Collection")
-    fun playAlbum(albumName: String, startShuffled: Boolean = false) =
-        playbackExecutionCoordinator.playAlbum(albumName, startShuffled)
+    fun playAlbum(
+        albumName: String,
+        startShuffled: Boolean = false,
+    ) = playbackExecutionCoordinator.playAlbum(albumName, startShuffled)
 
-    fun playAlbum(album: Album, startShuffled: Boolean = false) =
-        playbackExecutionCoordinator.playAlbum(album, startShuffled)
+    fun playAlbum(
+        album: Album,
+        startShuffled: Boolean = false,
+    ) = playbackExecutionCoordinator.playAlbum(album, startShuffled)
 
-    fun playAlbumNext(albumName: String) =
-        playbackExecutionCoordinator.playAlbumNext(albumName)
+    fun playAlbumNext(albumName: String) = playbackExecutionCoordinator.playAlbumNext(albumName)
 
-    fun playAlbumNext(album: Album) =
-        playbackExecutionCoordinator.playAlbumNext(album)
+    fun playAlbumNext(album: Album) = playbackExecutionCoordinator.playAlbumNext(album)
 
-    fun enqueueAlbum(albumName: String) =
-        playbackExecutionCoordinator.enqueueAlbum(albumName)
+    fun enqueueAlbum(albumName: String) = playbackExecutionCoordinator.enqueueAlbum(albumName)
 
-    fun enqueueAlbum(album: Album) =
-        playbackExecutionCoordinator.enqueueAlbum(album)
+    fun enqueueAlbum(album: Album) = playbackExecutionCoordinator.enqueueAlbum(album)
 
-    fun playArtist(artistName: String, startShuffled: Boolean = false) =
-        playbackExecutionCoordinator.playArtist(artistName, startShuffled)
+    fun playArtist(
+        artistName: String,
+        startShuffled: Boolean = false,
+    ) = playbackExecutionCoordinator.playArtist(artistName, startShuffled)
 
-    fun playArtistNext(artistName: String) =
-        playbackExecutionCoordinator.playArtistNext(artistName)
+    fun playArtistNext(artistName: String) = playbackExecutionCoordinator.playArtistNext(artistName)
 
-    fun enqueueArtist(artistName: String) =
-        playbackExecutionCoordinator.enqueueArtist(artistName)
+    fun enqueueArtist(artistName: String) = playbackExecutionCoordinator.enqueueArtist(artistName)
 
-    fun playGenre(genreName: String, startShuffled: Boolean = false) =
-        playbackExecutionCoordinator.playGenre(genreName, startShuffled)
+    fun playGenre(
+        genreName: String,
+        startShuffled: Boolean = false,
+    ) = playbackExecutionCoordinator.playGenre(genreName, startShuffled)
 
-    fun playGenreNext(genreName: String) =
-        playbackExecutionCoordinator.playGenreNext(genreName)
+    fun playGenreNext(genreName: String) = playbackExecutionCoordinator.playGenreNext(genreName)
 
-    fun enqueueGenre(genreName: String) =
-        playbackExecutionCoordinator.enqueueGenre(genreName)
+    fun enqueueGenre(genreName: String) = playbackExecutionCoordinator.enqueueGenre(genreName)
 
-    fun identifyAlbum(album: Album) = runIfOnline {
-        val albumSongs = songsForAlbum(libraryProjection.songs.value, album.name)
-        if (albumSongs.isNotEmpty()) {
-            openIdentifySetup(albumSongs, contextTitle = "Álbum: ${album.displayName}")
-        }
-    }
-
-    fun identifyAlbum(albumName: String) = runIfOnline {
-        val album = libraryProjection.albums.value.firstOrNull { albumNamesMatch(it.name, albumName) }
-        if (album != null) {
+    fun identifyAlbum(album: Album) =
+        runIfOnline {
             val albumSongs = songsForAlbum(libraryProjection.songs.value, album.name)
             if (albumSongs.isNotEmpty()) {
                 openIdentifySetup(albumSongs, contextTitle = "Álbum: ${album.displayName}")
             }
-        } else {
-            val albumSongs = songsForAlbum(libraryProjection.songs.value, albumName)
-            if (albumSongs.isNotEmpty()) {
-                openIdentifySetup(albumSongs, contextTitle = "Álbum: $albumName")
+        }
+
+    fun identifyAlbum(albumName: String) =
+        runIfOnline {
+            val album = libraryProjection.albums.value.firstOrNull { albumNamesMatch(it.name, albumName) }
+            if (album != null) {
+                val albumSongs = songsForAlbum(libraryProjection.songs.value, album.name)
+                if (albumSongs.isNotEmpty()) {
+                    openIdentifySetup(albumSongs, contextTitle = "Álbum: ${album.displayName}")
+                }
+            } else {
+                val albumSongs = songsForAlbum(libraryProjection.songs.value, albumName)
+                if (albumSongs.isNotEmpty()) {
+                    openIdentifySetup(albumSongs, contextTitle = "Álbum: $albumName")
+                }
             }
         }
-    }
 
     fun resolveAlbumArtwork(song: Song): String? = libraryProjection.resolveAlbumArtwork(song)
 
-    fun setAlbumArtwork(albumName: String, artworkUri: String) {
+    fun setAlbumArtwork(
+        albumName: String,
+        artworkUri: String,
+    ) {
         libraryEditCoordinator.setAlbumArtwork(albumName, artworkUri)
     }
 
@@ -1470,7 +1592,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         genre: String,
         year: Int,
         artworkUri: String?,
-        propagateToSongs: Boolean
+        propagateToSongs: Boolean,
     ) {
         libraryEditCoordinator.requestSaveAlbumMetadata(
             source = source,
@@ -1479,7 +1601,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             genre = genre,
             year = year,
             artworkUri = artworkUri,
-            propagateToSongs = propagateToSongs
+            propagateToSongs = propagateToSongs,
         )
     }
 
@@ -1491,15 +1613,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         libraryEditCoordinator.dismissPendingAlbumMerge()
     }
 
-    fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String) {
+    fun mergeAlbumInto(
+        sourceAlbumKey: String,
+        targetAlbumKey: String,
+    ) {
         libraryEditCoordinator.mergeAlbumInto(sourceAlbumKey, targetAlbumKey)
     }
 
-    fun shuffleCollection(songs: List<Song>) =
-        playbackExecutionCoordinator.shuffleCollection(songs)
+    fun shuffleCollection(songs: List<Song>) = playbackExecutionCoordinator.shuffleCollection(songs)
 
-    fun enqueueCollection(songs: List<Song>) =
-        playbackExecutionCoordinator.enqueueCollection(songs)
+    fun enqueueCollection(songs: List<Song>) = playbackExecutionCoordinator.enqueueCollection(songs)
 
     fun togglePlayPause() {
         playbackRuntime.togglePlayPause()
@@ -1530,14 +1653,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     // Queue Management
-    fun addToQueue(song: Song) =
-        playbackExecutionCoordinator.addToQueue(song)
+    fun addToQueue(song: Song) = playbackExecutionCoordinator.addToQueue(song)
 
-    fun addToQueueBatch(songs: List<Song>) =
-        playbackExecutionCoordinator.addToQueueBatch(songs)
+    fun addToQueueBatch(songs: List<Song>) = playbackExecutionCoordinator.addToQueueBatch(songs)
 
-    fun addPlayableBatch(items: List<PlayableItem>) =
-        playbackExecutionCoordinator.addPlayableBatch(items)
+    fun addPlayableBatch(items: List<PlayableItem>) = playbackExecutionCoordinator.addPlayableBatch(items)
 
     fun setRadioPreferredMode(mode: RadioMode) {
         playbackRuntime.setRadioPreferredMode(mode)
@@ -1545,26 +1665,40 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun resolvePreferredRadioMode(
         mode: RadioMode?,
-        networkOnline: Boolean = connectivityObserver.isCurrentlyOnline()
-    ): RadioMode = when {
-        mode != null -> mode
-        playbackRuntime.preferredRadioModeOrNull() != null ->
-            playbackRuntime.preferredRadioModeOrNull()!!
+        networkOnline: Boolean = connectivityObserver.isCurrentlyOnline(),
+    ): RadioMode =
+        when {
+            mode != null -> {
+                mode
+            }
 
-        networkOnline -> RadioMode.BOTH
-        else -> RadioMode.KNOWN
-    }
+            playbackRuntime.preferredRadioModeOrNull() != null -> {
+                playbackRuntime.preferredRadioModeOrNull()!!
+            }
+
+            networkOnline -> {
+                RadioMode.BOTH
+            }
+
+            else -> {
+                RadioMode.KNOWN
+            }
+        }
 
     /**
      * Multi-select → similares preview (does **not** mutate the playback queue / radio session).
      */
-    fun previewSimilarFromSelection(songs: List<Song>, mode: RadioMode? = null) {
-        val seeds = songs
-            .asSequence()
-            .map { it.toPlayable() }
-            .filter { it.artist.isNotBlank() && it.title.isNotBlank() }
-            .take(RadioEngine.MAX_SEEDS)
-            .toList()
+    fun previewSimilarFromSelection(
+        songs: List<Song>,
+        mode: RadioMode? = null,
+    ) {
+        val seeds =
+            songs
+                .asSequence()
+                .map { it.toPlayable() }
+                .filter { it.artist.isNotBlank() && it.title.isNotBlank() }
+                .take(RadioEngine.MAX_SEEDS)
+                .toList()
         if (seeds.isEmpty()) {
             toastRadioNeedsSeed()
             return
@@ -1572,18 +1706,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         similarPlaylistCoordinator.open(seeds, mode)
     }
 
-    fun openSimilarPreview(seeds: List<PlayableItem>, mode: RadioMode? = null) =
-        similarPlaylistCoordinator.open(seeds, mode)
+    fun openSimilarPreview(
+        seeds: List<PlayableItem>,
+        mode: RadioMode? = null,
+    ) = similarPlaylistCoordinator.open(seeds, mode)
 
     fun dismissSimilarPreview() = similarPlaylistCoordinator.dismiss()
+
     fun toggleSimilarPreviewItem(key: String) = similarPlaylistCoordinator.toggleItem(key)
+
     fun setSimilarPreviewMode(mode: RadioMode) = similarPlaylistCoordinator.setMode(mode)
+
     fun setSimilarPreviewPlaylistName(name: String) = similarPlaylistCoordinator.setPlaylistName(name)
+
     fun confirmSimilarPreviewAsPlaylist(
         name: String? = null,
-        downloadMissing: Boolean = false
+        downloadMissing: Boolean = false,
     ) = similarPlaylistCoordinator.confirmAsPlaylist(name, downloadMissing)
+
     fun playSimilarPreview() = similarPlaylistCoordinator.play()
+
     fun enqueueSimilarPreview() = similarPlaylistCoordinator.enqueue()
 
     fun stopRadio() {
@@ -1594,30 +1736,33 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         seedSong: Song? = null,
         mode: RadioMode? = null,
         auto: Boolean = false,
-        announceMode: Boolean = false
+        announceMode: Boolean = false,
     ) {
         playbackRuntime.startRadio(
             seedSong = seedSong,
             mode = mode,
             auto = auto,
-            announceMode = announceMode
+            announceMode = announceMode,
         )
     }
 
-    fun playNextInQueue(song: Song) =
-        playbackExecutionCoordinator.playNextInQueue(song)
+    fun playNextInQueue(song: Song) = playbackExecutionCoordinator.playNextInQueue(song)
 
-    fun playNextBatch(songs: List<Song>) =
-        playbackExecutionCoordinator.playNextBatch(songs)
+    fun playNextBatch(songs: List<Song>) = playbackExecutionCoordinator.playNextBatch(songs)
 
-    fun playNextPlayableBatch(items: List<PlayableItem>) =
-        playbackExecutionCoordinator.playNextPlayableBatch(items)
+    fun playNextPlayableBatch(items: List<PlayableItem>) = playbackExecutionCoordinator.playNextPlayableBatch(items)
 
-    fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) =
-        addSongsToPlaylist(playlistId, songs.map { it.id })
+    fun addSongsToPlaylist(
+        playlistId: Long,
+        songs: List<Song>,
+    ) = addSongsToPlaylist(playlistId, songs.map { it.id })
 
     @JvmName("addSongsToPlaylistByIds")
-    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>, onAdded: (() -> Unit)? = null) {
+    fun addSongsToPlaylist(
+        playlistId: Long,
+        songIds: List<Long>,
+        onAdded: (() -> Unit)? = null,
+    ) {
         viewModelScope.launch {
             repository.addSongsToPlaylist(playlistId, songIds)
             onAdded?.invoke()
@@ -1641,18 +1786,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         album: String,
         genre: String,
         year: Int = 0,
-        trackNumber: Int = 0
+        trackNumber: Int = 0,
     ) {
         libraryEditCoordinator.updateSongMetadata(songId, title, artist, album, genre, year, trackNumber)
     }
 
-    fun updateSongLyrics(songId: Long, lyrics: String?) {
+    fun updateSongLyrics(
+        songId: Long,
+        lyrics: String?,
+    ) {
         lyricsCoordinator.updateSongLyrics(songId, lyrics)
     }
 
     suspend fun songById(id: Long): Song? = repository.getSongById(id)
 
-    fun fetchSongLyrics(song: Song, onResult: (String?) -> Unit) {
+    fun fetchSongLyrics(
+        song: Song,
+        onResult: (String?) -> Unit,
+    ) {
         lyricsCoordinator.fetchSongLyrics(song, onResult)
     }
 
@@ -1664,18 +1815,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playbackRuntime.removeFromQueue(index)
     }
 
-    fun removeFromQueue(queueEntryId: String): Boolean =
-        playbackRuntime.removeFromQueue(queueEntryId)
+    fun removeFromQueue(queueEntryId: String): Boolean = playbackRuntime.removeFromQueue(queueEntryId)
 
     fun clearQueue() {
         playbackRuntime.clearQueue()
     }
 
-    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+    fun moveQueueItem(
+        fromIndex: Int,
+        toIndex: Int,
+    ) {
         playbackRuntime.moveQueueItem(fromIndex, toIndex)
     }
 
-    fun moveDisplayQueueItem(fromIndex: Int, toIndex: Int) {
+    fun moveDisplayQueueItem(
+        fromIndex: Int,
+        toIndex: Int,
+    ) {
         if (fromIndex == toIndex) return
         moveQueueItem(fromIndex, toIndex)
     }
@@ -1683,7 +1839,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun skipToQueueIndex(index: Int) {
         playbackRuntime.skipToQueueIndex(index)
     }
-
 
     // Search and Sort
     fun setSearchQuery(query: String) {
@@ -1707,7 +1862,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun toggleSortDirection() {
         setSortDirection(
-            if (_sortDirection.value == SortDirection.ASC) SortDirection.DESC else SortDirection.ASC
+            if (_sortDirection.value == SortDirection.ASC) SortDirection.DESC else SortDirection.ASC,
         )
     }
 
@@ -1718,64 +1873,57 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun toggleLibraryViewMode() {
-        val next = if (_libraryViewMode.value == LibraryViewMode.ALBUM_GROUPS) {
-            LibraryViewMode.FLAT
-        } else {
-            LibraryViewMode.ALBUM_GROUPS
-        }
+        val next =
+            if (_libraryViewMode.value == LibraryViewMode.ALBUM_GROUPS) {
+                LibraryViewMode.FLAT
+            } else {
+                LibraryViewMode.ALBUM_GROUPS
+            }
         setLibraryViewMode(next)
     }
 
-    fun setSelectedNavIndex(index: Int, persist: Boolean = true) =
-        uiNavigationCoordinator.setSelectedNavIndex(index, persist)
+    fun setSelectedNavIndex(
+        index: Int,
+        persist: Boolean = true,
+    ) = uiNavigationCoordinator.setSelectedNavIndex(index, persist)
 
-    fun openDownloadsTabTransient() =
-        uiNavigationCoordinator.openDownloadsTabTransient()
+    fun openDownloadsTabTransient() = uiNavigationCoordinator.openDownloadsTabTransient()
 
-    fun setLibraryBrowseFilter(filter: LibraryBrowseFilter) =
-        uiNavigationCoordinator.setLibraryBrowseFilter(filter)
+    fun setLibraryBrowseFilter(filter: LibraryBrowseFilter) = uiNavigationCoordinator.setLibraryBrowseFilter(filter)
 
-    fun openLibraryAlbum(name: String, fromNestedParent: Boolean = false) =
-        uiNavigationCoordinator.openLibraryAlbum(name, fromNestedParent)
+    fun openLibraryAlbum(
+        name: String,
+        fromNestedParent: Boolean = false,
+    ) = uiNavigationCoordinator.openLibraryAlbum(name, fromNestedParent)
 
-    fun openLibraryArtist(name: String) =
-        uiNavigationCoordinator.openLibraryArtist(name)
+    fun openLibraryArtist(name: String) = uiNavigationCoordinator.openLibraryArtist(name)
 
-    fun openLibraryGenre(name: String) =
-        uiNavigationCoordinator.openLibraryGenre(name)
+    fun openLibraryGenre(name: String) = uiNavigationCoordinator.openLibraryGenre(name)
 
-    fun closeLibraryAlbum() =
-        uiNavigationCoordinator.closeLibraryAlbum()
+    fun closeLibraryAlbum() = uiNavigationCoordinator.closeLibraryAlbum()
 
-    fun closeLibraryArtist() =
-        uiNavigationCoordinator.closeLibraryArtist()
+    fun closeLibraryArtist() = uiNavigationCoordinator.closeLibraryArtist()
 
-    fun closeLibraryGenre() =
-        uiNavigationCoordinator.closeLibraryGenre()
+    fun closeLibraryGenre() = uiNavigationCoordinator.closeLibraryGenre()
 
-    fun popLibraryNested() =
-        uiNavigationCoordinator.popLibraryNested()
+    fun popLibraryNested() = uiNavigationCoordinator.popLibraryNested()
 
-    fun renameRestoredLibraryAlbum(sourceKey: String, targetKey: String) =
-        uiNavigationCoordinator.renameRestoredLibraryAlbum(sourceKey, targetKey)
+    fun renameRestoredLibraryAlbum(
+        sourceKey: String,
+        targetKey: String,
+    ) = uiNavigationCoordinator.renameRestoredLibraryAlbum(sourceKey, targetKey)
 
-    fun openLocalPlaylist(id: Long) =
-        uiNavigationCoordinator.openLocalPlaylist(id)
+    fun openLocalPlaylist(id: Long) = uiNavigationCoordinator.openLocalPlaylist(id)
 
-    fun openListenBrainzPlaylistDetail(mbid: String) =
-        uiNavigationCoordinator.openListenBrainzPlaylistDetail(mbid)
+    fun openListenBrainzPlaylistDetail(mbid: String) = uiNavigationCoordinator.openListenBrainzPlaylistDetail(mbid)
 
-    fun openCfRecommendationsDetail() =
-        uiNavigationCoordinator.openCfRecommendationsDetail()
+    fun openCfRecommendationsDetail() = uiNavigationCoordinator.openCfRecommendationsDetail()
 
-    fun closePlaylistDetail() =
-        uiNavigationCoordinator.closePlaylistDetail()
+    fun closePlaylistDetail() = uiNavigationCoordinator.closePlaylistDetail()
 
-    fun dismissDiscoverDetails() =
-        uiNavigationCoordinator.dismissDiscoverDetails()
+    fun dismissDiscoverDetails() = uiNavigationCoordinator.dismissDiscoverDetails()
 
-    fun updateNavigation(transform: (UiNavigationState) -> UiNavigationState): Boolean =
-        uiNavigationCoordinator.updateNavigation(transform)
+    fun updateNavigation(transform: (UiNavigationState) -> UiNavigationState): Boolean = uiNavigationCoordinator.updateNavigation(transform)
 
     private fun closeDiscoverSessionUi() {
         closeListenBrainzPlaylist()
@@ -1790,7 +1938,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         val nav = libraryPreferences.navSnapshotFlow.first()
         uiNavigationCoordinator.applyNavSnapshot(nav)
-        _libraryPrefsReady.value = true
+        libraryPrefsReady.value = true
         val ms = (System.nanoTime() - startedAt) / 1_000_000L
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "prefsReady in ${ms}ms")
 
@@ -1801,19 +1949,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun pruneRestoredLibraryStack() {
-        val songs = libraryProjection.songs.value.ifEmpty {
-            repository.allSongsFlow.first()
-        }
+        val songs =
+            libraryProjection.songs.value.ifEmpty {
+                repository.allSongsFlow.first()
+            }
         uiNavigationCoordinator.pruneRestoredLibraryStack(songs)
     }
 
     private fun persistNavSnapshot(): Unit = uiNavigationCoordinator.persistNavSnapshot()
 
-    private fun parseSortOption(name: String): SortOption =
-        SortOption.entries.find { it.name == name } ?: SortOption.TITLE
+    private fun parseSortOption(name: String): SortOption = SortOption.entries.find { it.name == name } ?: SortOption.TITLE
 
-    private fun parseSortDirection(name: String): SortDirection =
-        SortDirection.entries.find { it.name == name } ?: SortDirection.ASC
+    private fun parseSortDirection(name: String): SortDirection = SortDirection.entries.find { it.name == name } ?: SortDirection.ASC
 
     private fun parseLibraryViewMode(name: String): LibraryViewMode =
         LibraryViewMode.entries.find { it.name == name } ?: LibraryViewMode.ALBUM_GROUPS
@@ -1837,28 +1984,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         force: Boolean = false,
         showReview: Boolean = true,
         fields: IdentifyApplyFields = IdentifyApplyFields.ALL,
-        fillGapsOnly: Boolean = false
+        fillGapsOnly: Boolean = false,
     ) = identifyCoordinator.identifySongs(songs, force, showReview, fields, fillGapsOnly)
 
     /** Import/WiFi: identify only songs with missing/placeholder tags; do not open overlay. */
     fun identifyImportedGaps(songs: List<Song>) = identifyCoordinator.identifyImportedGaps(songs)
 
     /** Single-song identify: open existing pending item, or open setup configuration dialog. */
-    fun identifySongForReview(song: Song) = runIfOnline {
-        identifyCoordinator.identifySongForReview(song)
-    }
+    fun identifySongForReview(song: Song) =
+        runIfOnline {
+            identifyCoordinator.identifySongForReview(song)
+        }
 
-    fun openIdentifySetup(songs: List<Song>, contextTitle: String = "") =
-        identifyCoordinator.openIdentifySetup(songs, contextTitle)
+    fun openIdentifySetup(
+        songs: List<Song>,
+        contextTitle: String = "",
+    ) = identifyCoordinator.openIdentifySetup(songs, contextTitle)
 
-    fun setIdentifySetupFields(fields: IdentifyApplyFields) =
-        identifyCoordinator.setIdentifySetupFields(fields)
+    fun setIdentifySetupFields(fields: IdentifyApplyFields) = identifyCoordinator.setIdentifySetupFields(fields)
 
-    fun setIdentifySetupOnlyGaps(onlyGaps: Boolean) =
-        identifyCoordinator.setIdentifySetupOnlyGaps(onlyGaps)
+    fun setIdentifySetupOnlyGaps(onlyGaps: Boolean) = identifyCoordinator.setIdentifySetupOnlyGaps(onlyGaps)
 
-    fun setIdentifyReviewApplyFields(fields: IdentifyApplyFields) =
-        identifyCoordinator.setIdentifyReviewApplyFields(fields)
+    fun setIdentifyReviewApplyFields(fields: IdentifyApplyFields) = identifyCoordinator.setIdentifyReviewApplyFields(fields)
 
     fun dismissIdentifySetup() = identifyCoordinator.dismissIdentifySetup()
 
@@ -1868,18 +2015,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun showIdentifyReview() = identifyCoordinator.showIdentifyReview()
 
-    fun startIdentifyItemReview(groupKey: String? = null) =
-        identifyCoordinator.startIdentifyItemReview(groupKey)
+    fun startIdentifyItemReview(groupKey: String? = null) = identifyCoordinator.startIdentifyItemReview(groupKey)
 
     fun returnIdentifyReviewOverview() = identifyCoordinator.returnIdentifyReviewOverview()
 
     fun applyIdentifyAlbumGroup(key: String) = identifyCoordinator.applyIdentifyAlbumGroup(key)
 
-    fun searchAlbumCandidates(groupKey: String, query: String) =
-        identifyCoordinator.searchAlbumCandidates(groupKey, query)
+    fun searchAlbumCandidates(
+        groupKey: String,
+        query: String,
+    ) = identifyCoordinator.searchAlbumCandidates(groupKey, query)
 
-    fun selectAlbumCandidate(groupKey: String, index: Int) =
-        identifyCoordinator.selectAlbumCandidate(groupKey, index)
+    fun selectAlbumCandidate(
+        groupKey: String,
+        index: Int,
+    ) = identifyCoordinator.selectAlbumCandidate(groupKey, index)
 
     private fun pruneIdentifyReview(ids: Set<Long>) = identifyCoordinator.pruneIdentifyReview(ids)
 
@@ -1887,20 +2037,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setIdentifySearchDraft(query: String) = identifyCoordinator.setIdentifySearchDraft(query)
 
-    fun setIdentifySearchFilterArtist(value: String) =
-        identifyCoordinator.setIdentifySearchFilterArtist(value)
+    fun setIdentifySearchFilterArtist(value: String) = identifyCoordinator.setIdentifySearchFilterArtist(value)
 
-    fun setIdentifySearchFilterAlbum(value: String) =
-        identifyCoordinator.setIdentifySearchFilterAlbum(value)
+    fun setIdentifySearchFilterAlbum(value: String) = identifyCoordinator.setIdentifySearchFilterAlbum(value)
 
-    fun setIdentifySearchFilterYear(value: String) =
-        identifyCoordinator.setIdentifySearchFilterYear(value)
+    fun setIdentifySearchFilterYear(value: String) = identifyCoordinator.setIdentifySearchFilterYear(value)
 
-    fun toggleIdentifySearchField(show: Boolean? = null) =
-        identifyCoordinator.toggleIdentifySearchField(show)
+    fun toggleIdentifySearchField(show: Boolean? = null) = identifyCoordinator.toggleIdentifySearchField(show)
 
-    fun toggleIdentifySearchFilters(show: Boolean? = null) =
-        identifyCoordinator.toggleIdentifySearchFilters(show)
+    fun toggleIdentifySearchFilters(show: Boolean? = null) = identifyCoordinator.toggleIdentifySearchFilters(show)
 
     fun searchIdentifyCandidates() = identifyCoordinator.searchIdentifyCandidates()
 
@@ -1914,15 +2059,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun skipAllIdentifyReview() = identifyCoordinator.skipAllIdentifyReview()
 
-    fun applyRemainingIdentifySuggestions() =
-        identifyCoordinator.applyRemainingIdentifySuggestions()
+    fun applyRemainingIdentifySuggestions() = identifyCoordinator.applyRemainingIdentifySuggestions()
 
     // Playlists
-    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> =
-        playlistCoordinator.getPlaylistSongsFlow(playlistId)
+    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> = playlistCoordinator.getPlaylistSongsFlow(playlistId)
 
-    fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> =
-        playlistCoordinator.getPlaylistDetailsFlow(playlistId)
+    fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> = playlistCoordinator.getPlaylistDetailsFlow(playlistId)
 
     fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
         playlistCoordinator.getPlaylistPendingTracksFlow(playlistId)
@@ -1932,44 +2074,52 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         description: String? = null,
         coverUri: String? = null,
         initialSongIds: List<Long> = emptyList(),
-        onCreated: ((Long) -> Unit)? = null
+        onCreated: ((Long) -> Unit)? = null,
     ) = playlistCoordinator.createPlaylist(name, description, coverUri, initialSongIds, onCreated)
 
     fun updatePlaylist(
         id: Long,
         name: String,
         description: String? = null,
-        coverUri: String? = null
+        coverUri: String? = null,
     ) = playlistCoordinator.updatePlaylist(id, name, description, coverUri)
 
     fun deletePlaylist(id: Long) = playlistCoordinator.deletePlaylist(id)
 
-    fun addSongToPlaylist(playlistId: Long, song: Song) =
-        playlistCoordinator.addSongToPlaylist(playlistId, song)
+    fun addSongToPlaylist(
+        playlistId: Long,
+        song: Song,
+    ) = playlistCoordinator.addSongToPlaylist(playlistId, song)
 
-    fun removeSongFromPlaylist(playlistId: Long, songId: Long) =
-        playlistCoordinator.removeSongFromPlaylist(playlistId, songId)
+    fun removeSongFromPlaylist(
+        playlistId: Long,
+        songId: Long,
+    ) = playlistCoordinator.removeSongFromPlaylist(playlistId, songId)
 
-    fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) =
-        playlistCoordinator.reorderPlaylistSongs(playlistId, songIds)
+    fun reorderPlaylistSongs(
+        playlistId: Long,
+        songIds: List<Long>,
+    ) = playlistCoordinator.reorderPlaylistSongs(playlistId, songIds)
 
-    fun enrichPlaylistPendingArtworks(playlistId: Long) =
-        playlistCoordinator.enrichPlaylistPendingArtworks(playlistId)
+    fun enrichPlaylistPendingArtworks(playlistId: Long) = playlistCoordinator.enrichPlaylistPendingArtworks(playlistId)
 
-    private fun executePlaylistAction(playlistId: Long, action: GroupPlaybackAction) {
+    private fun executePlaylistAction(
+        playlistId: Long,
+        action: GroupPlaybackAction,
+    ) {
         playlistCoordinator.runWithPlaylistPlayables(playlistId) { playables ->
             playbackExecutionCoordinator.executeGroupPlaybackForPlayables(playables, action)
         }
     }
 
-    fun playPlaylist(playlistId: Long, startShuffled: Boolean = false) =
-        executePlaylistAction(playlistId, if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY)
+    fun playPlaylist(
+        playlistId: Long,
+        startShuffled: Boolean = false,
+    ) = executePlaylistAction(playlistId, if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY)
 
-    fun playPlaylistNext(playlistId: Long) =
-        executePlaylistAction(playlistId, GroupPlaybackAction.PLAY_NEXT)
+    fun playPlaylistNext(playlistId: Long) = executePlaylistAction(playlistId, GroupPlaybackAction.PLAY_NEXT)
 
-    fun enqueuePlaylist(playlistId: Long) =
-        executePlaylistAction(playlistId, GroupPlaybackAction.ENQUEUE)
+    fun enqueuePlaylist(playlistId: Long) = executePlaylistAction(playlistId, GroupPlaybackAction.ENQUEUE)
 
     // Theme Actions
     fun selectThemePreset(presetId: String) {
@@ -1991,56 +2141,45 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     // ListenBrainz Actions
-    fun setListenBrainzEnabled(enabled: Boolean) =
-        listenBrainzIntegrationCoordinator.setListenBrainzEnabled(enabled)
+    fun setListenBrainzEnabled(enabled: Boolean) = listenBrainzIntegrationCoordinator.setListenBrainzEnabled(enabled)
 
-    fun setListenBrainzDiscoverEnabled(enabled: Boolean) =
-        listenBrainzIntegrationCoordinator.setListenBrainzDiscoverEnabled(enabled)
+    fun setListenBrainzDiscoverEnabled(enabled: Boolean) = listenBrainzIntegrationCoordinator.setListenBrainzDiscoverEnabled(enabled)
 
-    fun setListenBrainzSaveWhileListening(enabled: Boolean) =
-        listenBrainzIntegrationCoordinator.setListenBrainzSaveWhileListening(enabled)
+    fun setListenBrainzSaveWhileListening(enabled: Boolean) = listenBrainzIntegrationCoordinator.setListenBrainzSaveWhileListening(enabled)
 
     fun setListenBrainzSaveWhileListeningPercent(percent: Int) =
         listenBrainzIntegrationCoordinator.setListenBrainzSaveWhileListeningPercent(percent)
 
-    fun saveListenBrainzToken(token: String) =
-        listenBrainzIntegrationCoordinator.saveListenBrainzToken(token)
+    fun saveListenBrainzToken(token: String) = listenBrainzIntegrationCoordinator.saveListenBrainzToken(token)
 
     fun validateListenBrainzToken(token: String = listenBrainzSettings.value.userToken) =
         listenBrainzIntegrationCoordinator.validateListenBrainzToken(token)
 
-    fun clearListenBrainz() =
-        listenBrainzIntegrationCoordinator.clearListenBrainz()
+    fun clearListenBrainz() = listenBrainzIntegrationCoordinator.clearListenBrainz()
 
-    fun refreshListenBrainzDiscoverPlaylists() =
-        discoverFeedCoordinator.refreshListenBrainzDiscoverPlaylists()
+    fun refreshListenBrainzDiscoverPlaylists() = discoverFeedCoordinator.refreshListenBrainzDiscoverPlaylists()
 
-    fun refreshCfRecommendations() =
-        discoverFeedCoordinator.refreshCfRecommendations()
+    fun refreshCfRecommendations() = discoverFeedCoordinator.refreshCfRecommendations()
 
-    fun openCfRecommendations() =
-        discoverFeedCoordinator.openCfRecommendations()
+    fun openCfRecommendations() = discoverFeedCoordinator.openCfRecommendations()
 
-    private suspend fun loadCfRecommendationsForRestore(): Boolean =
-        discoverFeedCoordinator.loadCfRecommendationsForRestore()
+    private suspend fun loadCfRecommendationsForRestore(): Boolean = discoverFeedCoordinator.loadCfRecommendationsForRestore()
 
     /** Play discover-matched tracks (CF / LB) with session origin. */
     fun playMatchedTracks(
         items: List<PlayableItem>,
         origin: DiscoverPlaybackOrigin,
-        startIndex: Int = 0
+        startIndex: Int = 0,
     ) = playbackExecutionCoordinator.playMatchedTracks(items, origin, startIndex)
 
     fun shuffleMatchedTracks(
         items: List<PlayableItem>,
-        origin: DiscoverPlaybackOrigin
+        origin: DiscoverPlaybackOrigin,
     ) = playbackExecutionCoordinator.shuffleMatchedTracks(items, origin)
 
-    fun openListenBrainzPlaylist(mbid: String) =
-        listenBrainzIntegrationCoordinator.openListenBrainzPlaylist(mbid)
+    fun openListenBrainzPlaylist(mbid: String) = listenBrainzIntegrationCoordinator.openListenBrainzPlaylist(mbid)
 
-    fun closeListenBrainzPlaylist(): Unit =
-        listenBrainzIntegrationCoordinator.closeListenBrainzPlaylist()
+    fun closeListenBrainzPlaylist(): Unit = listenBrainzIntegrationCoordinator.closeListenBrainzPlaylist()
 
     /** Saves matched locals + unmatched as pending metadata (no download yet). */
     fun saveListenBrainzPlaylistAsLocal(onCreated: ((Long) -> Unit)? = null) =
@@ -2054,8 +2193,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         listenBrainzIntegrationCoordinator.importListenBrainzPlaylistWithDownloads(onCreated)
 
     /** Downloads pending metadata tracks for an already-saved local playlist. */
-    fun downloadPlaylistPendingTracks(playlistId: Long) =
-        listenBrainzIntegrationCoordinator.downloadPlaylistPendingTracks(playlistId)
+    fun downloadPlaylistPendingTracks(playlistId: Long) = listenBrainzIntegrationCoordinator.downloadPlaylistPendingTracks(playlistId)
 
     private enum class LibraryToastKind { SAVED, ADDED, ALREADY }
 
@@ -2063,35 +2201,47 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
     }
 
-    private fun toastSongInLibrary(title: String, kind: LibraryToastKind) {
-        val message = when (kind) {
-            LibraryToastKind.SAVED -> DownloadMessages.songSaved(title)
-            LibraryToastKind.ADDED -> DownloadMessages.songAdded(title)
-            LibraryToastKind.ALREADY -> DownloadMessages.songAlready(title)
-        }
+    private fun toastSongInLibrary(
+        title: String,
+        kind: LibraryToastKind,
+    ) {
+        val message =
+            when (kind) {
+                LibraryToastKind.SAVED -> DownloadMessages.songSaved(title)
+                LibraryToastKind.ADDED -> DownloadMessages.songAdded(title)
+                LibraryToastKind.ALREADY -> DownloadMessages.songAlready(title)
+            }
         toast(message)
     }
 
-    private fun toastDownloadsQueued(count: Int? = null, alreadyQueued: Boolean = false) {
-        val message = when {
-            alreadyQueued -> DownloadMessages.alreadyQueued
-            count != null -> DownloadMessages.downloadsQueued(count)
-            else -> DownloadMessages.downloadQueued
-        }
+    private fun toastDownloadsQueued(
+        count: Int? = null,
+        alreadyQueued: Boolean = false,
+    ) {
+        val message =
+            when {
+                alreadyQueued -> DownloadMessages.alreadyQueued
+                count != null -> DownloadMessages.downloadsQueued(count)
+                else -> DownloadMessages.downloadQueued
+            }
         toast(message)
     }
 
-    private fun toastPlaylistSaved(matchedCount: Int, pending: Int = 0) {
+    private fun toastPlaylistSaved(
+        matchedCount: Int,
+        pending: Int = 0,
+    ) {
         toast(DownloadMessages.playlistSaved(matchedCount, pending))
     }
 
     private fun toastRadioNeedsSeed() {
         toast(DownloadMessages.radioNeedsSeed)
     }
+
     private suspend fun enqueuePendingDownloads(
         playlistId: Long,
         tracks: List<OnlineCatalogTrack>,
-        toastQueued: Boolean
+        toastQueued: Boolean,
     ) = catalogDownloadCoordinator.enqueuePendingDownloads(playlistId, tracks, toastQueued)
 
     private fun clearDiscoverState() {
@@ -2159,43 +2309,42 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch { libraryPreferences.setSubmenuSwipeLeftAction(action) }
     }
 
-
     fun executeSubmenuActionForPlayables(
         action: SubmenuSwipeAction,
         items: List<PlayableItem>,
-        onAddToPlaylist: ((List<PlayableItem>) -> Unit)? = null
+        onAddToPlaylist: ((List<PlayableItem>) -> Unit)? = null,
     ) = submenuActionCoordinator.executeForPlayables(action, items, onAddToPlaylist)
 
     fun executeSubmenuActionForSongs(
         action: SubmenuSwipeAction,
         songs: List<Song>,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) = submenuActionCoordinator.executeForSongs(action, songs, onAddToPlaylist)
 
     fun executeSubmenuActionForCandidates(
         action: SubmenuSwipeAction,
         candidates: List<CatalogTrackCandidate>,
-        onAddToPlaylist: ((List<CatalogTrackCandidate>) -> Unit)? = null
+        onAddToPlaylist: ((List<CatalogTrackCandidate>) -> Unit)? = null,
     ) = submenuActionCoordinator.executeForCandidates(action, candidates, onAddToPlaylist)
 
     fun executeSubmenuActionForTrack(
         action: SubmenuSwipeAction,
         track: TrackMeta,
-        onAddToPlaylist: ((Song) -> Unit)? = null
+        onAddToPlaylist: ((Song) -> Unit)? = null,
     ) = submenuActionCoordinator.executeForTrack(action, track, onAddToPlaylist)
 
     /** Level 2: Execute submenu action for a [CatalogAlbum]. */
     fun executeSubmenuActionForAlbum(
         action: SubmenuSwipeAction,
         album: CatalogAlbum,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) = submenuActionCoordinator.executeForAlbum(action, album, onAddToPlaylist)
 
     /** Level 2: Execute submenu action for a local [Album]. */
     fun executeSubmenuActionForAlbum(
         action: SubmenuSwipeAction,
         album: Album,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) = submenuActionCoordinator.executeForAlbum(action, album, onAddToPlaylist)
 
     /** Level 1: Execute submenu action for an album with raw string parameters. */
@@ -2205,13 +2354,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         artistName: String = "",
         albumId: String = "",
         coverUrl: String? = null,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) = submenuActionCoordinator.executeForAlbum(action, albumTitle, artistName, albumId, coverUrl, onAddToPlaylist)
 
     fun executeSubmenuActionForArtist(
         action: SubmenuSwipeAction,
         artistName: String,
-        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null,
     ) = submenuActionCoordinator.executeForArtist(action, artistName, onAddToPlaylist)
 
     fun setLibraryBlobsSettings(settings: LibraryBlobsSettings) {
@@ -2260,7 +2409,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         year: Int = 0,
         genre: String = Song.UNKNOWN_GENRE,
         candidates: List<CatalogTrackCandidate> = emptyList(),
-        albumId: String = ""
+        albumId: String = "",
     ) {
         libraryEditCoordinator.saveAlbumToLibrary(
             albumTitle = albumTitle,
@@ -2269,18 +2418,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             year = year,
             genre = genre,
             candidates = candidates,
-            albumId = albumId
+            albumId = albumId,
         )
     }
 
     /**
      * Level 2: Save album tracks to library from a [CatalogAlbum].
      */
-    fun saveAlbumToLibrary(album: CatalogAlbum, candidates: List<CatalogTrackCandidate> = emptyList()) {
+    fun saveAlbumToLibrary(
+        album: CatalogAlbum,
+        candidates: List<CatalogTrackCandidate> = emptyList(),
+    ) {
         libraryEditCoordinator.saveAlbumToLibrary(album, candidates)
     }
 
-    fun removeSavedAlbum(albumName: String, artistName: String) {
+    fun removeSavedAlbum(
+        albumName: String,
+        artistName: String,
+    ) {
         libraryEditCoordinator.removeSavedAlbum(albumName, artistName)
     }
 
@@ -2294,7 +2449,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun searchCatalogDebounced(
         query: String = catalogSearch.value.searchQueryDraft,
         filters: IdentifySearchFilters = catalogSearch.value.searchFilters,
-        debounceMs: Long = 350L
+        debounceMs: Long = 350L,
     ) {
         catalogSearchCoordinator.searchDebounced(query, filters, debounceMs)
     }
@@ -2302,7 +2457,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     /** Level 2: Submits an explicit catalog search (e.g. on keyboard Enter or suggestion tap), saving to recent searches. */
     fun submitCatalogSearch(
         query: String = catalogSearch.value.searchQueryDraft,
-        filters: IdentifySearchFilters = catalogSearch.value.searchFilters
+        filters: IdentifySearchFilters = catalogSearch.value.searchFilters,
     ) {
         catalogSearchCoordinator.submitSearch(query, filters)
     }
@@ -2310,7 +2465,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun searchCatalog(
         query: String = catalogSearch.value.searchQueryDraft,
         filters: IdentifySearchFilters = catalogSearch.value.searchFilters,
-        saveToRecent: Boolean = false
+        saveToRecent: Boolean = false,
     ) {
         catalogSearchCoordinator.search(query, filters, saveToRecent)
     }
@@ -2324,37 +2479,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         title: String,
         artist: String,
         coverUrl: String? = null,
-        albumId: String = ""
+        albumId: String = "",
     ) = catalogInspectionCoordinator.selectAlbumForInspection(title, artist, coverUrl, albumId)
 
     /** Level 2: Inspect a [CatalogAlbum]. */
-    fun selectAlbumForInspection(album: CatalogAlbum) =
-        catalogInspectionCoordinator.selectAlbumForInspection(album)
+    fun selectAlbumForInspection(album: CatalogAlbum) = catalogInspectionCoordinator.selectAlbumForInspection(album)
 
     /** Level 2: Inspect a [RelatedAlbumItem] without converting to a dummy [CatalogAlbum]. */
-    fun selectAlbumForInspection(album: RelatedAlbumItem) =
-        catalogInspectionCoordinator.selectAlbumForInspection(album)
+    fun selectAlbumForInspection(album: RelatedAlbumItem) = catalogInspectionCoordinator.selectAlbumForInspection(album)
 
-    fun selectPlaylistForInspection(playlist: CatalogPlaylist) =
-        catalogInspectionCoordinator.selectPlaylistForInspection(playlist)
+    fun selectPlaylistForInspection(playlist: CatalogPlaylist) = catalogInspectionCoordinator.selectPlaylistForInspection(playlist)
 
-    fun selectGenreForInspection(genre: CatalogGenre) =
-        catalogInspectionCoordinator.selectGenreForInspection(genre)
+    fun selectGenreForInspection(genre: CatalogGenre) = catalogInspectionCoordinator.selectGenreForInspection(genre)
 
-    fun selectArtistForInspection(artistName: String) =
-        catalogInspectionCoordinator.selectArtistForInspection(artistName)
+    fun selectArtistForInspection(artistName: String) = catalogInspectionCoordinator.selectArtistForInspection(artistName)
 
-    fun toggleTrackSelection(index: Int) =
-        catalogInspectionCoordinator.toggleTrackSelection(index)
+    fun toggleTrackSelection(index: Int) = catalogInspectionCoordinator.toggleTrackSelection(index)
 
-    fun setAllTrackCandidatesSelection(selected: Boolean) =
-        catalogInspectionCoordinator.setAllTrackCandidatesSelection(selected)
+    fun setAllTrackCandidatesSelection(selected: Boolean) = catalogInspectionCoordinator.setAllTrackCandidatesSelection(selected)
 
-    fun toggleAllTrackCandidatesSelection() =
-        catalogInspectionCoordinator.toggleAllTrackCandidatesSelection()
+    fun toggleAllTrackCandidatesSelection() = catalogInspectionCoordinator.toggleAllTrackCandidatesSelection()
 
-    fun clearSelectedCollection() =
-        catalogInspectionCoordinator.clearSelectedCollection()
+    fun clearSelectedCollection() = catalogInspectionCoordinator.clearSelectedCollection()
 
     fun searchMore() {
         catalogSearchCoordinator.searchMore()
@@ -2364,7 +2510,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         catalogDownloadCoordinator.resolveDownloadConflictOverwrite(applyToRemainingBatch)
     }
 
-    fun resolveDownloadConflictSaveAs(newTitle: String, applyToRemainingBatch: Boolean = false) {
+    fun resolveDownloadConflictSaveAs(
+        newTitle: String,
+        applyToRemainingBatch: Boolean = false,
+    ) {
         catalogDownloadCoordinator.resolveDownloadConflictSaveAs(newTitle, applyToRemainingBatch)
     }
 
@@ -2395,7 +2544,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         catalogDownloadCoordinator.cycleActiveDownload(
             id = id,
             activeDownloads = activeDownloads.value,
-            catalogPreviewKey = catalogPreviewKey.value
+            catalogPreviewKey = catalogPreviewKey.value,
         )
     }
 
@@ -2437,7 +2586,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         existingCandidates: List<OnlineCatalogTrack>? = null,
         currentCandidateIndex: Int = 0,
         lookupIdentity: TrackIdentity? = null,
-        explicitId: String? = null
+        explicitId: String? = null,
     ) {
         catalogDownloadCoordinator.downloadOnlineTrack(
             track = track,
@@ -2446,7 +2595,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             existingCandidates = existingCandidates,
             currentCandidateIndex = currentCandidateIndex,
             lookupIdentity = lookupIdentity,
-            explicitId = explicitId
+            explicitId = explicitId,
         )
     }
 
@@ -2471,4 +2620,3 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         const val VOLUME_BOOST_HUD_DURATION_MS = 2_000L
     }
 }
-

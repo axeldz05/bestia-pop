@@ -5,25 +5,26 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TrackIdentityTest {
-
     @Test
     fun mergePreferring_keepsFilledFieldsAndFillsGaps() {
-        val base = TrackIdentity(
-            title = "Creep",
-            artist = "",
-            album = "",
-            artworkUri = null,
-            durationMs = 0L,
-            trackNumber = 0
-        )
-        val other = TrackIdentity(
-            title = "Other",
-            artist = "Radiohead",
-            album = "Pablo Honey",
-            artworkUri = "https://art.example/a.jpg",
-            durationMs = 238_000L,
-            trackNumber = 4
-        )
+        val base =
+            TrackIdentity(
+                title = "Creep",
+                artist = "",
+                album = "",
+                artworkUri = null,
+                durationMs = 0L,
+                trackNumber = 0,
+            )
+        val other =
+            TrackIdentity(
+                title = "Other",
+                artist = "Radiohead",
+                album = "Pablo Honey",
+                artworkUri = "https://art.example/a.jpg",
+                durationMs = 238_000L,
+                trackNumber = 4,
+            )
         val merged = base.mergePreferring(other)
         assertEquals("Creep", merged.title)
         assertEquals("Radiohead", merged.artist)
@@ -42,21 +43,22 @@ class TrackIdentityTest {
 
     @Test
     fun songToIdentity_copiesSharedFieldsOnly() {
-        val song = Song(
-            id = 7L,
-            uriString = "file:///a.m4a",
-            title = "Digital Love",
-            artist = "Daft Punk",
-            album = "Discovery",
-            genre = "Electronic",
-            durationMs = 300_000L,
-            year = 2001,
-            trackNumber = 2003,
-            artworkUri = "file:///art.jpg",
-            lyrics = "lyrics",
-            folderPath = "/music",
-            dateAdded = 1L
-        )
+        val song =
+            Song(
+                id = 7L,
+                uriString = "file:///a.m4a",
+                title = "Digital Love",
+                artist = "Daft Punk",
+                album = "Discovery",
+                genre = "Electronic",
+                durationMs = 300_000L,
+                year = 2001,
+                trackNumber = 2003,
+                artworkUri = "file:///art.jpg",
+                lyrics = "lyrics",
+                folderPath = "/music",
+                dateAdded = 1L,
+            )
         val identity = song.toIdentity()
         assertEquals("Digital Love", identity.title)
         assertEquals("Daft Punk", identity.artist)
@@ -69,31 +71,33 @@ class TrackIdentityTest {
 
     @Test
     fun songWithIdentity_updatesSharedFieldsOnly() {
-        val song = Song(
-            id = 3L,
-            uriString = "file:///x.m4a",
-            title = "Old",
-            artist = "Old Artist",
-            album = "Old Album",
-            genre = "Rock",
-            durationMs = 1L,
-            year = 1999,
-            trackNumber = 1,
-            artworkUri = null,
-            lyrics = "keep",
-            folderPath = "/kept",
-            dateAdded = 9L
-        )
-        val updated = song.withIdentity(
-            TrackIdentity(
-                title = "New",
-                artist = "New Artist",
-                album = "New Album",
-                artworkUri = "file:///art.jpg",
-                durationMs = 120_000L,
-                trackNumber = 5
+        val song =
+            Song(
+                id = 3L,
+                uriString = "file:///x.m4a",
+                title = "Old",
+                artist = "Old Artist",
+                album = "Old Album",
+                genre = "Rock",
+                durationMs = 1L,
+                year = 1999,
+                trackNumber = 1,
+                artworkUri = null,
+                lyrics = "keep",
+                folderPath = "/kept",
+                dateAdded = 9L,
             )
-        )
+        val updated =
+            song.withIdentity(
+                TrackIdentity(
+                    title = "New",
+                    artist = "New Artist",
+                    album = "New Album",
+                    artworkUri = "file:///art.jpg",
+                    durationMs = 120_000L,
+                    trackNumber = 5,
+                ),
+            )
         assertEquals("New", updated.title)
         assertEquals("New Artist", updated.artist)
         assertEquals("New Album", updated.album)
@@ -110,22 +114,24 @@ class TrackIdentityTest {
 
     @Test
     fun mergePreferring_candidateOverEntity_fillsGapsFromSong() {
-        val candidate = TrackIdentity(
-            title = "Creep",
-            artist = "Radiohead",
-            album = "",
-            artworkUri = "https://art.example/c.jpg",
-            durationMs = 238_000L,
-            trackNumber = 0
-        )
-        val entity = TrackIdentity(
-            title = "File Name",
-            artist = "Unknown",
-            album = "Pablo Honey",
-            artworkUri = null,
-            durationMs = 0L,
-            trackNumber = 2
-        )
+        val candidate =
+            TrackIdentity(
+                title = "Creep",
+                artist = "Radiohead",
+                album = "",
+                artworkUri = "https://art.example/c.jpg",
+                durationMs = 238_000L,
+                trackNumber = 0,
+            )
+        val entity =
+            TrackIdentity(
+                title = "File Name",
+                artist = "Unknown",
+                album = "Pablo Honey",
+                artworkUri = null,
+                durationMs = 0L,
+                trackNumber = 2,
+            )
         val merged = candidate.mergePreferring(entity)
         assertEquals("Creep", merged.title)
         assertEquals("Radiohead", merged.artist)
@@ -153,7 +159,7 @@ class TrackIdentityTest {
         assertEquals("Radiohead Creep", youtubeSearchQuery("Radiohead", "Creep"))
         assertEquals(
             "Radiohead Creep",
-            TrackIdentity(title = "Creep", artist = "Radiohead").youtubeSearchQuery()
+            TrackIdentity(title = "Creep", artist = "Radiohead").youtubeSearchQuery(),
         )
     }
 
@@ -172,16 +178,18 @@ class TrackIdentityTest {
 
     @Test
     fun preferMetaFrom_keepsUsefulAlbumArtAndFillsBlanks() {
-        val previous = TrackIdentity(
-            title = "Old",
-            artist = "Band",
-            album = "Pablo Honey",
-            artworkUri = "file:///art.jpg"
-        )
-        val next = OnlineCatalogTrack(
-            identity = TrackIdentity(title = "", artist = "", album = "YouTube"),
-            id = "yt1"
-        )
+        val previous =
+            TrackIdentity(
+                title = "Old",
+                artist = "Band",
+                album = "Pablo Honey",
+                artworkUri = "file:///art.jpg",
+            )
+        val next =
+            OnlineCatalogTrack(
+                identity = TrackIdentity(title = "", artist = "", album = "YouTube"),
+                id = "yt1",
+            )
         val preferred = next.preferMetaFrom(previous)
         assertEquals("Old", preferred.title)
         assertEquals("Band", preferred.artist)

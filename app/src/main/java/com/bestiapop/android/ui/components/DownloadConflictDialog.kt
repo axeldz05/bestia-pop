@@ -22,7 +22,7 @@ fun DownloadConflictDialog(
     conflict: DownloadConflict,
     onOverwrite: () -> Unit,
     onSaveAs: (String) -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
 ) {
     var showRename by remember(conflict.downloadId) { mutableStateOf(false) }
     var newTitle by remember(conflict.downloadId) {
@@ -42,7 +42,7 @@ fun DownloadConflictDialog(
                         onValueChange = { newTitle = it },
                         label = { Text("Título") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             },
@@ -55,16 +55,17 @@ fun DownloadConflictDialog(
                 TextButton(onClick = { showRename = false }) {
                     Text("Atrás")
                 }
-            }
+            },
         )
         return
     }
 
-    val batchHint = if (conflict.applyToRemainingBatch) {
-        " Esta elección se aplicará al resto del lote."
-    } else {
-        ""
-    }
+    val batchHint =
+        if (conflict.applyToRemainingBatch) {
+            " Esta elección se aplicará al resto del lote."
+        } else {
+            ""
+        }
 
     AlertDialog(
         onDismissRequest = onCancel,
@@ -72,7 +73,7 @@ fun DownloadConflictDialog(
         text = {
             Text(
                 "«${conflict.existing.title}» de ${conflict.existing.artist} ya está guardada." +
-                    " ¿Querés sobrescribirla o crear una copia con otro título?$batchHint"
+                    " ¿Querés sobrescribirla o crear una copia con otro título?$batchHint",
             )
         },
         confirmButton = {
@@ -89,6 +90,6 @@ fun DownloadConflictDialog(
                     Text("Cancelar")
                 }
             }
-        }
+        },
     )
 }

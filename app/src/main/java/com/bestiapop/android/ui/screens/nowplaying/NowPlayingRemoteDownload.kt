@@ -31,12 +31,13 @@ import kotlinx.coroutines.flow.map
 fun NowPlayingRemoteDownloadButton(
     viewModel: MusicPlayerViewModel,
     remoteItem: PlayableItem.Remote,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val download by remember(viewModel, remoteItem.artist, remoteItem.title) {
-        viewModel.activeDownloads.map { list ->
-            list.findUiDownloadByTrack(remoteItem.artist, remoteItem.title)
-        }.distinctUntilChanged()
+        viewModel.activeDownloads
+            .map { list ->
+                list.findUiDownloadByTrack(remoteItem.artist, remoteItem.title)
+            }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = null)
 
     NowPlayingRemoteDownloadAction(
@@ -44,7 +45,7 @@ fun NowPlayingRemoteDownloadButton(
         onDownload = { viewModel.downloadRemoteItem(remoteItem) },
         onRetry = viewModel::retryActiveDownload,
         onCancel = viewModel::dismissActiveDownload,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -57,7 +58,7 @@ fun NowPlayingRemoteDownloadAction(
     onDownload: () -> Unit,
     onRetry: (String) -> Unit,
     onCancel: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Spacer(modifier = Modifier.height(8.dp))
     DownloadStateTrailing(
@@ -71,11 +72,11 @@ fun NowPlayingRemoteDownloadAction(
                 Icon(
                     imageVector = Icons.Default.Download,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Descargar ahora")
             }
-        }
+        },
     )
 }

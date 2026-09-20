@@ -5,16 +5,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UploadNameSanitizerTest {
-
     @Test
     fun accentsAndSpaces_keepLettersAndSpaces() {
         assertEquals(
             "01 - Canción.mp3",
-            UploadNameSanitizer.sanitize("01 - Canción.mp3")
+            UploadNameSanitizer.sanitize("01 - Canción.mp3"),
         )
         assertEquals(
             "01_-_Canci_n.mp3",
-            UploadNameSanitizer.asciiLegacy("01 - Canción.mp3")
+            UploadNameSanitizer.asciiLegacy("01 - Canción.mp3"),
         )
     }
 
@@ -22,11 +21,11 @@ class UploadNameSanitizerTest {
     fun stripsPathSeparators_keepsSafeChars() {
         assertEquals(
             "track name-2.flac",
-            UploadNameSanitizer.sanitize("/Music/BestiaPop/track name-2.flac")
+            UploadNameSanitizer.sanitize("/Music/BestiaPop/track name-2.flac"),
         )
         assertEquals(
             "win track.mp3",
-            UploadNameSanitizer.sanitize("C:\\Uploads\\win track.mp3")
+            UploadNameSanitizer.sanitize("C:\\Uploads\\win track.mp3"),
         )
     }
 
@@ -43,14 +42,14 @@ class UploadNameSanitizerTest {
     fun keepsCjk_andUnionsLegacyAscii() {
         assertEquals(
             "ブラックホール.mp3",
-            UploadNameSanitizer.sanitize("ブラックホール.mp3")
+            UploadNameSanitizer.sanitize("ブラックホール.mp3"),
         )
         val names = UploadNameSanitizer.matchingBasenames("ブラックホール.mp3")
         assertTrue(names.contains("ブラックホール.mp3"))
         assertTrue(names.contains(UploadNameSanitizer.asciiLegacy("ブラックホール.mp3")))
         assertEquals(
             "a_b.mp3",
-            UploadNameSanitizer.sanitize("a:b.mp3")
+            UploadNameSanitizer.sanitize("a:b.mp3"),
         )
     }
 

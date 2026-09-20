@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 class CatalogInspectionCoordinator(
     private val scope: CoroutineScope,
     private val playOnlineCatalogTrackAsStream: (OnlineCatalogTrack, Boolean) -> Unit,
-    private val onResetBatchPlaylistTarget: () -> Unit = {}
+    private val onResetBatchPlaylistTarget: () -> Unit = {},
 ) {
     private val _catalogCollection = MutableStateFlow(CatalogCollectionUiState())
     val catalogCollection: StateFlow<CatalogCollectionUiState> = _catalogCollection.asStateFlow()
@@ -37,14 +37,14 @@ class CatalogInspectionCoordinator(
         title: String,
         artist: String,
         coverUrl: String? = null,
-        albumId: String = ""
+        albumId: String = "",
     ) {
         val key = if (albumId.isNotBlank()) "album:$albumId" else "album:$artist:$title"
         selectCollectionForInspection(
             selectionKey = key,
             title = title,
             kind = CatalogCollectionKind.ALBUM,
-            coverUrl = coverUrl
+            coverUrl = coverUrl,
         ) {
             MetadataFetcher.fetchAlbumTrackCandidates(albumId, title, artist, coverUrl)
         }
@@ -56,7 +56,7 @@ class CatalogInspectionCoordinator(
             title = album.title,
             artist = album.artist,
             coverUrl = album.coverUrl,
-            albumId = album.id
+            albumId = album.id,
         )
     }
 
@@ -66,7 +66,7 @@ class CatalogInspectionCoordinator(
             title = album.title,
             artist = album.artist,
             coverUrl = album.artworkUri,
-            albumId = ""
+            albumId = "",
         )
     }
 
@@ -75,7 +75,7 @@ class CatalogInspectionCoordinator(
             selectionKey = "playlist:${playlist.id}",
             title = playlist.title,
             kind = CatalogCollectionKind.PLAYLIST,
-            coverUrl = playlist.coverUrl
+            coverUrl = playlist.coverUrl,
         ) {
             MetadataFetcher.fetchPlaylistTrackCandidates(playlist.id, playlist.title)
         }
@@ -86,9 +86,10 @@ class CatalogInspectionCoordinator(
             selectionKey = "genre:${genre.id}",
             title = genre.name,
             kind = CatalogCollectionKind.GENRE,
-            coverUrl = genre.pictureUrl
+            coverUrl = genre.pictureUrl,
         ) {
-            MetadataFetcher.searchTracksByGenre(genre.id, genre.name)
+            MetadataFetcher
+                .searchTracksByGenre(genre.id, genre.name)
                 .map { MetadataFetcher.toCatalogCandidate(it) }
         }
     }
@@ -101,33 +102,35 @@ class CatalogInspectionCoordinator(
         val requestKey = "artist:$cleanArtist#${++catalogCollectionGeneration}"
         catalogCollectionJob?.cancel()
         onResetBatchPlaylistTarget()
-        _catalogCollection.value = CatalogCollectionUiState(
-            selectionKey = requestKey,
-            title = cleanArtist,
-            kind = CatalogCollectionKind.ARTIST,
-            parent = parent,
-            isLoading = true
-        )
-        catalogCollectionJob = scope.launch {
-            val deezerHit = MetadataFetcher.searchDeezerArtist(cleanArtist)
-            val albums = MetadataFetcher.fetchArtistAlbums(cleanArtist, deezerHit?.id)
-            val topTracks = MetadataFetcher.fetchArtistTopTracks(cleanArtist, deezerHit?.id)
-            val candidates = topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
-            val coverUrl = deezerHit?.pictureUrl ?: albums.firstOrNull()?.coverUrl
-            updateCatalogCollection(requestKey) { state ->
-                state.copy(
-                    coverUrl = coverUrl,
-                    candidates = candidates,
-                    albums = albums,
-                    isLoading = false
-                )
+        _catalogCollection.value =
+            CatalogCollectionUiState(
+                selectionKey = requestKey,
+                title = cleanArtist,
+                kind = CatalogCollectionKind.ARTIST,
+                parent = parent,
+                isLoading = true,
+            )
+        catalogCollectionJob =
+            scope.launch {
+                val deezerHit = MetadataFetcher.searchDeezerArtist(cleanArtist)
+                val albums = MetadataFetcher.fetchArtistAlbums(cleanArtist, deezerHit?.id)
+                val topTracks = MetadataFetcher.fetchArtistTopTracks(cleanArtist, deezerHit?.id)
+                val candidates = topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
+                val coverUrl = deezerHit?.pictureUrl ?: albums.firstOrNull()?.coverUrl
+                updateCatalogCollection(requestKey) { state ->
+                    state.copy(
+                        coverUrl = coverUrl,
+                        candidates = candidates,
+                        albums = albums,
+                        isLoading = false,
+                    )
+                }
             }
-        }
     }
 
     fun updateCatalogCollection(
         selectionKey: String,
-        transform: (CatalogCollectionUiState) -> CatalogCollectionUiState
+        transform: (CatalogCollectionUiState) -> CatalogCollectionUiState,
     ): Boolean {
         while (true) {
             val current = _catalogCollection.value
@@ -143,33 +146,35 @@ class CatalogInspectionCoordinator(
         title: String,
         kind: CatalogCollectionKind,
         coverUrl: String?,
-        fetch: suspend () -> List<CatalogTrackCandidate>
+        fetch: suspend () -> List<CatalogTrackCandidate>,
     ) {
         val current = _catalogCollection.value
         val parent = if (current.isOpen && current.kind != kind) current else null
         val requestKey = "$selectionKey#${++catalogCollectionGeneration}"
         catalogCollectionJob?.cancel()
         onResetBatchPlaylistTarget()
-        _catalogCollection.value = CatalogCollectionUiState(
-            selectionKey = requestKey,
-            title = title,
-            kind = kind,
-            coverUrl = coverUrl,
-            parent = parent,
-            isLoading = true
-        )
-        catalogCollectionJob = scope.launch {
-            val candidates = fetch()
-            updateCatalogCollection(requestKey) { state ->
-                val resolvedCover = state.coverUrl ?: candidates.firstArtworkUri()
-                state.copy(candidates = candidates, coverUrl = resolvedCover, isLoading = false)
+        _catalogCollection.value =
+            CatalogCollectionUiState(
+                selectionKey = requestKey,
+                title = title,
+                kind = kind,
+                coverUrl = coverUrl,
+                parent = parent,
+                isLoading = true,
+            )
+        catalogCollectionJob =
+            scope.launch {
+                val candidates = fetch()
+                updateCatalogCollection(requestKey) { state ->
+                    val resolvedCover = state.coverUrl ?: candidates.firstArtworkUri()
+                    state.copy(candidates = candidates, coverUrl = resolvedCover, isLoading = false)
+                }
             }
-        }
     }
 
     suspend fun expandCandidates(
         query: String,
-        current: List<OnlineCatalogTrack>
+        current: List<OnlineCatalogTrack>,
     ): List<OnlineCatalogTrack> {
         if (current.size > 1 || query.isBlank()) return current
         return YouTubeExtractor.searchYouTube(query).ifEmpty { current }
@@ -183,7 +188,7 @@ class CatalogInspectionCoordinator(
         query: String,
         current: List<OnlineCatalogTrack>,
         wasPreviewing: Boolean,
-        apply: suspend (expanded: List<OnlineCatalogTrack>) -> OnlineCatalogTrack?
+        apply: suspend (expanded: List<OnlineCatalogTrack>) -> OnlineCatalogTrack?,
     ) {
         scope.launch {
             val expanded = expandCandidates(query, current)

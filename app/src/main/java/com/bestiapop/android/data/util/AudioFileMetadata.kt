@@ -42,18 +42,28 @@ class AlbumArtworkCache {
     private val lock = Any()
     private val uris = HashMap<String, String>()
 
-    fun lookup(artist: String, album: String): String? {
+    fun lookup(
+        artist: String,
+        album: String,
+    ): String? {
         val key = key(artist, album) ?: return null
         synchronized(lock) { return uris[key] }
     }
 
-    fun remember(artist: String, album: String, uri: String?) {
+    fun remember(
+        artist: String,
+        album: String,
+        uri: String?,
+    ) {
         if (!SongPathNormalizer.hasUsableArtwork(uri)) return
         val key = key(artist, album) ?: return
         synchronized(lock) { uris.putIfAbsent(key, uri!!) }
     }
 
-    private fun key(artist: String, album: String): String? {
+    private fun key(
+        artist: String,
+        album: String,
+    ): String? {
         if (IdentifyRanking.isPlaceholderArtist(artist)) return null
         if (IdentifyRanking.isGenericAlbum(album)) return null
         val trimmedAlbum = album.trim()
@@ -66,29 +76,29 @@ data class AudioFileMetadata(
     val identity: TrackIdentity,
     val genre: String,
     val year: Int = 0,
-    val lyrics: String? = null
+    val lyrics: String? = null,
 ) : TrackMeta by identity {
-    fun withIdentity(transform: TrackIdentity.() -> TrackIdentity): AudioFileMetadata =
-        copy(identity = identity.transform())
+    fun withIdentity(transform: TrackIdentity.() -> TrackIdentity): AudioFileMetadata = copy(identity = identity.transform())
 
     fun toSong(
         uriString: String,
         folderPath: String,
-        dateAdded: Long = System.currentTimeMillis()
-    ): Song = Song(
-        uriString = uriString,
-        title = title,
-        artist = artist,
-        album = album,
-        genre = genre,
-        durationMs = durationMs,
-        year = year,
-        trackNumber = trackNumber,
-        artworkUri = artworkUri,
-        lyrics = lyrics,
-        folderPath = folderPath,
-        dateAdded = dateAdded
-    )
+        dateAdded: Long = System.currentTimeMillis(),
+    ): Song =
+        Song(
+            uriString = uriString,
+            title = title,
+            artist = artist,
+            album = album,
+            genre = genre,
+            durationMs = durationMs,
+            year = year,
+            trackNumber = trackNumber,
+            artworkUri = artworkUri,
+            lyrics = lyrics,
+            folderPath = folderPath,
+            dateAdded = dateAdded,
+        )
 
     companion object {
         const val FALLBACK_ARTIST = "Unknown Artist"
@@ -105,20 +115,22 @@ data class AudioFileMetadata(
             artworkUri: String?,
             trackNumber: Int = 0,
             year: Int = 0,
-            lyrics: String? = null
-        ): AudioFileMetadata = AudioFileMetadata(
-            identity = TrackIdentity(
-                title = title,
-                artist = artist,
-                album = album,
-                artworkUri = artworkUri,
-                durationMs = durationMs,
-                trackNumber = trackNumber
-            ),
-            genre = genre,
-            year = year,
-            lyrics = lyrics
-        )
+            lyrics: String? = null,
+        ): AudioFileMetadata =
+            AudioFileMetadata(
+                identity =
+                    TrackIdentity(
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        artworkUri = artworkUri,
+                        durationMs = durationMs,
+                        trackNumber = trackNumber,
+                    ),
+                genre = genre,
+                year = year,
+                lyrics = lyrics,
+            )
 
         fun fromPath(
             context: Context,
@@ -126,33 +138,35 @@ data class AudioFileMetadata(
             fallbackTitle: String,
             artworkIdentifier: String = path,
             persistEmbeddedArtwork: (bytes: ByteArray, identifier: String) -> String?,
-            artworkCache: AlbumArtworkCache? = null
+            artworkCache: AlbumArtworkCache? = null,
         ): AudioFileMetadata {
             val store = MusicFileStore(context)
             val ref = AudioPersistRef.canonicalize(path)
             val file = store.readableFile(ref)
             val tagged = file?.let { AudioTagReader.read(it) }
-            val retrieverTags = if (tagged?.isComplete == true) {
-                null
-            } else {
-                readRetrieverTags(store, ref)
-            }
+            val retrieverTags =
+                if (tagged?.isComplete == true) {
+                    null
+                } else {
+                    readRetrieverTags(store, ref)
+                }
             val raw = coalesceRawTags(tagged, retrieverTags)
             val artist = raw.artist?.trim()?.takeIf { it.isNotEmpty() } ?: FALLBACK_ARTIST
             val album = raw.album?.trim()?.takeIf { it.isNotEmpty() } ?: FALLBACK_ALBUM
             val reusedArt = artworkCache?.lookup(artist, album)
-            val artworkUri = reusedArt
-                ?: raw.artworkBytes
-                    ?.takeIf(ByteArray::isNotEmpty)
-                    ?.let { persistEmbeddedArtwork(it, artworkIdentifier) }
-                    ?.also { artworkCache?.remember(artist, album, it) }
+            val artworkUri =
+                reusedArt
+                    ?: raw.artworkBytes
+                        ?.takeIf(ByteArray::isNotEmpty)
+                        ?.let { persistEmbeddedArtwork(it, artworkIdentifier) }
+                        ?.also { artworkCache?.remember(artist, album, it) }
             return fromRawTags(raw, fallbackTitle, artworkUri)
         }
 
         internal fun fromRawTags(
             raw: RawAudioTags,
             fallbackTitle: String,
-            artworkUri: String? = null
+            artworkUri: String? = null,
         ): AudioFileMetadata {
             val artist = raw.artist?.trim()?.takeIf { it.isNotEmpty() } ?: FALLBACK_ARTIST
             val album = raw.album?.trim()?.takeIf { it.isNotEmpty() } ?: FALLBACK_ALBUM
@@ -166,9 +180,9 @@ data class AudioFileMetadata(
                     artworkUri = artworkUri,
                     trackNumber = raw.trackNumber,
                     year = raw.year,
-                    lyrics = raw.lyrics?.trim()?.takeIf { it.isNotEmpty() }
+                    lyrics = raw.lyrics?.trim()?.takeIf { it.isNotEmpty() },
                 ),
-                fallbackTitle
+                fallbackTitle,
             )
         }
 
@@ -179,35 +193,40 @@ data class AudioFileMetadata(
          */
         internal fun applyFilenameHints(
             metadata: AudioFileMetadata,
-            fallbackTitle: String
+            fallbackTitle: String,
         ): AudioFileMetadata {
             val fromTags = resolveWeakIdentityHints(metadata.artist, metadata.title)
             val fromFile = parseFilenameMetadataHints(fallbackTitle)
             // When tags are placeholder + title is just the raw filename, prefer filename parse.
-            val tagTitleIsFilename = metadata.title.isBlank() ||
-                metadata.title.equals(fallbackTitle, ignoreCase = true)
-            val hints = if (
-                IdentifyRanking.isPlaceholderArtist(metadata.artist) && tagTitleIsFilename
-            ) {
-                mergeIdentityHints(fromFile, fromTags)
-            } else {
-                mergeIdentityHints(fromTags, fromFile)
-            }
+            val tagTitleIsFilename =
+                metadata.title.isBlank() ||
+                    metadata.title.equals(fallbackTitle, ignoreCase = true)
+            val hints =
+                if (
+                    IdentifyRanking.isPlaceholderArtist(metadata.artist) && tagTitleIsFilename
+                ) {
+                    mergeIdentityHints(fromFile, fromTags)
+                } else {
+                    mergeIdentityHints(fromTags, fromFile)
+                }
             val artistWeak = IdentifyRanking.isPlaceholderArtist(metadata.artist)
-            val artistInTitle = !artistWeak && (
-                metadata.title.startsWith("${metadata.artist} - ", ignoreCase = true) ||
-                metadata.title.startsWith("${metadata.artist}_-_", ignoreCase = true)
-            )
-            val titleWeak = tagTitleIsFilename ||
-                metadata.title.trimStart().let { it.startsWith("-") || it.startsWith("_") } ||
-                looksLikeStoragePath(metadata.title) ||
-                isTrackNumberLabel(metadata.title.trim()) ||
-                artistInTitle ||
-                (artistWeak && (metadata.title.contains(" - ") || metadata.title.contains("_-_")))
+            val artistInTitle =
+                !artistWeak && (
+                    metadata.title.startsWith("${metadata.artist} - ", ignoreCase = true) ||
+                        metadata.title.startsWith("${metadata.artist}_-_", ignoreCase = true)
+                )
+            val titleWeak =
+                tagTitleIsFilename ||
+                    metadata.title.trimStart().let { it.startsWith("-") || it.startsWith("_") } ||
+                    looksLikeStoragePath(metadata.title) ||
+                    isTrackNumberLabel(metadata.title.trim()) ||
+                    artistInTitle ||
+                    (artistWeak && (metadata.title.contains(" - ") || metadata.title.contains("_-_")))
 
-            val trackNumber = metadata.trackNumber.takeIf { it > 0 }
-                ?: hints.trackNumber
-                ?: metadata.trackNumber
+            val trackNumber =
+                metadata.trackNumber.takeIf { it > 0 }
+                    ?: hints.trackNumber
+                    ?: metadata.trackNumber
 
             if (!artistWeak && !titleWeak) {
                 // Real ID3 tags exist. Do not mutate valid tags (Tauon principle).
@@ -219,20 +238,25 @@ data class AudioFileMetadata(
                 }
             }
 
-            val artist = when {
-                artistWeak && !hints.artist.isNullOrBlank() -> hints.artist
-                artistWeak -> FALLBACK_ARTIST
-                else -> metadata.artist
-            }
+            val artist =
+                when {
+                    artistWeak && !hints.artist.isNullOrBlank() -> hints.artist
+                    artistWeak -> FALLBACK_ARTIST
+                    else -> metadata.artist
+                }
             // Keep a real ID3 title even when artist is Unknown; filename hints are for search.
-            val title = when {
-                titleWeak && !hints.title.isNullOrBlank() ->
-                    IdentifyRanking.cleanIdentityTitle(hints.title, artist).ifBlank { hints.title }
-                else ->
-                    IdentifyRanking.cleanIdentityTitle(metadata.title, artist).ifBlank {
-                        stripLeadingTitleJunk(metadata.title).ifBlank { metadata.title }
+            val title =
+                when {
+                    titleWeak && !hints.title.isNullOrBlank() -> {
+                        IdentifyRanking.cleanIdentityTitle(hints.title, artist).ifBlank { hints.title }
                     }
-            }
+
+                    else -> {
+                        IdentifyRanking.cleanIdentityTitle(metadata.title, artist).ifBlank {
+                            stripLeadingTitleJunk(metadata.title).ifBlank { metadata.title }
+                        }
+                    }
+                }
             return metadata.withIdentity {
                 copy(artist = artist, title = title, trackNumber = trackNumber)
             }
@@ -240,7 +264,7 @@ data class AudioFileMetadata(
 
         private fun readRetrieverTags(
             store: MusicFileStore,
-            ref: AudioPersistRef
+            ref: AudioPersistRef,
         ): RawAudioTags? {
             val retriever = MediaMetadataRetriever()
             return try {
@@ -250,20 +274,23 @@ data class AudioFileMetadata(
                     artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
                     album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
                     genre = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE),
-                    year = parseTagYear(
-                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
-                            ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)
-                    ),
-                    trackNumber = parseCdTrackNumber(
-                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER),
-                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
-                    ),
-                    durationMs = retriever
-                        .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                        ?.toLongOrNull()
-                        ?: 0L,
+                    year =
+                        parseTagYear(
+                            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
+                                ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE),
+                        ),
+                    trackNumber =
+                        parseCdTrackNumber(
+                            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER),
+                            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER),
+                        ),
+                    durationMs =
+                        retriever
+                            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            ?.toLongOrNull()
+                            ?: 0L,
                     lyrics = null,
-                    artworkBytes = retriever.embeddedPicture?.takeIf(ByteArray::isNotEmpty)
+                    artworkBytes = retriever.embeddedPicture?.takeIf(ByteArray::isNotEmpty),
                 )
             } catch (_: Exception) {
                 null

@@ -12,17 +12,15 @@ import java.util.ArrayDeque
 data class PlaybackQueueSnapshotProjection(
     val items: List<PlayableItem>,
     val currentIndex: Int,
-    val shufflePlayOrder: List<Int>? = null
+    val shufflePlayOrder: List<Int>? = null,
 )
 
 /**
  * Pure operations that reconcile physical queue order by occurrence rather than by track identity.
  */
 object PlaybackQueueSlots {
-
     /** Process-only pre-shuffle order. These ids must never be persisted. */
-    fun capturePreShuffleOrder(items: List<PlayableItem>): List<String> =
-        items.map { it.queueEntryId }
+    fun capturePreShuffleOrder(items: List<PlayableItem>): List<String> = items.map { it.queueEntryId }
 
     /**
      * Projects the captured order onto the live queue.
@@ -32,7 +30,7 @@ object PlaybackQueueSlots {
      */
     fun restorePreShuffleOrder(
         liveQueue: List<PlayableItem>,
-        preShuffleOrder: List<String>
+        preShuffleOrder: List<String>,
     ): List<PlayableItem> {
         if (liveQueue.isEmpty() || preShuffleOrder.isEmpty()) return liveQueue
 
@@ -64,36 +62,40 @@ object PlaybackQueueSlots {
         queue: List<PlayableItem>,
         currentIndex: Int,
         preShuffleOrder: List<String>? = null,
-        maxHistory: Int = PlaybackQueueOrder.MAX_QUEUE_HISTORY
+        maxHistory: Int = PlaybackQueueOrder.MAX_QUEUE_HISTORY,
     ): PlaybackQueueSnapshotProjection {
-        val trimmed = PlaybackQueueOrder.trimHistory(
-            items = queue,
-            currentIndex = currentIndex,
-            maxHistory = maxHistory
-        )
-        val linear = PlaybackQueueSnapshotProjection(
-            items = trimmed.items,
-            currentIndex = trimmed.currentIndex
-        )
+        val trimmed =
+            PlaybackQueueOrder.trimHistory(
+                items = queue,
+                currentIndex = currentIndex,
+                maxHistory = maxHistory,
+            )
+        val linear =
+            PlaybackQueueSnapshotProjection(
+                items = trimmed.items,
+                currentIndex = trimmed.currentIndex,
+            )
         val capturedOrder = preShuffleOrder ?: return linear
         if (trimmed.items.isEmpty()) return linear
 
         val original = restorePreShuffleOrder(trimmed.items, capturedOrder)
         val originalIndexBySlot = original.uniqueSlotIndexOrNull() ?: return linear
-        val playOrder = trimmed.items.map { item ->
-            originalIndexBySlot[item.queueEntryId] ?: return linear
-        }
-        val validPlayOrder = PlaybackQueueOrder.validPlayOrderOrNull(
-            playOrder = playOrder,
-            size = original.size
-        ) ?: return linear
+        val playOrder =
+            trimmed.items.map { item ->
+                originalIndexBySlot[item.queueEntryId] ?: return linear
+            }
+        val validPlayOrder =
+            PlaybackQueueOrder.validPlayOrderOrNull(
+                playOrder = playOrder,
+                size = original.size,
+            ) ?: return linear
         val currentSlot = trimmed.items[trimmed.currentIndex].queueEntryId
         val currentInOriginal = originalIndexBySlot[currentSlot] ?: return linear
 
         return PlaybackQueueSnapshotProjection(
             items = original,
             currentIndex = currentInOriginal,
-            shufflePlayOrder = validPlayOrder
+            shufflePlayOrder = validPlayOrder,
         )
     }
 

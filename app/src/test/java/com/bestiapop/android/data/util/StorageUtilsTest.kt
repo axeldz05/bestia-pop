@@ -6,7 +6,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StorageUtilsTest {
-
     @Test
     fun mimeFromFileName_mapsCommonAudioExts() {
         assertEquals("audio/mpeg", StorageUtils.mimeFromFileName("a.mp3"))
@@ -22,8 +21,8 @@ class StorageUtilsTest {
         assertTrue(
             StorageUtils.isBestiaPopLocation(
                 null,
-                "/storage/emulated/0/Music/BestiaPop/Radiohead_Creep.mp3"
-            )
+                "/storage/emulated/0/Music/BestiaPop/Radiohead_Creep.mp3",
+            ),
         )
         assertFalse(StorageUtils.isBestiaPopLocation("Music/Other/", "/storage/emulated/0/Download/a.mp3"))
         assertFalse(StorageUtils.isBestiaPopLocation(null, "/storage/emulated/0/Music/a.mp3"))

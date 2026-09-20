@@ -7,7 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackTrackChangePolicyTest {
-
     @Test
     fun sameSongWithUpdatedMetadata_isNotANewPlayback() {
         val previous = song(id = 7L, title = "Old title")
@@ -16,7 +15,7 @@ class PlaybackTrackChangePolicyTest {
         assertTrue(PlaybackTrackChangePolicy.sameIdentity(previous, updated))
         assertEquals(
             PlaybackTrackChange.METADATA_UPDATE,
-            PlaybackTrackChangePolicy.resolve(previous, updated)
+            PlaybackTrackChangePolicy.resolve(previous, updated),
         )
     }
 
@@ -31,8 +30,8 @@ class PlaybackTrackChangePolicyTest {
             PlaybackTrackChangePolicy.resolve(
                 previous,
                 updated,
-                PlaybackChangeHint.METADATA_UPDATE
-            )
+                PlaybackChangeHint.METADATA_UPDATE,
+            ),
         )
     }
 
@@ -47,8 +46,8 @@ class PlaybackTrackChangePolicyTest {
             PlaybackTrackChangePolicy.resolve(
                 previous,
                 current,
-                PlaybackChangeHint.METADATA_UPDATE
-            )
+                PlaybackChangeHint.METADATA_UPDATE,
+            ),
         )
     }
 
@@ -61,20 +60,20 @@ class PlaybackTrackChangePolicyTest {
             PlaybackTrackChangePolicy.resolve(
                 repeated,
                 repeated,
-                PlaybackChangeHint.NEW_PLAYBACK
-            )
+                PlaybackChangeHint.NEW_PLAYBACK,
+            ),
         )
     }
 
     private fun song(
         id: Long,
         uri: String = "/music/$id.mp3",
-        title: String = "Song"
+        title: String = "Song",
     ) = Song(
         id = id,
         uriString = uri,
         title = title,
         artist = "Artist",
-        durationMs = 120_000L
+        durationMs = 120_000L,
     )
 }

@@ -59,16 +59,17 @@ fun LibraryTopBar(
     onEditAlbum: () -> Unit,
     isMultiSelectMode: Boolean,
     onPlayAll: () -> Unit,
-    onShuffleAll: () -> Unit
+    onShuffleAll: () -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (hasNestedDetail) {
             IconButton(onClick = onBackClick) {
@@ -88,7 +89,7 @@ fun LibraryTopBar(
                             IconButton(onClick = onOpenSearchHistory) {
                                 Icon(
                                     imageVector = Icons.Default.History,
-                                    contentDescription = "Historial de búsqueda"
+                                    contentDescription = "Historial de búsqueda",
                                 )
                             }
                         }
@@ -98,22 +99,25 @@ fun LibraryTopBar(
                     }
                 },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(
-                    onSearch = {
-                        onSearchSubmit(searchQuery)
-                        focusManager.clearFocus(force = true)
-                        keyboardController?.hide()
-                    }
-                ),
+                keyboardActions =
+                    KeyboardActions(
+                        onSearch = {
+                            onSearchSubmit(searchQuery)
+                            focusManager.clearFocus(force = true)
+                            keyboardController?.hide()
+                        },
+                    ),
                 singleLine = true,
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(searchFocusRequester),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(12.dp)
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .focusRequester(searchFocusRequester),
+                colors =
+                    OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    ),
+                shape = RoundedCornerShape(12.dp),
             )
         } else {
             if (nestedTitle != null) {
@@ -123,14 +127,14 @@ fun LibraryTopBar(
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
             } else {
                 if (!isPlaylistAdditionMode && !hasNestedDetail) {
                     LibraryFilterButton(
                         label = filterButtonLabel,
                         contentDescription = libraryTuneContentDescription(orderSummary),
-                        onClick = onOpenSortSheet
+                        onClick = onOpenSortSheet,
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
@@ -153,7 +157,7 @@ fun LibraryTopBar(
                 onPlay = onPlayAll,
                 onShuffle = onShuffleAll,
                 playDescription = "Reproducir todo",
-                shuffleDescription = "Mezclar"
+                shuffleDescription = "Mezclar",
             )
         }
     }
@@ -165,28 +169,31 @@ fun LibraryViewModeToggleRow(
     hasAlbums: Boolean,
     allAlbumsCollapsed: Boolean,
     onToggleCollapseAllAlbums: () -> Unit,
-    onToggleLibraryViewMode: () -> Unit
+    onToggleLibraryViewMode: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showAlbumHeaders && hasAlbums) {
             IconButton(onClick = onToggleCollapseAllAlbums) {
                 Icon(
-                    imageVector = if (allAlbumsCollapsed) {
-                        Icons.Default.UnfoldMore
-                    } else {
-                        Icons.Default.UnfoldLess
-                    },
-                    contentDescription = if (allAlbumsCollapsed) {
-                        "Expandir todos los álbumes"
-                    } else {
-                        "Colapsar todos los álbumes"
-                    }
+                    imageVector =
+                        if (allAlbumsCollapsed) {
+                            Icons.Default.UnfoldMore
+                        } else {
+                            Icons.Default.UnfoldLess
+                        },
+                    contentDescription =
+                        if (allAlbumsCollapsed) {
+                            "Expandir todos los álbumes"
+                        } else {
+                            "Colapsar todos los álbumes"
+                        },
                 )
             }
         }
@@ -194,11 +201,12 @@ fun LibraryViewModeToggleRow(
             Icon(
                 imageVector = Icons.Default.ViewAgenda,
                 contentDescription = "Cambiar vista",
-                tint = if (showAlbumHeaders) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                }
+                tint =
+                    if (showAlbumHeaders) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
             )
         }
     }

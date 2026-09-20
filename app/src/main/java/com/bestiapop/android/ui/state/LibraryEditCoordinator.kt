@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 @Immutable
 data class PendingAlbumMerge(
     val source: Album,
-    val target: Album
+    val target: Album,
 )
 
 /**
@@ -39,7 +39,7 @@ class LibraryEditCoordinator(
     private val updateAlbumArtworkInQueue: (albumName: String, artworkUri: String) -> Unit,
     private val onSongsDeleted: (Set<Long>) -> Unit = {},
     private val toast: (String) -> Unit = {},
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val _pendingAlbumMerge = MutableStateFlow<PendingAlbumMerge?>(null)
     val pendingAlbumMerge: StateFlow<PendingAlbumMerge?> = _pendingAlbumMerge.asStateFlow()
@@ -51,7 +51,7 @@ class LibraryEditCoordinator(
         album: String,
         genre: String,
         year: Int = 0,
-        trackNumber: Int = 0
+        trackNumber: Int = 0,
     ) {
         scope.launch {
             repository.updateSongMetadata(songId, title, artist, album, genre, year, trackNumber)
@@ -72,7 +72,10 @@ class LibraryEditCoordinator(
         }
     }
 
-    fun setAlbumArtwork(albumName: String, artworkUri: String) {
+    fun setAlbumArtwork(
+        albumName: String,
+        artworkUri: String,
+    ) {
         updateAlbumArtworkInQueue(albumName, artworkUri)
         scope.launch(ioDispatcher) {
             repository.setAlbumArtwork(albumName, artworkUri)
@@ -86,15 +89,16 @@ class LibraryEditCoordinator(
         genre: String,
         year: Int,
         artworkUri: String?,
-        propagateToSongs: Boolean
+        propagateToSongs: Boolean,
     ) {
         scope.launch {
             val songs = repository.getAllSongsSync()
             val overrides = repository.albumOverridesFlow.first()
-            val albums = getLibrarySongsUseCase.extractAlbums(
-                songs,
-                overrides.associateBy { it.albumKey }
-            )
+            val albums =
+                getLibrarySongsUseCase.extractAlbums(
+                    songs,
+                    overrides.associateBy { it.albumKey },
+                )
             val conflict = findAlbumMergeTarget(albums, source.name, displayName)
             if (conflict != null) {
                 _pendingAlbumMerge.value = PendingAlbumMerge(source = source, target = conflict)
@@ -108,9 +112,9 @@ class LibraryEditCoordinator(
                     artist = artist.takeIf { it.isNotBlank() },
                     genre = genre.takeIf { it.isNotBlank() },
                     year = year.coerceAtLeast(0),
-                    artworkUri = artworkUri
+                    artworkUri = artworkUri,
                 ),
-                propagateToSongs = propagateToSongs
+                propagateToSongs = propagateToSongs,
             )
         }
     }
@@ -130,13 +134,19 @@ class LibraryEditCoordinator(
 
     private suspend fun saveAlbumOverride(
         override: AlbumOverride,
-        propagateToSongs: Boolean
+        propagateToSongs: Boolean,
     ) {
-        if (propagateToSongs) repository.updateAlbumMetadataPropagateToSongs(override)
-        else repository.upsertAlbumOverride(override)
+        if (propagateToSongs) {
+            repository.updateAlbumMetadataPropagateToSongs(override)
+        } else {
+            repository.upsertAlbumOverride(override)
+        }
     }
 
-    fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String) {
+    fun mergeAlbumInto(
+        sourceAlbumKey: String,
+        targetAlbumKey: String,
+    ) {
         scope.launch {
             repository.mergeAlbumInto(sourceAlbumKey, targetAlbumKey)
             toast(DownloadMessages.albumsMerged)
@@ -150,27 +160,28 @@ class LibraryEditCoordinator(
         year: Int = 0,
         genre: String = Song.UNKNOWN_GENRE,
         candidates: List<CatalogTrackCandidate> = emptyList(),
-        albumId: String = ""
+        albumId: String = "",
     ) {
         scope.launch {
             try {
-                val effectiveCandidates = if (candidates.isNotEmpty()) {
-                    candidates
-                } else {
-                    MetadataFetcher.fetchAlbumTrackCandidates(
-                        albumId = albumId,
-                        albumTitle = albumTitle,
-                        artistName = artistName,
-                        albumCoverUrl = coverUrl
-                    )
-                }
+                val effectiveCandidates =
+                    if (candidates.isNotEmpty()) {
+                        candidates
+                    } else {
+                        MetadataFetcher.fetchAlbumTrackCandidates(
+                            albumId = albumId,
+                            albumTitle = albumTitle,
+                            artistName = artistName,
+                            albumCoverUrl = coverUrl,
+                        )
+                    }
                 repository.saveAlbumTracksToLibrary(
                     albumTitle = albumTitle,
                     artistName = artistName,
                     coverUrl = coverUrl,
                     year = year,
                     genre = genre,
-                    tracks = effectiveCandidates
+                    tracks = effectiveCandidates,
                 )
                 toast(DownloadMessages.albumSaved)
             } catch (e: Exception) {
@@ -179,7 +190,10 @@ class LibraryEditCoordinator(
         }
     }
 
-    fun saveAlbumToLibrary(album: CatalogAlbum, candidates: List<CatalogTrackCandidate> = emptyList()) {
+    fun saveAlbumToLibrary(
+        album: CatalogAlbum,
+        candidates: List<CatalogTrackCandidate> = emptyList(),
+    ) {
         saveAlbumToLibrary(
             albumTitle = album.title,
             artistName = album.artist,
@@ -187,11 +201,14 @@ class LibraryEditCoordinator(
             year = album.releaseYear.toIntOrNull() ?: 0,
             genre = Song.UNKNOWN_GENRE,
             candidates = candidates,
-            albumId = album.id
+            albumId = album.id,
         )
     }
 
-    fun removeSavedAlbum(albumName: String, artistName: String) {
+    fun removeSavedAlbum(
+        albumName: String,
+        artistName: String,
+    ) {
         scope.launch {
             try {
                 val removed = repository.removeSavedAlbumFromLibrary(albumName, artistName)

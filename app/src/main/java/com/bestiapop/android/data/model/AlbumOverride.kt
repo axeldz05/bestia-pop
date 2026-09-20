@@ -12,5 +12,5 @@ data class AlbumOverride(
     val artist: String? = null,
     val genre: String? = null,
     val year: Int = 0,
-    val artworkUri: String? = null
+    val artworkUri: String? = null,
 )

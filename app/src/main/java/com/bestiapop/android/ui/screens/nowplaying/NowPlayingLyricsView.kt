@@ -1,7 +1,6 @@
 package com.bestiapop.android.ui.screens.nowplaying
 
 import android.content.Intent
-import androidx.core.net.toUri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.DisplayLyricLine
 import com.bestiapop.android.data.model.RepeatMode
@@ -81,7 +81,7 @@ fun NowPlayingLyricsView(
     actions: NowPlayingTransportActions,
     onSeekToLyric: (Long) -> Unit,
     onRetryFetchLyrics: (Song) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) = NowPlayingLyricsView(
     song = song,
     viewModel = viewModel,
@@ -100,7 +100,7 @@ fun NowPlayingLyricsView(
     onSeekTo = actions.onSeek,
     onSeekToLyric = onSeekToLyric,
     onRetryFetchLyrics = onRetryFetchLyrics,
-    modifier = modifier
+    modifier = modifier,
 )
 
 /**
@@ -125,17 +125,18 @@ fun NowPlayingLyricsView(
     onSeekTo: (Long) -> Unit,
     onSeekToLyric: (Long) -> Unit,
     onRetryFetchLyrics: (Song) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val rawLyrics = song.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
 
     Column(modifier = modifier.fillMaxSize()) {
         Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            contentAlignment = Alignment.Center
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+            contentAlignment = Alignment.Center,
         ) {
             if (!rawLyrics.isNullOrEmpty()) {
                 val parsedLrc = remember(rawLyrics) { SyncedLyrics.parse(rawLyrics) }
@@ -152,50 +153,53 @@ fun NowPlayingLyricsView(
                     }
                 }
 
-                val displayLines = remember(
-                    parsedLrc,
-                    translationState,
-                    lyricsSettings
-                ) {
-                    val translated = if (translationState.isTranslationActive) {
-                        viewModel.getTranslatedLines(song.id)
-                    } else {
-                        null
-                    }
-                    val romanized = viewModel.getRomanizedLines(song.id)
-
-                    parsedLrc.mapIndexed { idx, line ->
-                        val formattedTime = line.timeMs?.let { formatLyricStamp(it) }
-                        if (line.text.isEmpty()) {
-                            DisplayLyricLine(line.timeMs, "", null, formattedTime)
-                        } else if (translationState.isTranslationActive) {
-                            val transText = translated?.getOrNull(idx)?.takeIf { it.isNotBlank() } ?: line.text
-                            DisplayLyricLine(
-                                timeMs = line.timeMs,
-                                primaryText = transText,
-                                secondaryText = if (transText != line.text) line.text else null,
-                                formattedTime = formattedTime
-                            )
-                        } else {
-                            val romCandidate = romanized?.getOrNull(idx)
-                            val secondary = if (lyricsSettings.phoneticGuideEnabled) {
-                                LyricsPhoneticProcessor.formatPhoneticLine(
-                                    original = line.text,
-                                    romanizedCandidate = romCandidate,
-                                    japaneseMode = lyricsSettings.japanesePhoneticMode
-                                )
+                val displayLines =
+                    remember(
+                        parsedLrc,
+                        translationState,
+                        lyricsSettings,
+                    ) {
+                        val translated =
+                            if (translationState.isTranslationActive) {
+                                viewModel.getTranslatedLines(song.id)
                             } else {
                                 null
                             }
-                            DisplayLyricLine(
-                                timeMs = line.timeMs,
-                                primaryText = line.text,
-                                secondaryText = secondary,
-                                formattedTime = formattedTime
-                            )
+                        val romanized = viewModel.getRomanizedLines(song.id)
+
+                        parsedLrc.mapIndexed { idx, line ->
+                            val formattedTime = line.timeMs?.let { formatLyricStamp(it) }
+                            if (line.text.isEmpty()) {
+                                DisplayLyricLine(line.timeMs, "", null, formattedTime)
+                            } else if (translationState.isTranslationActive) {
+                                val transText = translated?.getOrNull(idx)?.takeIf { it.isNotBlank() } ?: line.text
+                                DisplayLyricLine(
+                                    timeMs = line.timeMs,
+                                    primaryText = transText,
+                                    secondaryText = if (transText != line.text) line.text else null,
+                                    formattedTime = formattedTime,
+                                )
+                            } else {
+                                val romCandidate = romanized?.getOrNull(idx)
+                                val secondary =
+                                    if (lyricsSettings.phoneticGuideEnabled) {
+                                        LyricsPhoneticProcessor.formatPhoneticLine(
+                                            original = line.text,
+                                            romanizedCandidate = romCandidate,
+                                            japaneseMode = lyricsSettings.japanesePhoneticMode,
+                                        )
+                                    } else {
+                                        null
+                                    }
+                                DisplayLyricLine(
+                                    timeMs = line.timeMs,
+                                    primaryText = line.text,
+                                    secondaryText = secondary,
+                                    formattedTime = formattedTime,
+                                )
+                            }
                         }
                     }
-                }
 
                 if (translationState.pendingGoogleTranslatePrompt) {
                     AlertDialog(
@@ -204,13 +208,15 @@ fun NowPlayingLyricsView(
                             Text("Traducción no encontrada")
                         },
                         text = {
-                            Text("No se encontró una traducción comunitaria en Musixmatch ni sitios similares.\n\n¿Querés traducir esta letra con Google Traductor?")
+                            Text(
+                                "No se encontró una traducción comunitaria en Musixmatch ni sitios similares.\n\n¿Querés traducir esta letra con Google Traductor?",
+                            )
                         },
                         confirmButton = {
                             Button(
                                 onClick = {
                                     viewModel.confirmGoogleTranslate(song, plainLines)
-                                }
+                                },
                             ) {
                                 Text("Traducir con Google")
                             }
@@ -219,40 +225,43 @@ fun NowPlayingLyricsView(
                             TextButton(onClick = viewModel::cancelGoogleTranslatePrompt) {
                                 Text("Cancelar")
                             }
-                        }
+                        },
                     )
                 }
 
                 Column(modifier = Modifier.fillMaxSize()) {
                     // Barra superior: Atribución de fuente y botón de traducción
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (translationState.isTranslationActive && translationState.translationSource != null) {
                             val source = translationState.translationSource!!
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable(enabled = !source.url.isNullOrBlank()) {
-                                        source.url?.let { urlStr ->
-                                            try {
-                                                val intent = Intent(Intent.ACTION_VIEW, urlStr.toUri())
-                                                context.startActivity(intent)
-                                            } catch (_: Exception) {}
-                                        }
-                                    }
+                                modifier =
+                                    Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable(enabled = !source.url.isNullOrBlank()) {
+                                            source.url?.let { urlStr ->
+                                                try {
+                                                    val intent = Intent(Intent.ACTION_VIEW, urlStr.toUri())
+                                                    context.startActivity(intent)
+                                                } catch (_: Exception) {
+                                                }
+                                            }
+                                        },
                             ) {
                                 Text(
                                     text = "Fuente: ${source.name} ↗",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                 )
                             }
                         } else {
@@ -266,37 +275,40 @@ fun NowPlayingLyricsView(
                             enabled = !translationState.isFetchingTranslation,
                             shape = RoundedCornerShape(16.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (translationState.isTranslationActive) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                                },
-                                contentColor = if (translationState.isTranslationActive) {
-                                    MaterialTheme.colorScheme.onPrimary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
+                            colors =
+                                ButtonDefaults.filledTonalButtonColors(
+                                    containerColor =
+                                        if (translationState.isTranslationActive) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                        },
+                                    contentColor =
+                                        if (translationState.isTranslationActive) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                ),
                         ) {
                             if (translationState.isFetchingTranslation) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(14.dp),
                                     strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                             } else {
                                 Icon(
                                     imageVector = Icons.Default.Translate,
                                     contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(16.dp),
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                             }
                             Text(
                                 text = if (translationState.isTranslationActive) "Original" else "Traducir",
-                                style = MaterialTheme.typography.labelMedium
+                                style = MaterialTheme.typography.labelMedium,
                             )
                         }
                     }
@@ -327,7 +339,7 @@ fun NowPlayingLyricsView(
                                     val targetIndex = (currentLineIndex - 1).coerceAtLeast(0)
                                     listState.animateScrollToItem(
                                         index = targetIndex,
-                                        scrollOffset = 0
+                                        scrollOffset = 0,
                                     )
                                 }
                             }
@@ -336,17 +348,17 @@ fun NowPlayingLyricsView(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                contentPadding = PaddingValues(vertical = 40.dp)
+                                contentPadding = PaddingValues(vertical = 40.dp),
                             ) {
                                 itemsIndexed(
                                     items = displayLines,
-                                    key = { index, line -> "lyric_${index}_${line.timeMs ?: 0}" }
+                                    key = { index, line -> "lyric_${index}_${line.timeMs ?: 0}" },
                                 ) { index, line ->
                                     if (line.primaryText.isNotEmpty()) {
                                         TimedLyricRow(
                                             line = line,
                                             isCurrent = (index == currentLineIndex),
-                                            onSeekToLyric = onSeekToLyric
+                                            onSeekToLyric = onSeekToLyric,
                                         )
                                     }
                                 }
@@ -354,11 +366,12 @@ fun NowPlayingLyricsView(
                         } else {
                             // Letra en texto plano (sin timestamps)
                             Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(vertical = 32.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                modifier =
+                                    Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(vertical = 32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 displayLines.forEach { line ->
                                     if (line.primaryText.isNotEmpty()) {
@@ -373,40 +386,40 @@ fun NowPlayingLyricsView(
                 // Buscando letra (local o en línea)
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(36.dp),
                         strokeWidth = 3.dp,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "Buscando letra…",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     )
                 }
             } else {
                 // Estado sin letra
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
                         text = "Sin letra disponible",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Button(
                         onClick = { onRetryFetchLyrics(song) },
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Buscar en línea")
@@ -416,7 +429,7 @@ fun NowPlayingLyricsView(
                         Text(
                             text = lyricsFetchError,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
@@ -426,19 +439,20 @@ fun NowPlayingLyricsView(
         // Controles de reproducción fijos al pie en vista de letras
         Surface(
             color = MaterialTheme.colorScheme.background,
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 6.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 6.dp),
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 PlaybackScrubber(
                     durationMs = durationMs,
                     positionMsFlow = positionMsFlow,
-                    onSeek = onSeekTo
+                    onSeek = onSeekTo,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 NowPlayingControlsRow(
@@ -451,7 +465,7 @@ fun NowPlayingLyricsView(
                     onSkipNext = onSkipNext,
                     onToggleRepeatMode = onToggleRepeatMode,
                     playFabSize = 56.dp,
-                    playIconSize = 32.dp
+                    playIconSize = 32.dp,
                 )
             }
         }
@@ -469,63 +483,68 @@ fun formatLyricStamp(timeMs: Long): String {
 fun TimedLyricRow(
     line: DisplayLyricLine,
     isCurrent: Boolean,
-    onSeekToLyric: (Long) -> Unit
+    onSeekToLyric: (Long) -> Unit,
 ) {
     val timeMs = line.timeMs
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(
-                enabled = timeMs != null,
-                onClick = { timeMs?.let(onSeekToLyric) }
-            )
-            .padding(vertical = 8.dp, horizontal = 12.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(
+                    enabled = timeMs != null,
+                    onClick = { timeMs?.let(onSeekToLyric) },
+                ).padding(vertical = 8.dp, horizontal = 12.dp),
     ) {
         if (line.formattedTime != null) {
             Text(
                 text = line.formattedTime,
                 fontSize = 11.sp,
                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                color = if (isCurrent) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                },
-                modifier = Modifier.padding(bottom = 2.dp)
+                color =
+                    if (isCurrent) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                    },
+                modifier = Modifier.padding(bottom = 2.dp),
             )
         }
         Text(
             text = line.primaryText,
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontSize = if (isCurrent) 20.sp else 16.sp,
-                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                letterSpacing = if (isCurrent) 0.2.sp else 0.sp
-            ),
-            color = if (isCurrent) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-            },
+            style =
+                MaterialTheme.typography.titleMedium.copy(
+                    fontSize = if (isCurrent) 20.sp else 16.sp,
+                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                    letterSpacing = if (isCurrent) 0.2.sp else 0.sp,
+                ),
+            color =
+                if (isCurrent) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                },
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
         if (!line.secondaryText.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = line.secondaryText,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontSize = if (isCurrent) 13.sp else 11.sp,
-                    fontWeight = FontWeight.Normal
-                ),
-                color = if (isCurrent) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                },
+                style =
+                    MaterialTheme.typography.bodySmall.copy(
+                        fontSize = if (isCurrent) 13.sp else 11.sp,
+                        fontWeight = FontWeight.Normal,
+                    ),
+                color =
+                    if (isCurrent) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    },
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -535,20 +554,22 @@ fun TimedLyricRow(
 fun UntimedLyricRow(line: DisplayLyricLine) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp, horizontal = 12.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp, horizontal = 12.dp),
     ) {
         Text(
             text = line.primaryText,
-            style = MaterialTheme.typography.bodyLarge.copy(
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium,
-                lineHeight = 26.sp
-            ),
+            style =
+                MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 26.sp,
+                ),
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         )
         if (!line.secondaryText.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(2.dp))
@@ -557,7 +578,7 @@ fun UntimedLyricRow(line: DisplayLyricLine) {
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

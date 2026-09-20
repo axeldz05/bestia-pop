@@ -5,13 +5,19 @@ package com.bestiapop.android.domain.util
  * leftovers (`Mirror Jing Zi`) without inventing romanization.
  */
 object IdentifyQueryVariants {
-
-    data class LetterRun(val text: String, val kind: Kind) {
+    data class LetterRun(
+        val text: String,
+        val kind: Kind,
+    ) {
         enum class Kind { LATIN, OTHER }
+
         val normalized: String get() = TrackMatchKeys.normalize(text)
     }
 
-    fun expand(primary: String, filename: String? = null): List<String> {
+    fun expand(
+        primary: String,
+        filename: String? = null,
+    ): List<String> {
         val cleaned = tidyFilenamePhrase(primary)
         if (cleaned.isEmpty()) return emptyList()
         val out = LinkedHashSet<String>(8)
@@ -22,8 +28,9 @@ object IdentifyQueryVariants {
         headAndTailSearch(cleaned)?.let(out::add)
         for (run in letterRuns(cleaned)) {
             if (run.text.equals(cleaned, ignoreCase = true)) continue
-            val keep = run.kind == LetterRun.Kind.OTHER && run.text.isNotEmpty() ||
-                run.text.length >= 3
+            val keep =
+                (run.kind == LetterRun.Kind.OTHER && run.text.isNotEmpty()) ||
+                    run.text.length >= 3
             if (keep) out.add(run.text)
         }
         latinHeadDroppingPinyin(cleaned)?.let(out::add)
@@ -42,6 +49,7 @@ object IdentifyQueryVariants {
         val runs = ArrayList<LetterRun>(4)
         val buf = StringBuilder()
         var kind: LetterRun.Kind? = null
+
         fun flush() {
             if (buf.isEmpty() || kind == null) {
                 buf.clear()
@@ -87,20 +95,15 @@ object IdentifyQueryVariants {
         return tokens.drop(start).joinToString(" ").takeIf { it.isNotBlank() }
     }
 
-    fun hasHan(text: String): Boolean =
-        text.any { Character.UnicodeScript.of(it.code) == Character.UnicodeScript.HAN }
+    fun hasHan(text: String): Boolean = text.any { Character.UnicodeScript.of(it.code) == Character.UnicodeScript.HAN }
 
-    fun hasOtherLetterScript(text: String): Boolean =
-        letterRuns(text).any { it.kind == LetterRun.Kind.OTHER }
+    fun hasOtherLetterScript(text: String): Boolean = letterRuns(text).any { it.kind == LetterRun.Kind.OTHER }
 
-    fun hasLatinLetter(text: String): Boolean =
-        letterRuns(text).any { it.kind == LetterRun.Kind.LATIN }
+    fun hasLatinLetter(text: String): Boolean = letterRuns(text).any { it.kind == LetterRun.Kind.LATIN }
 
-    fun latinLetters(text: String): String =
-        letterRuns(text).filter { it.kind == LetterRun.Kind.LATIN }.joinToString(" ") { it.text }
+    fun latinLetters(text: String): String = letterRuns(text).filter { it.kind == LetterRun.Kind.LATIN }.joinToString(" ") { it.text }
 
-    fun otherLetters(text: String): String =
-        letterRuns(text).filter { it.kind == LetterRun.Kind.OTHER }.joinToString(" ") { it.text }
+    fun otherLetters(text: String): String = letterRuns(text).filter { it.kind == LetterRun.Kind.OTHER }.joinToString(" ") { it.text }
 
     fun searchTokens(raw: String): String {
         val runs = letterRuns(raw).joinToString(" ") { it.text }
@@ -108,12 +111,14 @@ object IdentifyQueryVariants {
     }
 
     internal fun isPinyinSyllable(token: String): Boolean {
-        val t = token.lowercase()
-            .replace('ü', 'v')
-            .replace('ū', 'u')
-            .replace('ú', 'u')
-            .replace('ǔ', 'u')
-            .replace('ù', 'u')
+        val t =
+            token
+                .lowercase()
+                .replace('ü', 'v')
+                .replace('ū', 'u')
+                .replace('ú', 'u')
+                .replace('ǔ', 'u')
+                .replace('ù', 'u')
         if (t.length !in 1..6) return false
         if (!t.all { it in 'a'..'z' }) return false
         return t in PINYIN_SYLLABLES
@@ -128,19 +133,75 @@ object IdentifyQueryVariants {
         }
     }
 
-    private val PINYIN_INITIALS = listOf(
-        "", "b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h",
-        "j", "q", "x", "zh", "ch", "sh", "r", "z", "c", "s", "y", "w"
-    )
-    private val PINYIN_FINALS = listOf(
-        "a", "o", "e", "ai", "ei", "ao", "ou", "an", "en", "ang", "eng", "er",
-        "i", "ia", "iao", "ie", "iu", "ian", "in", "iang", "ing", "iong",
-        "u", "ua", "uo", "uai", "ui", "uan", "un", "uang", "ong",
-        "v", "ve", "van", "vn"
-    )
-    private val PINYIN_SYLLABLES: Set<String> = buildSet {
-        for (initial in PINYIN_INITIALS) {
-            for (final in PINYIN_FINALS) add(initial + final)
+    private val PINYIN_INITIALS =
+        listOf(
+            "",
+            "b",
+            "p",
+            "m",
+            "f",
+            "d",
+            "t",
+            "n",
+            "l",
+            "g",
+            "k",
+            "h",
+            "j",
+            "q",
+            "x",
+            "zh",
+            "ch",
+            "sh",
+            "r",
+            "z",
+            "c",
+            "s",
+            "y",
+            "w",
+        )
+    private val PINYIN_FINALS =
+        listOf(
+            "a",
+            "o",
+            "e",
+            "ai",
+            "ei",
+            "ao",
+            "ou",
+            "an",
+            "en",
+            "ang",
+            "eng",
+            "er",
+            "i",
+            "ia",
+            "iao",
+            "ie",
+            "iu",
+            "ian",
+            "in",
+            "iang",
+            "ing",
+            "iong",
+            "u",
+            "ua",
+            "uo",
+            "uai",
+            "ui",
+            "uan",
+            "un",
+            "uang",
+            "ong",
+            "v",
+            "ve",
+            "van",
+            "vn",
+        )
+    private val PINYIN_SYLLABLES: Set<String> =
+        buildSet {
+            for (initial in PINYIN_INITIALS) {
+                for (final in PINYIN_FINALS) add(initial + final)
+            }
         }
-    }
 }

@@ -14,7 +14,7 @@ data class RadioSuggestResult(
     val items: List<PlayableItem>,
     val usedOnlineDiscovery: Boolean,
     /** True when NEW/BOTH attempted online fills and none contributed usable Remotes. */
-    val onlineDiscoveryFailed: Boolean
+    val onlineDiscoveryFailed: Boolean,
 )
 
 /**
@@ -30,9 +30,8 @@ class RadioEngine(
     private val localRadio: LocalMetadataRadio = LocalMetadataRadio(),
     private val listenBrainzRadio: ListenBrainzRadio? = null,
     private val cfRecommendationsRadio: CfRecommendationsRadio? = null,
-    private val similarProviders: List<SimilarTracksProvider> = emptyList()
+    private val similarProviders: List<SimilarTracksProvider> = emptyList(),
 ) {
-
     suspend fun suggest(
         seed: PlayableItem,
         library: List<Song>,
@@ -43,13 +42,13 @@ class RadioEngine(
         lbAvailable: Boolean = false,
         lbUsername: String? = null,
         networkAvailable: Boolean = false,
-        coPlaylistSongIds: Set<Long> = emptySet()
+        coPlaylistSongIds: Set<Long> = emptySet(),
     ): RadioSuggestResult {
         if (limit <= 0 || seed.artist.isBlank() || seed.title.isBlank()) {
             return RadioSuggestResult(
                 items = emptyList(),
                 usedOnlineDiscovery = false,
-                onlineDiscoveryFailed = false
+                onlineDiscoveryFailed = false,
             )
         }
 
@@ -58,34 +57,42 @@ class RadioEngine(
         if (seedKey.isNotEmpty()) baseSeen.add(seedKey)
 
         return when (mode) {
-            RadioMode.KNOWN -> suggestKnown(
-                seed = seed,
-                library = library,
-                excludeKeys = baseSeen,
-                limit = limit,
-                coPlaylistSongIds = coPlaylistSongIds
-            )
-            RadioMode.NEW -> suggestNew(
-                seed = seed,
-                library = library,
-                excludeKeys = baseSeen,
-                limit = limit,
-                lbToken = lbToken,
-                lbAvailable = lbAvailable,
-                lbUsername = lbUsername,
-                networkAvailable = networkAvailable
-            )
-            RadioMode.BOTH -> suggestBoth(
-                seed = seed,
-                library = library,
-                excludeKeys = baseSeen,
-                limit = limit,
-                lbToken = lbToken,
-                lbAvailable = lbAvailable,
-                lbUsername = lbUsername,
-                networkAvailable = networkAvailable,
-                coPlaylistSongIds = coPlaylistSongIds
-            )
+            RadioMode.KNOWN -> {
+                suggestKnown(
+                    seed = seed,
+                    library = library,
+                    excludeKeys = baseSeen,
+                    limit = limit,
+                    coPlaylistSongIds = coPlaylistSongIds,
+                )
+            }
+
+            RadioMode.NEW -> {
+                suggestNew(
+                    seed = seed,
+                    library = library,
+                    excludeKeys = baseSeen,
+                    limit = limit,
+                    lbToken = lbToken,
+                    lbAvailable = lbAvailable,
+                    lbUsername = lbUsername,
+                    networkAvailable = networkAvailable,
+                )
+            }
+
+            RadioMode.BOTH -> {
+                suggestBoth(
+                    seed = seed,
+                    library = library,
+                    excludeKeys = baseSeen,
+                    limit = limit,
+                    lbToken = lbToken,
+                    lbAvailable = lbAvailable,
+                    lbUsername = lbUsername,
+                    networkAvailable = networkAvailable,
+                    coPlaylistSongIds = coPlaylistSongIds,
+                )
+            }
         }
     }
 
@@ -104,73 +111,78 @@ class RadioEngine(
         lbUsername: String? = null,
         networkAvailable: Boolean = false,
         coPlaylistSongIds: Set<Long> = emptySet(),
-        maxSeeds: Int = MAX_SEEDS
+        maxSeeds: Int = MAX_SEEDS,
     ): RadioSuggestResult {
         if (limit <= 0) {
             return RadioSuggestResult(
                 items = emptyList(),
                 usedOnlineDiscovery = false,
-                onlineDiscoveryFailed = false
+                onlineDiscoveryFailed = false,
             )
         }
-        val validSeeds = seeds
-            .asSequence()
-            .filter { it.artist.isNotBlank() && it.title.isNotBlank() }
-            .distinctBy {
-                TrackMatchKeys.matchKey(it.artist, it.title).ifEmpty { it.mediaId }
-            }
-            .take(maxSeeds)
-            .toList()
+        val validSeeds =
+            seeds
+                .asSequence()
+                .filter { it.artist.isNotBlank() && it.title.isNotBlank() }
+                .distinctBy {
+                    TrackMatchKeys.matchKey(it.artist, it.title).ifEmpty { it.mediaId }
+                }.take(maxSeeds)
+                .toList()
         if (validSeeds.isEmpty()) {
             return RadioSuggestResult(
                 items = emptyList(),
                 usedOnlineDiscovery = false,
-                onlineDiscoveryFailed = false
+                onlineDiscoveryFailed = false,
             )
         }
 
-        val seedKeys = validSeeds.mapNotNull { seed ->
-            TrackMatchKeys.matchKey(seed.artist, seed.title).takeIf { it.isNotEmpty() }
-        }.toSet()
+        val seedKeys =
+            validSeeds
+                .mapNotNull { seed ->
+                    TrackMatchKeys.matchKey(seed.artist, seed.title).takeIf { it.isNotEmpty() }
+                }.toSet()
         val baseExclude = excludeKeys + seedKeys
         val limitPerSeed = (limit + validSeeds.size - 1) / validSeeds.size
 
         // Bounded fan-out with a deadline: sequentially each seed can cost an mbid lookup, an lb-radio
         // call, CF and several Deezer/iTunes round trips, so 10 seeds left the preview spinner up for
         // minutes with nothing but OkHttp timeouts bounding the total.
-        val perSeed = withTimeoutOrNull(SEEDS_TIMEOUT_MS) {
-            val gate = Semaphore(MAX_SEED_CONCURRENCY)
-            coroutineScope {
-                validSeeds.map { seed ->
-                    async {
-                        gate.withPermit {
-                            suggest(
-                                seed = seed,
-                                library = library,
-                                mode = mode,
-                                excludeKeys = baseExclude,
-                                limit = limitPerSeed,
-                                lbToken = lbToken,
-                                lbAvailable = lbAvailable,
-                                lbUsername = lbUsername,
-                                networkAvailable = networkAvailable,
-                                coPlaylistSongIds = coPlaylistSongIds
-                            )
-                        }
-                    }
-                }.awaitAll()
-            }
-        } ?: emptyList()
+        val perSeed =
+            withTimeoutOrNull(SEEDS_TIMEOUT_MS) {
+                val gate = Semaphore(MAX_SEED_CONCURRENCY)
+                coroutineScope {
+                    validSeeds
+                        .map { seed ->
+                            async {
+                                gate.withPermit {
+                                    suggest(
+                                        seed = seed,
+                                        library = library,
+                                        mode = mode,
+                                        excludeKeys = baseExclude,
+                                        limit = limitPerSeed,
+                                        lbToken = lbToken,
+                                        lbAvailable = lbAvailable,
+                                        lbUsername = lbUsername,
+                                        networkAvailable = networkAvailable,
+                                        coPlaylistSongIds = coPlaylistSongIds,
+                                    )
+                                }
+                            }
+                        }.awaitAll()
+                }
+            } ?: emptyList()
 
-        val merged = roundRobinMerge(
-            lists = perSeed.map { it.items },
-            limit = limit,
-            initialSeen = baseExclude
-        )
+        val merged =
+            roundRobinMerge(
+                lists = perSeed.map { it.items },
+                limit = limit,
+                initialSeen = baseExclude,
+            )
         return RadioSuggestResult(
             items = merged,
             usedOnlineDiscovery = perSeed.any { it.usedOnlineDiscovery },
-            onlineDiscoveryFailed = merged.isEmpty() && perSeed.any { it.onlineDiscoveryFailed }
+            onlineDiscoveryFailed = merged.isEmpty() && perSeed.any { it.onlineDiscoveryFailed },
         )
     }
 
@@ -179,19 +191,20 @@ class RadioEngine(
         library: List<Song>,
         excludeKeys: Set<String>,
         limit: Int,
-        coPlaylistSongIds: Set<Long>
+        coPlaylistSongIds: Set<Long>,
     ): RadioSuggestResult {
-        val items = localRadio.suggest(
-            seed = seed,
-            library = library,
-            excludeKeys = excludeKeys,
-            limit = limit,
-            coPlaylistSongIds = coPlaylistSongIds
-        )
+        val items =
+            localRadio.suggest(
+                seed = seed,
+                library = library,
+                excludeKeys = excludeKeys,
+                limit = limit,
+                coPlaylistSongIds = coPlaylistSongIds,
+            )
         return RadioSuggestResult(
             items = items,
             usedOnlineDiscovery = false,
-            onlineDiscoveryFailed = false
+            onlineDiscoveryFailed = false,
         )
     }
 
@@ -203,22 +216,23 @@ class RadioEngine(
         lbToken: String?,
         lbAvailable: Boolean,
         lbUsername: String?,
-        networkAvailable: Boolean
+        networkAvailable: Boolean,
     ): RadioSuggestResult {
-        val remote = fetchRemotes(
-            seed = seed,
-            library = library,
-            excludeKeys = excludeKeys,
-            limit = limit,
-            lbToken = lbToken,
-            lbAvailable = lbAvailable,
-            lbUsername = lbUsername,
-            networkAvailable = networkAvailable
-        )
+        val remote =
+            fetchRemotes(
+                seed = seed,
+                library = library,
+                excludeKeys = excludeKeys,
+                limit = limit,
+                lbToken = lbToken,
+                lbAvailable = lbAvailable,
+                lbUsername = lbUsername,
+                networkAvailable = networkAvailable,
+            )
         return RadioSuggestResult(
             items = remote.items,
             usedOnlineDiscovery = remote.usedOnlineDiscovery,
-            onlineDiscoveryFailed = remote.onlineDiscoveryFailed
+            onlineDiscoveryFailed = remote.onlineDiscoveryFailed,
         )
     }
 
@@ -231,37 +245,39 @@ class RadioEngine(
         lbAvailable: Boolean,
         lbUsername: String?,
         networkAvailable: Boolean,
-        coPlaylistSongIds: Set<Long>
+        coPlaylistSongIds: Set<Long>,
     ): RadioSuggestResult {
-        val localItems = localRadio.suggest(
-            seed = seed,
-            library = library,
-            excludeKeys = excludeKeys,
-            limit = limit,
-            coPlaylistSongIds = coPlaylistSongIds
-        )
-        val remote = fetchRemotes(
-            seed = seed,
-            library = library,
-            excludeKeys = excludeKeys,
-            limit = limit,
-            lbToken = lbToken,
-            lbAvailable = lbAvailable,
-            lbUsername = lbUsername,
-            networkAvailable = networkAvailable
-        )
+        val localItems =
+            localRadio.suggest(
+                seed = seed,
+                library = library,
+                excludeKeys = excludeKeys,
+                limit = limit,
+                coPlaylistSongIds = coPlaylistSongIds,
+            )
+        val remote =
+            fetchRemotes(
+                seed = seed,
+                library = library,
+                excludeKeys = excludeKeys,
+                limit = limit,
+                lbToken = lbToken,
+                lbAvailable = lbAvailable,
+                lbUsername = lbUsername,
+                networkAvailable = networkAvailable,
+            )
         val interleaved = interleaveEquitable(remote.items, localItems, limit)
         return RadioSuggestResult(
             items = interleaved,
             usedOnlineDiscovery = remote.usedOnlineDiscovery,
-            onlineDiscoveryFailed = remote.onlineDiscoveryFailed && localItems.isEmpty()
+            onlineDiscoveryFailed = remote.onlineDiscoveryFailed && localItems.isEmpty(),
         )
     }
 
     private data class RemoteFetch(
         val items: List<PlayableItem.Remote>,
         val usedOnlineDiscovery: Boolean,
-        val onlineDiscoveryFailed: Boolean
+        val onlineDiscoveryFailed: Boolean,
     )
 
     private suspend fun fetchRemotes(
@@ -272,7 +288,7 @@ class RadioEngine(
         lbToken: String?,
         lbAvailable: Boolean,
         lbUsername: String?,
-        networkAvailable: Boolean
+        networkAvailable: Boolean,
     ): RemoteFetch {
         if (limit <= 0) {
             return RemoteFetch(emptyList(), usedOnlineDiscovery = false, onlineDiscoveryFailed = false)
@@ -310,7 +326,7 @@ class RadioEngine(
                     library = library,
                     excludeKeys = seen,
                     limit = limit,
-                    token = token
+                    token = token,
                 )
             }
         }
@@ -327,7 +343,7 @@ class RadioEngine(
                     excludeKeys = seen,
                     limit = limit - remotes.size,
                     username = lbUsername!!,
-                    token = token
+                    token = token,
                 )
             }
         }
@@ -340,7 +356,7 @@ class RadioEngine(
                         seed = seed,
                         library = library,
                         excludeKeys = seen,
-                        limit = limit - remotes.size
+                        limit = limit - remotes.size,
                     )
                 }
             }
@@ -351,7 +367,7 @@ class RadioEngine(
         return RemoteFetch(
             items = remotes,
             usedOnlineDiscovery = usedOnlineDiscovery,
-            onlineDiscoveryFailed = onlineDiscoveryFailed
+            onlineDiscoveryFailed = onlineDiscoveryFailed,
         )
     }
 
@@ -360,7 +376,7 @@ class RadioEngine(
         item: PlayableItem,
         remotes: MutableList<PlayableItem.Remote>,
         seen: MutableSet<String>,
-        limit: Int
+        limit: Int,
     ): Boolean {
         if (remotes.size >= limit) return false
         if (item !is PlayableItem.Remote) return false
@@ -378,6 +394,7 @@ class RadioEngine(
         const val DEFAULT_LIMIT = 30
         const val PREVIEW_DEFAULT_LIMIT = 40
         const val MAX_SEEDS = 10
+
         /** Seeds run in parallel but capped, so 10 seeds do not open 10 provider fan-outs at once. */
         private const val MAX_SEED_CONCURRENCY = 3
         private const val SEEDS_TIMEOUT_MS = 25_000L
@@ -388,7 +405,7 @@ class RadioEngine(
         internal fun roundRobinMerge(
             lists: List<List<PlayableItem>>,
             limit: Int,
-            initialSeen: Set<String>
+            initialSeen: Set<String>,
         ): List<PlayableItem> {
             if (limit <= 0 || lists.isEmpty()) return emptyList()
             val seen = initialSeen.toMutableSet()
@@ -420,7 +437,9 @@ class RadioEngine(
         internal fun interleaveEquitable(
             online: List<PlayableItem>,
             offline: List<PlayableItem>,
-            limit: Int
-        ): List<PlayableItem> = com.bestiapop.android.domain.util.CollectionUtils.interleaveEquitable(online, offline, limit)
+            limit: Int,
+        ): List<PlayableItem> =
+            com.bestiapop.android.domain.util.CollectionUtils
+                .interleaveEquitable(online, offline, limit)
     }
 }

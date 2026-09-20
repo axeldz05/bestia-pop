@@ -59,27 +59,28 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
     LaunchedEffect(Unit) { viewModel.refreshReleases() }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 24.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
     ) {
         UpdateCard {
             Text(
                 text = "Versión instalada",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = BuildConfig.VERSION_NAME,
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = "versionCode ${BuildConfig.VERSION_CODE}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             viewModel.repositoryUrl?.let { url ->
                 Spacer(modifier = Modifier.height(12.dp))
@@ -87,7 +88,7 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Ver el repositorio")
@@ -96,7 +97,7 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
                     text = url.removePrefix("https://"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
         }
@@ -106,19 +107,19 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
         Button(
             onClick = { viewModel.refreshReleases(force = true) },
             enabled = !busy,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             if (notes.loading) {
                 CircularProgressIndicator(
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(18.dp),
-                    color = MaterialTheme.colorScheme.onPrimary
+                    color = MaterialTheme.colorScheme.onPrimary,
                 )
             } else {
                 Icon(
                     imageVector = Icons.Default.SystemUpdate,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
@@ -130,7 +131,7 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
+                color = MaterialTheme.colorScheme.error,
             )
         }
 
@@ -141,13 +142,13 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "Ya tenés la última versión.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -158,34 +159,35 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
             Spacer(modifier = Modifier.height(16.dp))
             UpdateCard(highlighted = true) {
                 Text(
-                    text = if (notes.newer.size == 1) {
-                        "Nueva versión ${latest.versionName}"
-                    } else {
-                        "${notes.newer.size} versiones nuevas desde la tuya"
-                    },
+                    text =
+                        if (notes.newer.size == 1) {
+                            "Nueva versión ${latest.versionName}"
+                        } else {
+                            "${notes.newer.size} versiones nuevas desde la tuya"
+                        },
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 if (target != null) {
                     Button(
                         onClick = { viewModel.startUpdate(target) },
                         enabled = !busy,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
                             if (updateState is AppUpdateUiState.Downloading) {
                                 "Descargando…"
                             } else {
                                 "Actualizar a ${target.versionName}"
-                            }
+                            },
                         )
                     }
                 } else {
                     Text(
                         text = "El release no trae APK: descargalo desde GitHub.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -195,7 +197,7 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
             notes.newer.forEach { release ->
                 ReleaseNotesCard(
                     release = release,
-                    onOpen = release.htmlUrl?.let { url -> { openUrl(context, url) } }
+                    onOpen = release.htmlUrl?.let { url -> { openUrl(context, url) } },
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -206,19 +208,21 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
         UpdateCard {
             val currentNotes = notes.currentNotes?.trim().orEmpty()
             Text(
-                text = currentNotes.ifBlank {
-                    if (notes.loading) {
-                        "Buscando las notas en GitHub…"
-                    } else {
-                        "Todavía no hay notas publicadas para esta versión."
-                    }
-                },
+                text =
+                    currentNotes.ifBlank {
+                        if (notes.loading) {
+                            "Buscando las notas en GitHub…"
+                        } else {
+                            "Todavía no hay notas publicadas para esta versión."
+                        }
+                    },
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (currentNotes.isBlank()) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                }
+                color =
+                    if (currentNotes.isBlank()) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
             )
         }
     }
@@ -227,25 +231,25 @@ fun AppUpdateScreen(viewModel: AppUpdateViewModel) {
 @Composable
 private fun ReleaseNotesCard(
     release: AppRelease,
-    onOpen: (() -> Unit)?
+    onOpen: (() -> Unit)?,
 ) {
     UpdateCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = release.versionName,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 releaseSubtitle(release)?.let {
                     Text(
                         text = it,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -254,7 +258,7 @@ private fun ReleaseNotesCard(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                         contentDescription = "Ver en GitHub",
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
@@ -263,7 +267,7 @@ private fun ReleaseNotesCard(
         Text(
             text = release.notes?.trim()?.ifBlank { null } ?: "Sin notas publicadas.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
@@ -274,39 +278,45 @@ private fun SectionTitle(text: String) {
         text = text,
         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.onBackground,
-        modifier = Modifier.padding(bottom = 8.dp)
+        modifier = Modifier.padding(bottom = 8.dp),
     )
 }
 
 @Composable
 private fun UpdateCard(
     highlighted: Boolean = false,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (highlighted) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-            }
-        ),
-        modifier = Modifier.fillMaxWidth()
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    if (highlighted) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    },
+            ),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) { content() }
     }
 }
 
 private fun releaseSubtitle(release: AppRelease): String? {
-    val date = release.publishedAtMs?.let {
-        SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(it))
-    }
+    val date =
+        release.publishedAtMs?.let {
+            SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(it))
+        }
     val code = release.versionCode?.let { "versionCode $it" }
     return listOfNotNull(date, code).joinToString(" · ").ifBlank { null }
 }
 
-private fun openUrl(context: Context, url: String) {
+private fun openUrl(
+    context: Context,
+    url: String,
+) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
     } catch (_: ActivityNotFoundException) {

@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.playlist
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -13,7 +14,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
@@ -34,9 +34,10 @@ class PlaylistCrudE2ETest {
     private val ui = ComposeE2EProbe(composeRule, UI_TIMEOUT_MS, fixture::diagnostic)
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeRule)
 
     @Before
     fun setUp() {
@@ -58,9 +59,11 @@ class PlaylistCrudE2ETest {
 
         composeRule.onNodeWithContentDescription("Crear Playlist").performClick()
         composeRule.onNodeWithText("Nueva Playlist").assertIsDisplayed()
-        composeRule.onNodeWithTag("playlist-name-input")
+        composeRule
+            .onNodeWithTag("playlist-name-input")
             .performTextInput(fixture.playlistName)
-        composeRule.onNodeWithTag("playlist-description-input")
+        composeRule
+            .onNodeWithTag("playlist-description-input")
             .performTextInput(fixture.playlistDescription)
         closeSoftKeyboard()
         composeRule.onNodeWithText("Crear").performClick()
@@ -73,9 +76,11 @@ class PlaylistCrudE2ETest {
 
         composeRule.onNodeWithContentDescription("Editar playlist").performClick()
         composeRule.onNodeWithText("Editar Playlist").assertIsDisplayed()
-        composeRule.onNodeWithTag("playlist-name-input")
+        composeRule
+            .onNodeWithTag("playlist-name-input")
             .performTextReplacement(fixture.renamedPlaylistName)
-        composeRule.onNodeWithTag("playlist-description-input")
+        composeRule
+            .onNodeWithTag("playlist-description-input")
             .performTextReplacement(fixture.renamedDescription)
         closeSoftKeyboard()
         composeRule.onNodeWithText("Guardar").performClick()
@@ -92,10 +97,11 @@ class PlaylistCrudE2ETest {
                 fixture.songTitles.all { ui.exists(hasText(it)) }
         }
         fixture.songTitles.forEach { title ->
-            val selectableLibraryRows = composeRule.onAllNodes(
-                hasText(title) and
-                    SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick)
-            )
+            val selectableLibraryRows =
+                composeRule.onAllNodes(
+                    hasText(title) and
+                        SemanticsMatcher.keyIsDefined(SemanticsActions.OnLongClick),
+                )
             selectableLibraryRows.assertCountEquals(1)
             selectableLibraryRows[0].performClick()
         }

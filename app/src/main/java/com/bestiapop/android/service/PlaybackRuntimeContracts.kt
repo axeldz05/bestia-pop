@@ -30,12 +30,15 @@ internal fun controllerReconnectBackoffMs(attempt: Int): Long {
 
 /** Keep already-hydrated LRC when the library row is identity-slim (`lyrics` null). */
 internal fun Song.keepLyricsIfIncomingSlim(incoming: Song): Song =
-    if (incoming.lyrics.isNullOrEmpty() && !lyrics.isNullOrEmpty()) incoming.copy(lyrics = lyrics)
-    else incoming
+    if (incoming.lyrics.isNullOrEmpty() && !lyrics.isNullOrEmpty()) {
+        incoming.copy(lyrics = lyrics)
+    } else {
+        incoming
+    }
 
 internal fun refreshLocalQueueMetadata(
     queue: List<PlayableItem>,
-    songs: List<Song>
+    songs: List<Song>,
 ): List<PlayableItem> {
     val localItems = queue.filterIsInstance<PlayableItem.Local>()
     if (localItems.isEmpty() || songs.isEmpty()) return queue
@@ -58,14 +61,18 @@ internal fun refreshLocalQueueMetadata(
     }
     return queue.map { item ->
         if (item !is PlayableItem.Local) return@map item
-        val idMatch = item.song.id.takeIf { it > 0L }?.let(byId::get)
+        val idMatch =
+            item.song.id
+                .takeIf { it > 0L }
+                ?.let(byId::get)
         val uriMatch = byUri[item.song.uriString]
-        val refreshed = when {
-            idMatch == null -> uriMatch
-            uriMatch == null -> idMatch
-            idMatch.index <= uriMatch.index -> idMatch
-            else -> uriMatch
-        }?.value
+        val refreshed =
+            when {
+                idMatch == null -> uriMatch
+                uriMatch == null -> idMatch
+                idMatch.index <= uriMatch.index -> idMatch
+                else -> uriMatch
+            }?.value
         refreshed?.let { incoming ->
             item.copy(song = item.song.keepLyricsIfIncomingSlim(incoming))
         } ?: item
@@ -79,7 +86,7 @@ internal fun refreshLocalQueueMetadata(
  */
 internal fun reorderAlbumQueueByTrackNumber(
     queue: List<PlayableItem>,
-    isShuffle: Boolean
+    isShuffle: Boolean,
 ): List<PlayableItem>? {
     if (isShuffle || queue.size < 2) return null
     val firstLocal = queue.firstOrNull() as? PlayableItem.Local ?: return null
@@ -88,48 +95,76 @@ internal fun reorderAlbumQueueByTrackNumber(
     if (!queue.all { it is PlayableItem.Local && albumNamesMatch(it.song.album, firstAlbum) }) {
         return null
     }
-    val sorted = queue.sortedWith { a, b ->
-        compareSongsWithinAlbum(
-            (a as PlayableItem.Local).song,
-            (b as PlayableItem.Local).song
-        )
-    }
+    val sorted =
+        queue.sortedWith { a, b ->
+            compareSongsWithinAlbum(
+                (a as PlayableItem.Local).song,
+                (b as PlayableItem.Local).song,
+            )
+        }
     return if (sorted != queue) sorted else null
 }
 
 internal interface PlaybackRuntimePersistence {
     suspend fun loadLastPlayed(): LastPlayedSnapshot? = null
+
     suspend fun loadQueue(): QueueSnapshot? = null
+
     suspend fun saveSession(
         lastPlayed: LastPlayedSnapshot?,
         queue: QueueSnapshot?,
-        clearQueue: Boolean
+        clearQueue: Boolean,
     ) = Unit
 }
 
 internal interface PlaybackRuntimeListenTracker {
-    fun onTrackChanged(song: Song?, hint: PlaybackChangeHint)
-    fun onDurationKnown(songId: Long, durationMs: Long)
-    fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long)
+    fun onTrackChanged(
+        song: Song?,
+        hint: PlaybackChangeHint,
+    )
+
+    fun onDurationKnown(
+        songId: Long,
+        durationMs: Long,
+    )
+
+    fun onPlaybackTick(
+        isPlaying: Boolean,
+        elapsedRealtimeMs: Long,
+    )
+
     fun onStopped()
+
     fun creditPlaybackTime(timeMs: Long) = Unit
 }
 
 internal sealed interface SaveWhileListeningDownloadResult {
-    data class Saved(val song: Song) : SaveWhileListeningDownloadResult
-    data class InFlight(val downloadId: String) : SaveWhileListeningDownloadResult
-    data class Failed(val error: Throwable) : SaveWhileListeningDownloadResult
+    data class Saved(
+        val song: Song,
+    ) : SaveWhileListeningDownloadResult
+
+    data class InFlight(
+        val downloadId: String,
+    ) : SaveWhileListeningDownloadResult
+
+    data class Failed(
+        val error: Throwable,
+    ) : SaveWhileListeningDownloadResult
 }
 
 internal interface PlaybackRuntimeSaveDownloads {
     val downloads: StateFlow<List<ActiveDownload>>
+
     suspend fun save(remote: PlayableItem.Remote): SaveWhileListeningDownloadResult
+
     fun dismiss(id: String)
 }
 
 internal interface PlaybackRuntimeStreamAccess {
     fun needsResolve(item: PlayableItem.Remote): Boolean
+
     suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote?
+
     suspend fun invalidate(item: PlayableItem.Remote)
 }
 
@@ -140,7 +175,7 @@ internal data class PlaybackRuntimeRadioRequest(
     val excludeKeys: Set<String>,
     val settings: ListenBrainzSettings,
     val timeoutMs: Long,
-    val coPlaylistSongIds: Set<Long>
+    val coPlaylistSongIds: Set<Long>,
 )
 
 internal fun interface PlaybackRuntimeRadioSuggester {
@@ -155,25 +190,41 @@ internal data class PlaybackRuntimeDependencies(
     val listenSettings: StateFlow<ListenBrainzSettings> = MutableStateFlow(ListenBrainzSettings()),
     val listenSettingsReady: StateFlow<Boolean> = MutableStateFlow(true),
     val persistence: PlaybackRuntimePersistence = object : PlaybackRuntimePersistence {},
-    val listenTracker: PlaybackRuntimeListenTracker = object : PlaybackRuntimeListenTracker {
-        override fun onTrackChanged(song: Song?, hint: PlaybackChangeHint) = Unit
-        override fun onDurationKnown(songId: Long, durationMs: Long) = Unit
-        override fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long) = Unit
-        override fun onStopped() = Unit
-    },
-    val streamAccess: PlaybackRuntimeStreamAccess,
-    val saveDownloads: PlaybackRuntimeSaveDownloads = object : PlaybackRuntimeSaveDownloads {
-        override val downloads = MutableStateFlow<List<ActiveDownload>>(emptyList())
-        override suspend fun save(remote: PlayableItem.Remote): SaveWhileListeningDownloadResult =
-            SaveWhileListeningDownloadResult.Failed(
-                IllegalStateException("Save while listening unavailable")
-            )
+    val listenTracker: PlaybackRuntimeListenTracker =
+        object : PlaybackRuntimeListenTracker {
+            override fun onTrackChanged(
+                song: Song?,
+                hint: PlaybackChangeHint,
+            ) = Unit
 
-        override fun dismiss(id: String) = Unit
-    },
-    val radioSuggester: PlaybackRuntimeRadioSuggester = PlaybackRuntimeRadioSuggester {
-        RadioSuggestResult(emptyList(), usedOnlineDiscovery = false, onlineDiscoveryFailed = false)
-    },
+            override fun onDurationKnown(
+                songId: Long,
+                durationMs: Long,
+            ) = Unit
+
+            override fun onPlaybackTick(
+                isPlaying: Boolean,
+                elapsedRealtimeMs: Long,
+            ) = Unit
+
+            override fun onStopped() = Unit
+        },
+    val streamAccess: PlaybackRuntimeStreamAccess,
+    val saveDownloads: PlaybackRuntimeSaveDownloads =
+        object : PlaybackRuntimeSaveDownloads {
+            override val downloads = MutableStateFlow<List<ActiveDownload>>(emptyList())
+
+            override suspend fun save(remote: PlayableItem.Remote): SaveWhileListeningDownloadResult =
+                SaveWhileListeningDownloadResult.Failed(
+                    IllegalStateException("Save while listening unavailable"),
+                )
+
+            override fun dismiss(id: String) = Unit
+        },
+    val radioSuggester: PlaybackRuntimeRadioSuggester =
+        PlaybackRuntimeRadioSuggester {
+            RadioSuggestResult(emptyList(), usedOnlineDiscovery = false, onlineDiscoveryFailed = false)
+        },
     val resolveCoPlaylistSongIds: suspend (PlayableItem) -> Set<Long> = { emptySet() },
     val isOnline: () -> Boolean = { false },
     val persistShuffle: suspend (Boolean) -> Unit = {},
@@ -188,17 +239,17 @@ internal data class PlaybackRuntimeDependencies(
     val clockMs: () -> Long = System::currentTimeMillis,
     val elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime,
     val controllerReconnectBackoffMs: (attempt: Int) -> Long = ::controllerReconnectBackoffMs,
-    val startTicker: Boolean = true
+    val startTicker: Boolean = true,
 )
 
 internal data class PlaybackPersistenceRequest(
     val lastPlayed: LastPlayedSnapshot?,
     val queue: QueueSnapshot?,
-    val clearQueue: Boolean
+    val clearQueue: Boolean,
 )
 
 internal data class PersistedCollectionProjection(
     val snapshot: PlaybackCollectionSnapshot,
     val hydratedQueue: HydratedQueue? = null,
-    val restoreShuffle: Boolean = false
+    val restoreShuffle: Boolean = false,
 )

@@ -24,7 +24,7 @@ class CatalogSearchCoordinator(
     private val scope: CoroutineScope,
     private val isOnline: () -> Boolean,
     private val onNotifyToast: (String) -> Unit,
-    private val onSaveRecentSearch: (String) -> Unit
+    private val onSaveRecentSearch: (String) -> Unit,
 ) {
     private val _state = MutableStateFlow(CatalogSearchUiState())
     val state: StateFlow<CatalogSearchUiState> = _state.asStateFlow()
@@ -75,7 +75,7 @@ class CatalogSearchCoordinator(
             it.copy(
                 searchFilterArtist = "",
                 searchFilterAlbum = "",
-                searchFilterYear = ""
+                searchFilterYear = "",
             )
         }
     }
@@ -87,7 +87,7 @@ class CatalogSearchCoordinator(
     fun searchDebounced(
         query: String = _state.value.searchQueryDraft,
         filters: IdentifySearchFilters = _state.value.searchFilters,
-        debounceMs: Long = 350L
+        debounceMs: Long = 350L,
     ) {
         catalogDebounceJob?.cancel()
         val cleanQ = query.trim()
@@ -95,15 +95,16 @@ class CatalogSearchCoordinator(
             search(query = "", filters = filters, saveToRecent = false)
             return
         }
-        catalogDebounceJob = scope.launch {
-            delay(debounceMs)
-            search(query = cleanQ, filters = filters, saveToRecent = false)
-        }
+        catalogDebounceJob =
+            scope.launch {
+                delay(debounceMs)
+                search(query = cleanQ, filters = filters, saveToRecent = false)
+            }
     }
 
     fun submitSearch(
         query: String = _state.value.searchQueryDraft,
-        filters: IdentifySearchFilters = _state.value.searchFilters
+        filters: IdentifySearchFilters = _state.value.searchFilters,
     ) {
         search(query = query, filters = filters, saveToRecent = true)
     }
@@ -111,7 +112,7 @@ class CatalogSearchCoordinator(
     fun search(
         query: String = _state.value.searchQueryDraft,
         filters: IdentifySearchFilters = _state.value.searchFilters,
-        saveToRecent: Boolean = false
+        saveToRecent: Boolean = false,
     ) {
         catalogDebounceJob?.cancel()
         lastQuery = query
@@ -125,50 +126,53 @@ class CatalogSearchCoordinator(
         val generation = ++catalogSearchGeneration
         val category = _state.value.category
         catalogSearchJob?.cancel()
-        catalogSearchJob = scope.launch {
-            _state.update { it.copy(isSearching = true, canLoadMore = true, isLoadingMore = false) }
-            when (category) {
-                CatalogCategory.SONGS -> {
-                    val results = if (effectiveQuery.isEmpty() && !normalizedFilters.hasAny) {
-                        MetadataFetcher.getFeaturedDemoCatalog()
-                    } else {
-                        MetadataFetcher.searchOnlineCatalog(effectiveQuery)
+        catalogSearchJob =
+            scope.launch {
+                _state.update { it.copy(isSearching = true, canLoadMore = true, isLoadingMore = false) }
+                when (category) {
+                    CatalogCategory.SONGS -> {
+                        val results =
+                            if (effectiveQuery.isEmpty() && !normalizedFilters.hasAny) {
+                                MetadataFetcher.getFeaturedDemoCatalog()
+                            } else {
+                                MetadataFetcher.searchOnlineCatalog(effectiveQuery)
+                            }
+                        updateIfCurrent(generation) { it.copy(tracks = results, canLoadMore = results.isNotEmpty()) }
                     }
-                    updateIfCurrent(generation) { it.copy(tracks = results, canLoadMore = results.isNotEmpty()) }
-                }
 
-                CatalogCategory.ALBUMS -> {
-                    val albumQuery = if (effectiveQuery.isNotEmpty()) effectiveQuery else cleanQ
-                    val results = MetadataFetcher.searchAlbums(albumQuery)
-                    updateIfCurrent(generation) { it.copy(albums = results, canLoadMore = results.isNotEmpty()) }
-                }
-
-                CatalogCategory.PLAYLISTS -> {
-                    val playlistQuery = if (cleanQ.isNotEmpty()) cleanQ else effectiveQuery
-                    val results = MetadataFetcher.searchPlaylists(playlistQuery)
-                    updateIfCurrent(generation) { it.copy(playlists = results) }
-                }
-
-                CatalogCategory.GENRES -> {
-                    val genres = MetadataFetcher.listGenres()
-                    val results = if (cleanQ.isEmpty()) {
-                        genres
-                    } else {
-                        genres.filter { TrackMatchKeys.containsNormalized(it.name, cleanQ) }
+                    CatalogCategory.ALBUMS -> {
+                        val albumQuery = if (effectiveQuery.isNotEmpty()) effectiveQuery else cleanQ
+                        val results = MetadataFetcher.searchAlbums(albumQuery)
+                        updateIfCurrent(generation) { it.copy(albums = results, canLoadMore = results.isNotEmpty()) }
                     }
-                    updateIfCurrent(generation) { it.copy(genres = results) }
-                }
 
-                CatalogCategory.CHARTS -> {
-                    val results = MetadataFetcher.fetchChartTracks()
-                    updateIfCurrent(generation) { it.copy(tracks = results) }
+                    CatalogCategory.PLAYLISTS -> {
+                        val playlistQuery = if (cleanQ.isNotEmpty()) cleanQ else effectiveQuery
+                        val results = MetadataFetcher.searchPlaylists(playlistQuery)
+                        updateIfCurrent(generation) { it.copy(playlists = results) }
+                    }
+
+                    CatalogCategory.GENRES -> {
+                        val genres = MetadataFetcher.listGenres()
+                        val results =
+                            if (cleanQ.isEmpty()) {
+                                genres
+                            } else {
+                                genres.filter { TrackMatchKeys.containsNormalized(it.name, cleanQ) }
+                            }
+                        updateIfCurrent(generation) { it.copy(genres = results) }
+                    }
+
+                    CatalogCategory.CHARTS -> {
+                        val results = MetadataFetcher.fetchChartTracks()
+                        updateIfCurrent(generation) { it.copy(tracks = results) }
+                    }
+                }
+                updateIfCurrent(generation) { it.copy(isSearching = false) }
+                if (_state.value.currentResultsAreEmpty() && !isOnline()) {
+                    onNotifyToast("Sin conexión: no se pudo buscar en el catálogo")
                 }
             }
-            updateIfCurrent(generation) { it.copy(isSearching = false) }
-            if (_state.value.currentResultsAreEmpty() && !isOnline()) {
-                onNotifyToast("Sin conexión: no se pudo buscar en el catálogo")
-            }
-        }
     }
 
     fun searchMore() {
@@ -204,7 +208,9 @@ class CatalogSearchCoordinator(
 
                     // 2. Also search YouTube and iTunes for deep search if Deezer provided few or none
                     if (newTracks.size < 10) {
-                        val ytTracks = com.bestiapop.android.data.network.YouTubeExtractor.searchYouTube(effectiveQuery)
+                        val ytTracks =
+                            com.bestiapop.android.data.network.YouTubeExtractor
+                                .searchYouTube(effectiveQuery)
                         appendDeduplicated(ytTracks)
 
                         val itunesTracks = MetadataFetcher.searchItunesSongs(effectiveQuery, limit = 20)
@@ -215,7 +221,7 @@ class CatalogSearchCoordinator(
                         s.copy(
                             tracks = s.tracks + newTracks,
                             isLoadingMore = false,
-                            canLoadMore = newTracks.isNotEmpty()
+                            canLoadMore = newTracks.isNotEmpty(),
                         )
                     }
                 }
@@ -230,7 +236,7 @@ class CatalogSearchCoordinator(
                         s.copy(
                             albums = s.albums + newAlbums,
                             isLoadingMore = false,
-                            canLoadMore = newAlbums.isNotEmpty()
+                            canLoadMore = newAlbums.isNotEmpty(),
                         )
                     }
                 }
@@ -244,7 +250,7 @@ class CatalogSearchCoordinator(
 
     private inline fun updateIfCurrent(
         generation: Long,
-        crossinline transform: (CatalogSearchUiState) -> CatalogSearchUiState
+        crossinline transform: (CatalogSearchUiState) -> CatalogSearchUiState,
     ) {
         if (generation == catalogSearchGeneration) {
             _state.update { transform(it) }

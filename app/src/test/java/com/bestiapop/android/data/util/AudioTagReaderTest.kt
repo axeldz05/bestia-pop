@@ -10,7 +10,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 class AudioTagReaderTest {
-
     @get:Rule
     val folder = TemporaryFolder()
 
@@ -39,7 +38,7 @@ class AudioTagReaderTest {
             dest = file,
             title = "ブラックホール / Black Hole",
             artist = "namitape; Kaai Yuki",
-            album = "Flitter"
+            album = "Flitter",
         )
         val tags = checkNotNull(AudioTagReader.read(file))
         assertEquals("ブラックホール / Black Hole", tags.title)
@@ -55,14 +54,15 @@ class AudioTagReaderTest {
 
     @Test
     fun fromRawTags_keepsId3OverStrippedFilename() {
-        val raw = RawAudioTags(
-            title = "ブラックホール / Black Hole",
-            artist = "namitape; Kaai Yuki",
-            album = "Flitter",
-            genre = "Electronica; Vocaloid",
-            year = 2023,
-            trackNumber = 2
-        )
+        val raw =
+            RawAudioTags(
+                title = "ブラックホール / Black Hole",
+                artist = "namitape; Kaai Yuki",
+                album = "Flitter",
+                genre = "Electronica; Vocaloid",
+                year = 2023,
+                trackNumber = 2,
+            )
         val meta = AudioFileMetadata.fromRawTags(raw, "02__________Black_Hole_")
         assertEquals("namitape; Kaai Yuki", meta.artist)
         assertEquals("Flitter", meta.album)

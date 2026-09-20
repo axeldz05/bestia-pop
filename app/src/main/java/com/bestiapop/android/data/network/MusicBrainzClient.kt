@@ -22,45 +22,56 @@ import java.util.concurrent.atomic.AtomicInteger
 
 internal data class MusicBrainzEndpoints(
     val apiBaseUrl: String = "https://musicbrainz.org/ws/2",
-    val coverArtBaseUrl: String = "https://coverartarchive.org"
+    val coverArtBaseUrl: String = "https://coverartarchive.org",
 )
 
-private data class MbGetResult(val json: JSONObject? = null, val failed: Boolean)
-private data class MbSearchResult(val tracks: List<OnlineCatalogTrack>, val failed: Boolean)
+private data class MbGetResult(
+    val json: JSONObject? = null,
+    val failed: Boolean,
+)
+
+private data class MbSearchResult(
+    val tracks: List<OnlineCatalogTrack>,
+    val failed: Boolean,
+)
 
 /**
  * MusicBrainz WS2 search for identify only. Public rate limit is 1 req/s/IP;
  * all callers share one mutex so IDENTIFY_PARALLEL cannot burst.
  */
 object MusicBrainzClient {
-
     private const val DEFAULT_INTERVAL_MS = 1_100L
     private const val FAIL_FAST_AFTER = 3
     private const val SKIP_AFTER_FAIL_MS = 5 * 60_000L
 
-    private val defaultClient = HttpClients.api.newBuilder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
-        .callTimeout(10, TimeUnit.SECONDS)
-        .build()
+    private val defaultClient =
+        HttpClients.api
+            .newBuilder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(10, TimeUnit.SECONDS)
+            .build()
 
     @Volatile
     private var client: OkHttpClient = defaultClient
+
     @Volatile
     private var endpoints = MusicBrainzEndpoints()
+
     @Volatile
     private var minIntervalMs = DEFAULT_INTERVAL_MS
 
     private val mutex = Mutex()
     private var lastRequestAtMs = 0L
     private val consecutiveFailures = AtomicInteger(0)
+
     @Volatile
     private var skipUntilMs = 0L
 
     internal fun configureForTest(
         http: OkHttpClient,
         endpoints: MusicBrainzEndpoints,
-        minIntervalMs: Long = 0L
+        minIntervalMs: Long = 0L,
     ) {
         client = http
         this.endpoints = endpoints
@@ -82,65 +93,73 @@ object MusicBrainzClient {
     suspend fun searchRecordings(
         query: String,
         durationMs: Long? = null,
-        limit: Int = 25
-    ): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
-        val cleaned = query.trim()
-        if (cleaned.isEmpty() || endpoints.apiBaseUrl.isBlank()) return@withContext emptyList()
-        if (nowMs() < skipUntilMs) return@withContext emptyList()
-        val pageLimit = limit.coerceIn(1, 100)
-        val withDur = durationMs?.takeIf { it > 0L }
-        val first = searchOnce(luceneRecordingQuery(cleaned, withDur), pageLimit)
-        if (first.failed) {
-            noteFailure()
-            return@withContext emptyList()
+        limit: Int = 25,
+    ): List<OnlineCatalogTrack> =
+        withContext(Dispatchers.IO) {
+            val cleaned = query.trim()
+            if (cleaned.isEmpty() || endpoints.apiBaseUrl.isBlank()) return@withContext emptyList()
+            if (nowMs() < skipUntilMs) return@withContext emptyList()
+            val pageLimit = limit.coerceIn(1, 100)
+            val withDur = durationMs?.takeIf { it > 0L }
+            val first = searchOnce(luceneRecordingQuery(cleaned, withDur), pageLimit)
+            if (first.failed) {
+                noteFailure()
+                return@withContext emptyList()
+            }
+            noteSuccess()
+            if (first.tracks.isNotEmpty() || withDur == null) return@withContext first.tracks
+            val second = searchOnce(luceneRecordingQuery(cleaned, durationMs = null), pageLimit)
+            if (second.failed) {
+                noteFailure()
+                return@withContext emptyList()
+            }
+            noteSuccess()
+            second.tracks
         }
-        noteSuccess()
-        if (first.tracks.isNotEmpty() || withDur == null) return@withContext first.tracks
-        val second = searchOnce(luceneRecordingQuery(cleaned, durationMs = null), pageLimit)
-        if (second.failed) {
-            noteFailure()
-            return@withContext emptyList()
-        }
-        noteSuccess()
-        second.tracks
-    }
 
-    private suspend fun searchOnce(lucene: String, limit: Int): MbSearchResult {
-        val url = endpoint(
-            "recording/?query=${encode(lucene)}&fmt=json&limit=$limit"
-        )
+    private suspend fun searchOnce(
+        lucene: String,
+        limit: Int,
+    ): MbSearchResult {
+        val url =
+            endpoint(
+                "recording/?query=${encode(lucene)}&fmt=json&limit=$limit",
+            )
         val got = throttledGet(url)
         if (got.failed) return MbSearchResult(emptyList(), failed = true)
         val json = got.json ?: return MbSearchResult(emptyList(), failed = false)
         return MbSearchResult(
             tracks = parseMusicBrainzRecordingSearch(json, endpoints.coverArtBaseUrl),
-            failed = false
+            failed = false,
         )
     }
 
-    private suspend fun throttledGet(url: String): MbGetResult = mutex.withLock {
-        val wait = lastRequestAtMs + minIntervalMs - nowMs()
-        if (wait > 0L) delay(wait)
-        try {
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", userAgent())
-                .header("Accept", "application/json")
-                .get()
-                .build()
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) return@withLock MbGetResult(failed = true)
-                if (body.isBlank()) return@withLock MbGetResult(failed = false)
-                MbGetResult(json = JSONObject(body), failed = false)
+    private suspend fun throttledGet(url: String): MbGetResult =
+        mutex.withLock {
+            val wait = lastRequestAtMs + minIntervalMs - nowMs()
+            if (wait > 0L) delay(wait)
+            try {
+                val request =
+                    Request
+                        .Builder()
+                        .url(url)
+                        .header("User-Agent", userAgent())
+                        .header("Accept", "application/json")
+                        .get()
+                        .build()
+                client.newCall(request).execute().use { response ->
+                    val body = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) return@withLock MbGetResult(failed = true)
+                    if (body.isBlank()) return@withLock MbGetResult(failed = false)
+                    MbGetResult(json = JSONObject(body), failed = false)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                MbGetResult(failed = true)
+            } finally {
+                lastRequestAtMs = nowMs()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            MbGetResult(failed = true)
-        } finally {
-            lastRequestAtMs = nowMs()
         }
-    }
 
     private fun noteFailure() {
         if (consecutiveFailures.incrementAndGet() >= FAIL_FAST_AFTER) {
@@ -154,13 +173,15 @@ object MusicBrainzClient {
         skipUntilMs = 0L
     }
 
-    private fun endpoint(pathAndQuery: String): String =
-        "${endpoints.apiBaseUrl.trimEnd('/')}/${pathAndQuery.trimStart('/')}"
+    private fun endpoint(pathAndQuery: String): String = "${endpoints.apiBaseUrl.trimEnd('/')}/${pathAndQuery.trimStart('/')}"
 
     private fun nowMs(): Long = System.nanoTime() / 1_000_000L
 }
 
-internal fun luceneRecordingQuery(text: String, durationMs: Long?): String {
+internal fun luceneRecordingQuery(
+    text: String,
+    durationMs: Long?,
+): String {
     val rec = "recording:\"${escapeLucene(text)}\""
     if (durationMs == null || durationMs <= 0L) return rec
     val lo = (durationMs - 2_000L).coerceAtLeast(0L)
@@ -170,7 +191,7 @@ internal fun luceneRecordingQuery(text: String, durationMs: Long?): String {
 
 internal fun parseMusicBrainzRecordingSearch(
     json: JSONObject,
-    coverArtBaseUrl: String = "https://coverartarchive.org"
+    coverArtBaseUrl: String = "https://coverartarchive.org",
 ): List<OnlineCatalogTrack> {
     val recordings = json.optJSONArray("recordings") ?: return emptyList()
     if (recordings.length() == 0) return emptyList()
@@ -185,7 +206,7 @@ internal fun parseMusicBrainzRecordingSearch(
 internal fun coverArtArchiveUrl(
     releaseMbid: String,
     caaId: Long? = null,
-    baseUrl: String = "https://coverartarchive.org"
+    baseUrl: String = "https://coverartarchive.org",
 ): String =
     if (caaId != null && caaId > 0) {
         "${baseUrl.trimEnd('/')}/release/$releaseMbid/$caaId-500.jpg"
@@ -193,7 +214,10 @@ internal fun coverArtArchiveUrl(
         "${baseUrl.trimEnd('/')}/release/$releaseMbid/front-500"
     }
 
-private fun toCatalogTrack(rec: JSONObject, coverArtBaseUrl: String): OnlineCatalogTrack? {
+private fun toCatalogTrack(
+    rec: JSONObject,
+    coverArtBaseUrl: String,
+): OnlineCatalogTrack? {
     val recordingId = rec.optString("id").trim()
     val title = rec.optString("title").trim()
     if (recordingId.isEmpty() || title.isEmpty()) return null
@@ -203,36 +227,46 @@ private fun toCatalogTrack(rec: JSONObject, coverArtBaseUrl: String): OnlineCata
     val release = pickBestRelease(rec.optJSONArray("releases"))
     val releaseId = release?.optString("id")?.trim().orEmpty()
     val album = release?.optString("title")?.trim().orEmpty()
-    val artworkUri = releaseId.takeIf { it.isNotEmpty() }?.let {
-        coverArtArchiveUrl(it, baseUrl = coverArtBaseUrl)
-    }
+    val artworkUri =
+        releaseId.takeIf { it.isNotEmpty() }?.let {
+            coverArtArchiveUrl(it, baseUrl = coverArtBaseUrl)
+        }
     val year = MetadataFetcher.parseReleaseYear(release?.optString("date"))
     val trackNumber = release?.let { extractTrackNumber(it, title) } ?: 0
 
     val durationMs = rec.optLong("length", 0L).coerceAtLeast(0L)
     val bilingualTitle = bilingualFromAliases(title, rec.optJSONArray("aliases"))
 
-    val identity = TrackIdentity(
-        title = bilingualTitle,
-        artist = artist,
-        album = album,
-        artworkUri = artworkUri,
-        durationMs = durationMs,
-        trackNumber = trackNumber
-    )
+    val identity =
+        TrackIdentity(
+            title = bilingualTitle,
+            artist = artist,
+            album = album,
+            artworkUri = artworkUri,
+            durationMs = durationMs,
+            trackNumber = trackNumber,
+        )
     return OnlineCatalogTrack(
         identity = identity,
         id = recordingId,
         audioUrl = identity.youtubeSearchQuery(),
         provider = "MusicBrainz",
-        year = year
+        year = year,
     )
 }
 
-private fun bilingualFromAliases(title: String, aliases: JSONArray?): String {
+private fun bilingualFromAliases(
+    title: String,
+    aliases: JSONArray?,
+): String {
     if (aliases == null || aliases.length() == 0) return title
     for (i in 0 until aliases.length()) {
-        val name = aliases.optJSONObject(i)?.optString("name")?.trim().orEmpty()
+        val name =
+            aliases
+                .optJSONObject(i)
+                ?.optString("name")
+                ?.trim()
+                .orEmpty()
         if (name.isEmpty()) continue
         val merged = IdentifyRanking.preferBilingualTitle(title, name)
         if (merged != title) return merged
@@ -245,9 +279,12 @@ private fun artistCreditName(credits: JSONArray?): String {
     return buildString {
         for (i in 0 until credits.length()) {
             val item = credits.optJSONObject(i) ?: continue
-            val name = item.optString("name").ifBlank {
-                item.optJSONObject("artist")?.optString("name").orEmpty()
-            }.trim()
+            val name =
+                item
+                    .optString("name")
+                    .ifBlank {
+                        item.optJSONObject("artist")?.optString("name").orEmpty()
+                    }.trim()
             if (name.isEmpty()) continue
             append(name)
             append(item.optString("joinphrase"))
@@ -280,7 +317,10 @@ private fun pickBestRelease(releases: JSONArray?): JSONObject? {
     return bestRel
 }
 
-private fun extractTrackNumber(release: JSONObject, recordingTitle: String): Int {
+private fun extractTrackNumber(
+    release: JSONObject,
+    recordingTitle: String,
+): Int {
     val media = release.optJSONArray("media") ?: return 0
     for (i in 0 until media.length()) {
         val medium = media.optJSONObject(i) ?: continue
@@ -311,9 +351,27 @@ private fun parseTrackNumber(track: JSONObject): Int =
         ?: track.optInt("position", 0)
 
 private fun escapeLucene(raw: String): String {
-    val specials = charArrayOf(
-        '\\', '+', '-', '&', '|', '!', '(', ')', '{', '}', '[', ']', '^', '"', '~', '*', '?', ':'
-    )
+    val specials =
+        charArrayOf(
+            '\\',
+            '+',
+            '-',
+            '&',
+            '|',
+            '!',
+            '(',
+            ')',
+            '{',
+            '}',
+            '[',
+            ']',
+            '^',
+            '"',
+            '~',
+            '*',
+            '?',
+            ':',
+        )
     val sb = StringBuilder(raw.length + 4)
     for (ch in raw) {
         if (ch in specials) sb.append('\\')
@@ -322,8 +380,7 @@ private fun escapeLucene(raw: String): String {
     return sb.toString()
 }
 
-private fun encode(value: String): String =
-    URLEncoder.encode(value, StandardCharsets.UTF_8.name())
+private fun encode(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8.name())
 
 private fun userAgent(): String {
     val repo = BuildConfig.GITHUB_REPOSITORY.trim().ifBlank { "axeldz05/bestia-pop" }

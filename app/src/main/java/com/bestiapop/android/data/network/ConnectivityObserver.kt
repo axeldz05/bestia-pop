@@ -12,60 +12,66 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-class ConnectivityObserver(private val context: Context) {
-
+class ConnectivityObserver(
+    private val context: Context,
+) {
     private val connectivityManager =
         context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     private val networkPreferences = NetworkPreferencesRepository(context.applicationContext)
 
-    private val rawNetworkOnline: Flow<Boolean> = callbackFlow {
-        trySend(isPhysicalNetworkOnline())
+    private val rawNetworkOnline: Flow<Boolean> =
+        callbackFlow {
+            trySend(isPhysicalNetworkOnline())
 
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                trySend(isPhysicalNetworkOnline())
-            }
+            val callback =
+                object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        trySend(isPhysicalNetworkOnline())
+                    }
 
-            override fun onLost(network: Network) {
-                trySend(isPhysicalNetworkOnline())
-            }
+                    override fun onLost(network: Network) {
+                        trySend(isPhysicalNetworkOnline())
+                    }
 
-            override fun onCapabilitiesChanged(
-                network: Network,
-                networkCapabilities: NetworkCapabilities
-            ) {
-                val overridden = testOverrides?.currentlyOnline
-                trySend(
-                    overridden ?: (
-                        networkCapabilities.hasCapability(
-                            NetworkCapabilities.NET_CAPABILITY_INTERNET
-                        ) &&
-                            networkCapabilities.hasCapability(
-                                NetworkCapabilities.NET_CAPABILITY_VALIDATED
-                            )
+                    override fun onCapabilitiesChanged(
+                        network: Network,
+                        networkCapabilities: NetworkCapabilities,
+                    ) {
+                        val overridden = testOverrides?.currentlyOnline
+                        trySend(
+                            overridden ?: (
+                                networkCapabilities.hasCapability(
+                                    NetworkCapabilities.NET_CAPABILITY_INTERNET,
+                                ) &&
+                                    networkCapabilities.hasCapability(
+                                        NetworkCapabilities.NET_CAPABILITY_VALIDATED,
+                                    )
+                            ),
                         )
-                )
+                    }
+                }
+
+            val request =
+                NetworkRequest
+                    .Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
+
+            connectivityManager.registerNetworkCallback(request, callback)
+            awaitClose {
+                runCatching { connectivityManager.unregisterNetworkCallback(callback) }
             }
         }
 
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-
-        connectivityManager.registerNetworkCallback(request, callback)
-        awaitClose {
-            runCatching { connectivityManager.unregisterNetworkCallback(callback) }
-        }
-    }
-
-    val isOnline: Flow<Boolean> = combine(
-        rawNetworkOnline,
-        networkPreferences.offlineModeFlow
-    ) { online, offlineMode ->
-        val overridden = testOverrides?.currentlyOnline
-        overridden ?: (online && !offlineMode)
-    }.distinctUntilChanged()
+    val isOnline: Flow<Boolean> =
+        combine(
+            rawNetworkOnline,
+            networkPreferences.offlineModeFlow,
+        ) { online, offlineMode ->
+            val overridden = testOverrides?.currentlyOnline
+            overridden ?: (online && !offlineMode)
+        }.distinctUntilChanged()
 
     fun isCurrentlyOnline(): Boolean {
         testOverrides?.let { return it.currentlyOnline }
@@ -104,7 +110,7 @@ class ConnectivityObserver(private val context: Context) {
 
     private data class TestOverrides(
         val currentlyOnline: Boolean,
-        val metered: Boolean
+        val metered: Boolean,
     )
 
     companion object {
@@ -113,12 +119,13 @@ class ConnectivityObserver(private val context: Context) {
 
         internal fun configureForTest(
             currentlyOnline: Boolean,
-            metered: Boolean
+            metered: Boolean,
         ) {
-            testOverrides = TestOverrides(
-                currentlyOnline = currentlyOnline,
-                metered = metered
-            )
+            testOverrides =
+                TestOverrides(
+                    currentlyOnline = currentlyOnline,
+                    metered = metered,
+                )
         }
 
         internal fun resetTestOverrides() {

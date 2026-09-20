@@ -11,7 +11,7 @@ import com.bestiapop.android.data.model.PlayableItem
 internal data class PlaybackCollectionSnapshot(
     val items: List<PlayableItem>,
     val currentIndex: Int,
-    val positionMs: Long
+    val positionMs: Long,
 ) {
     val currentItem: PlayableItem
         get() = items[currentIndex]
@@ -20,39 +20,48 @@ internal data class PlaybackCollectionSnapshot(
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun playbackResumptionMetadataItem(
     item: PlayableItem,
-    positionMs: Long
+    positionMs: Long,
 ): MediaItem {
     val durationMs = item.durationMs.coerceAtLeast(0L)
-    val progress = if (durationMs > 0L) {
-        (positionMs.coerceIn(0L, durationMs).toDouble() / durationMs).coerceIn(0.0, 1.0)
-    } else {
-        0.0
-    }
-    val completionStatus = when {
-        progress >= FULLY_PLAYED_THRESHOLD ->
-            MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_FULLY_PLAYED
-        progress > 0.0 ->
-            MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED
-        else ->
-            MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_NOT_PLAYED
-    }
-    val extras = Bundle().apply {
-        putInt(MediaConstants.EXTRAS_KEY_COMPLETION_STATUS, completionStatus)
-        if (completionStatus == MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED) {
-            putDouble(MediaConstants.EXTRAS_KEY_COMPLETION_PERCENTAGE, progress)
+    val progress =
+        if (durationMs > 0L) {
+            (positionMs.coerceIn(0L, durationMs).toDouble() / durationMs).coerceIn(0.0, 1.0)
+        } else {
+            0.0
         }
-    }
-    val metadata = item.mediaMetadataBuilder(
-        artworkUriOverride = localArtworkUri(item.artworkUri)
-    )
-        .setIsPlayable(true)
-        .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-        .apply {
-            if (durationMs > 0L) setDurationMs(durationMs)
+    val completionStatus =
+        when {
+            progress >= FULLY_PLAYED_THRESHOLD -> {
+                MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_FULLY_PLAYED
+            }
+
+            progress > 0.0 -> {
+                MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED
+            }
+
+            else -> {
+                MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_NOT_PLAYED
+            }
         }
-        .setExtras(extras)
-        .build()
-    return MediaItem.Builder()
+    val extras =
+        Bundle().apply {
+            putInt(MediaConstants.EXTRAS_KEY_COMPLETION_STATUS, completionStatus)
+            if (completionStatus == MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED) {
+                putDouble(MediaConstants.EXTRAS_KEY_COMPLETION_PERCENTAGE, progress)
+            }
+        }
+    val metadata =
+        item
+            .mediaMetadataBuilder(
+                artworkUriOverride = localArtworkUri(item.artworkUri),
+            ).setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            .apply {
+                if (durationMs > 0L) setDurationMs(durationMs)
+            }.setExtras(extras)
+            .build()
+    return MediaItem
+        .Builder()
         .setMediaId(item.mediaId)
         .setMediaMetadata(metadata)
         .build()

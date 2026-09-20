@@ -5,8 +5,10 @@ import org.json.JSONObject
 
 /** Shared JSON encode/decode for [TrackIdentity] fields. */
 object TrackIdentityJson {
-
-    fun putInto(obj: JSONObject, identity: TrackIdentity) {
+    fun putInto(
+        obj: JSONObject,
+        identity: TrackIdentity,
+    ) {
         obj.put("title", identity.title)
         obj.put("artist", identity.artist)
         obj.put("album", identity.album)
@@ -15,13 +17,15 @@ object TrackIdentityJson {
         obj.put("trackNumber", identity.trackNumber)
     }
 
-    fun decode(obj: JSONObject): TrackIdentity = TrackIdentity(
-        title = obj.optString("title", ""),
-        artist = obj.optString("artist", ""),
-        album = obj.optString("album", ""),
-        artworkUri = obj.optNullableString("artworkUri")
-            ?: obj.optNullableString("artworkUrl"),
-        durationMs = obj.optLong("durationMs", 0L).coerceAtLeast(0L),
-        trackNumber = obj.optInt("trackNumber", 0).coerceAtLeast(0)
-    )
+    fun decode(obj: JSONObject): TrackIdentity =
+        TrackIdentity(
+            title = obj.optString("title", ""),
+            artist = obj.optString("artist", ""),
+            album = obj.optString("album", ""),
+            artworkUri =
+                obj.optNullableString("artworkUri")
+                    ?: obj.optNullableString("artworkUrl"),
+            durationMs = obj.optLong("durationMs", 0L).coerceAtLeast(0L),
+            trackNumber = obj.optInt("trackNumber", 0).coerceAtLeast(0),
+        )
 }

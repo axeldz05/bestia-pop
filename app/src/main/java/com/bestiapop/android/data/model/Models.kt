@@ -3,13 +3,13 @@ package com.bestiapop.android.data.model
 enum class RepeatMode {
     OFF,
     ONE,
-    ALL
+    ALL,
 }
 
 enum class LibraryJobKind {
     IMPORT,
     IDENTIFY,
-    TAG_WRITE
+    TAG_WRITE,
 }
 
 /** In-progress library job (folder import / disk resync / batch identify). */
@@ -17,16 +17,19 @@ data class LibraryJobProgress(
     val kind: LibraryJobKind,
     val done: Int,
     val total: Int,
-    val label: String
+    val label: String,
 ) {
     val fraction: Float
         get() = if (total <= 0) 0f else (done.toFloat() / total).coerceIn(0f, 1f)
 }
 
 sealed class IdentifyResult {
-    data class Updated(val songId: Long) : IdentifyResult()
+    data class Updated(
+        val songId: Long,
+    ) : IdentifyResult()
 
     data object NoMatch : IdentifyResult()
+
     data object Skipped : IdentifyResult()
 }
 
@@ -34,14 +37,14 @@ sealed class IdentifyResult {
 data class IdentifyApplyRequest(
     val songId: Long,
     val candidate: IdentifyCandidate,
-    val fields: IdentifyApplyFields = IdentifyApplyFields.ALL
+    val fields: IdentifyApplyFields = IdentifyApplyFields.ALL,
 )
 
 /** Ranked catalog hit for identify (top-N after multi-signal scoring). */
 data class IdentifyCandidate(
     val track: OnlineCatalogTrack,
     val score: Float,
-    val reasons: List<String> = emptyList()
+    val reasons: List<String> = emptyList(),
 ) : TrackMeta by track {
     val provider: String get() = track.provider
     val year: Int get() = track.year
@@ -51,15 +54,17 @@ enum class IdentifyConfidence {
     HIGH,
     MEDIUM,
     LOW,
-    NONE;
+    NONE,
+    ;
 
     val label: String
-        get() = when (this) {
-            HIGH -> "Alta"
-            MEDIUM -> "Posible"
-            LOW -> "Baja"
-            NONE -> "Sin match"
-        }
+        get() =
+            when (this) {
+                HIGH -> "Alta"
+                MEDIUM -> "Posible"
+                LOW -> "Baja"
+                NONE -> "Sin match"
+            }
 }
 
 /**
@@ -71,44 +76,52 @@ data class IdentifyApplyFields(
     val artist: Boolean = true,
     val album: Boolean = true,
     val year: Boolean = true,
-    val trackNumber: Boolean = true
+    val trackNumber: Boolean = true,
 ) {
     val hasAny: Boolean get() = artwork || title || artist || album || year || trackNumber
     val isAll: Boolean get() = artwork && title && artist && album && year && trackNumber
 
     companion object {
         val ALL = IdentifyApplyFields()
-        val NONE = IdentifyApplyFields(
-            artwork = false,
-            title = false,
-            artist = false,
-            album = false,
-            year = false,
-            trackNumber = false
-        )
+        val NONE =
+            IdentifyApplyFields(
+                artwork = false,
+                title = false,
+                artist = false,
+                album = false,
+                year = false,
+                trackNumber = false,
+            )
     }
 }
 
 /** One toggleable identify-apply field; [label] is setup copy, [chipLabel] is review chrome. */
-enum class IdentifyApplyField(val label: String, val chipLabel: String) {
+enum class IdentifyApplyField(
+    val label: String,
+    val chipLabel: String,
+) {
     ARTWORK("Portada", "Portada"),
     TITLE("Título / Nombre", "Título"),
     ARTIST("Artista", "Artista"),
     ALBUM("Álbum", "Álbum"),
     YEAR("Año", "Año"),
-    TRACK_NUMBER("Número de pista", "Pista")
+    TRACK_NUMBER("Número de pista", "Pista"),
 }
 
-fun IdentifyApplyFields.isEnabled(field: IdentifyApplyField): Boolean = when (field) {
-    IdentifyApplyField.ARTWORK -> artwork
-    IdentifyApplyField.TITLE -> title
-    IdentifyApplyField.ARTIST -> artist
-    IdentifyApplyField.ALBUM -> album
-    IdentifyApplyField.YEAR -> year
-    IdentifyApplyField.TRACK_NUMBER -> trackNumber
-}
+fun IdentifyApplyFields.isEnabled(field: IdentifyApplyField): Boolean =
+    when (field) {
+        IdentifyApplyField.ARTWORK -> artwork
+        IdentifyApplyField.TITLE -> title
+        IdentifyApplyField.ARTIST -> artist
+        IdentifyApplyField.ALBUM -> album
+        IdentifyApplyField.YEAR -> year
+        IdentifyApplyField.TRACK_NUMBER -> trackNumber
+    }
 
-fun IdentifyApplyFields.withField(field: IdentifyApplyField, enabled: Boolean): IdentifyApplyFields =
+fun IdentifyApplyFields.withField(
+    field: IdentifyApplyField,
+    enabled: Boolean,
+): IdentifyApplyFields =
     when (field) {
         IdentifyApplyField.ARTWORK -> copy(artwork = enabled)
         IdentifyApplyField.TITLE -> copy(title = enabled)
@@ -125,13 +138,14 @@ fun IdentifyApplyFields.withField(field: IdentifyApplyField, enabled: Boolean): 
 data class IdentifySearchFilters(
     val artist: String = "",
     val album: String = "",
-    val year: Int = 0
+    val year: Int = 0,
 ) {
-    fun normalized(): IdentifySearchFilters = copy(
-        artist = artist.trim(),
-        album = album.trim(),
-        year = year.coerceIn(0, 9999)
-    )
+    fun normalized(): IdentifySearchFilters =
+        copy(
+            artist = artist.trim(),
+            album = album.trim(),
+            year = year.coerceIn(0, 9999),
+        )
 
     val hasAny: Boolean
         get() {
@@ -161,7 +175,7 @@ data class IdentifyProposal(
     /** False when the last catalog page returned fewer than a full page. */
     val catalogMayHaveMore: Boolean = false,
     /** Import/WiFi: apply only missing/placeholder fields (do not overwrite real tags). */
-    val fillGapsOnly: Boolean = false
+    val fillGapsOnly: Boolean = false,
 )
 
 data class Album(
@@ -176,7 +190,7 @@ data class Album(
     /** UI label; may differ from [name] when an override renames without propagating to songs. */
     val displayName: String = name,
     /** Unique album-identity bucket; two albums can share [displayName] (e.g. session EPs). */
-    val groupingKey: String = name
+    val groupingKey: String = name,
 )
 
 enum class WifiTransferState {
@@ -184,7 +198,7 @@ enum class WifiTransferState {
     UPLOADING,
     PROCESSING,
     DONE,
-    ERROR
+    ERROR,
 }
 
 /**
@@ -199,7 +213,7 @@ data class WifiTransferItem(
     val progressPercent: Int = 0,
     val songId: Long? = null,
     val errorMessage: String? = null,
-    val artworkUri: String? = null
+    val artworkUri: String? = null,
 )
 
 data class Artist(
@@ -208,7 +222,7 @@ data class Artist(
     val albumCount: Int,
     val photoUri: String? = null,
     val genre: String? = null,
-    val dateAdded: Long? = null
+    val dateAdded: Long? = null,
 )
 
 /** Aggregated library genre row for browse chips (not catalog [CatalogGenre]). */
@@ -216,7 +230,7 @@ data class GenreGroup(
     val name: String,
     val songCount: Int,
     val artworkUri: String? = null,
-    val dateAdded: Long? = null
+    val dateAdded: Long? = null,
 )
 
 data class Playlist(
@@ -225,7 +239,7 @@ data class Playlist(
     val description: String? = null,
     val coverUri: String? = null,
     val songCount: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 /** Metadata-only playlist member awaiting download (no audio file / no CDN URL). */
@@ -234,10 +248,9 @@ data class PlaylistPendingTrack(
     val id: Long = 0,
     val playlistId: Long,
     val recordingMbid: String? = null,
-    val position: Int = 0
+    val position: Int = 0,
 ) : TrackMeta by identity {
-    fun toOnlineCatalogTrack(): OnlineCatalogTrack =
-        identity.toListenBrainzCatalogTrack(recordingMbid)
+    fun toOnlineCatalogTrack(): OnlineCatalogTrack = identity.toListenBrainzCatalogTrack(recordingMbid)
 }
 
 data class ColorSchemeData(
@@ -247,14 +260,14 @@ data class ColorSchemeData(
     val background: Long,
     val surface: Long,
     val surfaceVariant: Long,
-    val accent: Long
+    val accent: Long,
 )
 
 data class CustomTheme(
     val id: String,
     val name: String,
     val colors: ColorSchemeData,
-    val isDark: Boolean = true
+    val isDark: Boolean = true,
 )
 
 data class OnlineCatalogTrack(
@@ -264,7 +277,7 @@ data class OnlineCatalogTrack(
     val provider: String = "YouTube",
     val userAgent: String = DEFAULT_CATALOG_USER_AGENT,
     /** Catalog-only release year (Deezer/iTunes); not part of [TrackMeta] / Room identity. */
-    val year: Int = 0
+    val year: Int = 0,
 ) : TrackMeta by identity {
     companion object {
         /** L2: flat catalog construction (identity is Level 1). */
@@ -279,36 +292,39 @@ data class OnlineCatalogTrack(
             provider: String = "YouTube",
             userAgent: String = DEFAULT_CATALOG_USER_AGENT,
             trackNumber: Int = 0,
-            year: Int = 0
-        ): OnlineCatalogTrack = OnlineCatalogTrack(
-            identity = TrackIdentity(
-                title = title,
-                artist = artist,
-                album = album,
-                artworkUri = artworkUri,
-                durationMs = durationMs,
-                trackNumber = trackNumber
-            ),
-            id = id,
-            audioUrl = audioUrl,
-            provider = provider,
-            userAgent = userAgent,
-            year = year
-        )
+            year: Int = 0,
+        ): OnlineCatalogTrack =
+            OnlineCatalogTrack(
+                identity =
+                    TrackIdentity(
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        artworkUri = artworkUri,
+                        durationMs = durationMs,
+                        trackNumber = trackNumber,
+                    ),
+                id = id,
+                audioUrl = audioUrl,
+                provider = provider,
+                userAgent = userAgent,
+                year = year,
+            )
 
         /** L2: minimal catalog track for direct link / URL downloads. */
         fun fromUrl(
             url: String,
             provider: String = "YouTube",
             title: String = "",
-            artist: String = ""
-        ): OnlineCatalogTrack = invoke(
-            id = url,
-            title = title,
-            artist = artist,
-            audioUrl = url,
-            provider = provider
-        )
+            artist: String = "",
+        ): OnlineCatalogTrack =
+            invoke(
+                id = url,
+                title = title,
+                artist = artist,
+                audioUrl = url,
+                provider = provider,
+            )
     }
 }
 
@@ -321,14 +337,14 @@ enum class CatalogCategory {
     ALBUMS,
     PLAYLISTS,
     GENRES,
-    CHARTS
+    CHARTS,
 }
 
 /** Lightweight Deezer genre row for catalog browse (not a TrackIdentity). */
 data class CatalogGenre(
     val id: Long,
     val name: String,
-    val pictureUrl: String? = null
+    val pictureUrl: String? = null,
 )
 
 data class CatalogAlbum(
@@ -337,7 +353,7 @@ data class CatalogAlbum(
     val artist: String,
     val coverUrl: String?,
     val trackCount: Int = 0,
-    val releaseYear: String = ""
+    val releaseYear: String = "",
 )
 
 data class CatalogPlaylist(
@@ -345,7 +361,7 @@ data class CatalogPlaylist(
     val title: String,
     val creator: String,
     val coverUrl: String?,
-    val trackCount: Int = 0
+    val trackCount: Int = 0,
 )
 
 enum class CandidateDownloadState {
@@ -353,12 +369,13 @@ enum class CandidateDownloadState {
     QUEUED,
     DOWNLOADING,
     SUCCESS,
-    ERROR
+    ERROR,
 }
 
 val CandidateDownloadState.isInFlight: Boolean
-    get() = this == CandidateDownloadState.QUEUED ||
-        this == CandidateDownloadState.DOWNLOADING
+    get() =
+        this == CandidateDownloadState.QUEUED ||
+            this == CandidateDownloadState.DOWNLOADING
 
 val CandidateDownloadState.isFailed: Boolean
     get() = this == CandidateDownloadState.ERROR
@@ -367,7 +384,7 @@ data class CatalogTrackCandidate(
     val identity: TrackIdentity,
     val candidates: List<OnlineCatalogTrack>,
     val currentCandidateIndex: Int = 0,
-    val isSelected: Boolean = true
+    val isSelected: Boolean = true,
 ) : TrackMeta by identity {
     val currentTrack: OnlineCatalogTrack?
         get() = candidates.getOrNull(currentCandidateIndex)
@@ -382,26 +399,33 @@ enum class ActiveDownloadSource {
     SAVE_WHILE_LISTENING,
     BATCH,
     LB_IMPORT,
+
     /** Manual download of a streamed Remote (Para Ti / Recomendados / Now Playing). */
-    DISCOVER
+    DISCOVER,
 }
 
 enum class DownloadLane {
     EXPLICIT,
-    AUTOSAVE
+    AUTOSAVE,
 }
 
 val ActiveDownloadSource.lane: DownloadLane
-    get() = if (this == ActiveDownloadSource.SAVE_WHILE_LISTENING) {
-        DownloadLane.AUTOSAVE
-    } else {
-        DownloadLane.EXPLICIT
-    }
+    get() =
+        if (this == ActiveDownloadSource.SAVE_WHILE_LISTENING) {
+            DownloadLane.AUTOSAVE
+        } else {
+            DownloadLane.EXPLICIT
+        }
 
 /** How to resolve a title+artist collision when downloading. */
 sealed class DownloadConflictPolicy {
-    data class Overwrite(val existingSongId: Long) : DownloadConflictPolicy()
-    data class SaveAs(val newTitle: String) : DownloadConflictPolicy()
+    data class Overwrite(
+        val existingSongId: Long,
+    ) : DownloadConflictPolicy()
+
+    data class SaveAs(
+        val newTitle: String,
+    ) : DownloadConflictPolicy()
 }
 
 val DownloadConflictPolicy?.overwriteTargetSongIdOrNull: Long?
@@ -413,7 +437,7 @@ val DownloadConflictPolicy?.saveAsTitleOrNull: String?
 /** Thrown when a download would duplicate an existing library song and no [DownloadConflictPolicy] was provided. */
 class DuplicateSongException(
     val existing: Song,
-    val track: OnlineCatalogTrack
+    val track: OnlineCatalogTrack,
 ) : Exception("La canción ya está en la biblioteca: ${existing.artist} — ${existing.title}")
 
 /** Pending user decision for a download that collides with the library. */
@@ -428,23 +452,25 @@ data class DownloadConflict(
     val playlistTargets: List<DownloadPlaylistDestination> = emptyList(),
     val batchId: String? = null,
     val applyToRemainingBatch: Boolean = false,
-    val lookupIdentity: TrackIdentity? = null
+    val lookupIdentity: TrackIdentity? = null,
 )
 
 data class DownloadPlaylistDestination(
     val playlistId: Long,
-    val identity: TrackIdentity
+    val identity: TrackIdentity,
 )
 
 fun resolveDownloadPlaylistDestinations(
     destinations: List<DownloadPlaylistDestination>,
     legacyPlaylistId: Long?,
-    fallbackIdentity: TrackIdentity
-): List<DownloadPlaylistDestination> = destinations.ifEmpty {
-    legacyPlaylistId?.let { playlistId ->
-        listOf(DownloadPlaylistDestination(playlistId, fallbackIdentity))
-    }.orEmpty()
-}
+    fallbackIdentity: TrackIdentity,
+): List<DownloadPlaylistDestination> =
+    destinations.ifEmpty {
+        legacyPlaylistId
+            ?.let { playlistId ->
+                listOf(DownloadPlaylistDestination(playlistId, fallbackIdentity))
+            }.orEmpty()
+    }
 
 /**
  * Unified in-memory download job for the Descargas center.
@@ -478,7 +504,7 @@ data class ActiveDownload(
     /** Process/persisted group key for "apply to remaining" conflict policy. */
     val batchId: String? = null,
     /** Save As (or legacy displayTitle); never written into Room song identity. */
-    val titleOverride: String? = null
+    val titleOverride: String? = null,
 ) : TrackMeta {
     val currentTrack: OnlineCatalogTrack?
         get() = candidates.getOrNull(currentCandidateIndex)
@@ -492,55 +518,67 @@ data class ActiveDownload(
 
     /** UI/notif label; never persist this into [TrackIdentity] that goes to Room. */
     val displayLabel: String
-        get() = titleOverride?.takeIf { it.isNotBlank() }
-            ?: title.ifBlank {
-                if (source == ActiveDownloadSource.LINK) "Enlace YouTube" else "Descarga"
-            }
+        get() =
+            titleOverride?.takeIf { it.isNotBlank() }
+                ?: title.ifBlank {
+                    if (source == ActiveDownloadSource.LINK) "Enlace YouTube" else "Descarga"
+                }
 
     fun withCurrentIdentity(transform: TrackIdentity.() -> TrackIdentity): ActiveDownload {
         val idx = currentCandidateIndex
         val track = currentTrack ?: return this
         return copy(
-            candidates = candidates.mapIndexed { i, t ->
-                if (i == idx) track.withIdentity(transform) else t
-            }
+            candidates =
+                candidates.mapIndexed { i, t ->
+                    if (i == idx) track.withIdentity(transform) else t
+                },
         )
     }
 
-    fun asError(message: String?, interrupted: Boolean = false): ActiveDownload = copy(
-        state = CandidateDownloadState.ERROR,
-        progressMessage = null,
-        progressPercent = 0,
-        errorMessage = message,
-        interrupted = interrupted
-    )
+    fun asError(
+        message: String?,
+        interrupted: Boolean = false,
+    ): ActiveDownload =
+        copy(
+            state = CandidateDownloadState.ERROR,
+            progressMessage = null,
+            progressPercent = 0,
+            errorMessage = message,
+            interrupted = interrupted,
+        )
 
     fun asDownloading(
         progressMessage: String = DownloadMessages.starting,
-        progressPercent: Int = 20
-    ): ActiveDownload = copy(
-        state = CandidateDownloadState.DOWNLOADING,
-        progressMessage = progressMessage,
-        progressPercent = progressPercent,
-        errorMessage = null,
-        interrupted = false,
-        downloadStarted = true
-    )
+        progressPercent: Int = 20,
+    ): ActiveDownload =
+        copy(
+            state = CandidateDownloadState.DOWNLOADING,
+            progressMessage = progressMessage,
+            progressPercent = progressPercent,
+            errorMessage = null,
+            interrupted = false,
+            downloadStarted = true,
+        )
 
-    fun asConflict(): ActiveDownload = copy(
-        state = CandidateDownloadState.IDLE,
-        progressMessage = DownloadMessages.conflictInLibrary,
-        progressPercent = 0,
-        errorMessage = null,
-        interrupted = false
-    )
+    fun asConflict(): ActiveDownload =
+        copy(
+            state = CandidateDownloadState.IDLE,
+            progressMessage = DownloadMessages.conflictInLibrary,
+            progressPercent = 0,
+            errorMessage = null,
+            interrupted = false,
+        )
 
     fun asSuccess(song: Song): ActiveDownload {
         val idx = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
-        val merged = candidates.mapIndexed { index, track ->
-            if (index != idx) track
-            else track.copy(identity = song.toIdentity().mergePreferring(track.identity))
-        }
+        val merged =
+            candidates.mapIndexed { index, track ->
+                if (index != idx) {
+                    track
+                } else {
+                    track.copy(identity = song.toIdentity().mergePreferring(track.identity))
+                }
+            }
         return copy(
             candidates = merged,
             currentCandidateIndex = idx,
@@ -551,15 +589,16 @@ data class ActiveDownload(
             resultSongId = song.id,
             interrupted = false,
             downloadStarted = true,
-            storageCommitted = true
+            storageCommitted = true,
         )
     }
 
-    fun restoredConflictPolicy(): DownloadConflictPolicy? = when {
-        overwriteTargetSongId != null -> DownloadConflictPolicy.Overwrite(overwriteTargetSongId)
-        titleOverride != null && downloadStarted -> DownloadConflictPolicy.SaveAs(titleOverride)
-        else -> null
-    }
+    fun restoredConflictPolicy(): DownloadConflictPolicy? =
+        when {
+            overwriteTargetSongId != null -> DownloadConflictPolicy.Overwrite(overwriteTargetSongId)
+            titleOverride != null && downloadStarted -> DownloadConflictPolicy.SaveAs(titleOverride)
+            else -> null
+        }
 
     companion object {
         fun queued(
@@ -575,51 +614,54 @@ data class ActiveDownload(
             storageCommitted: Boolean = false,
             overwriteTargetSongId: Long? = null,
             batchId: String? = null,
-            titleOverride: String? = null
-        ): ActiveDownload = ActiveDownload(
-            id = id,
-            source = source,
-            candidates = candidates,
-            currentCandidateIndex = currentCandidateIndex,
-            state = CandidateDownloadState.QUEUED,
-            progressMessage = DownloadMessages.queued,
-            progressPercent = 0,
-            errorMessage = null,
-            targetPlaylistId = targetPlaylistId,
-            playlistTargets = playlistTargets,
-            resultSongId = resultSongId,
-            lookupIdentity = lookupIdentity,
-            downloadStarted = downloadStarted,
-            storageCommitted = storageCommitted,
-            overwriteTargetSongId = overwriteTargetSongId,
-            batchId = batchId,
-            titleOverride = titleOverride
-        )
+            titleOverride: String? = null,
+        ): ActiveDownload =
+            ActiveDownload(
+                id = id,
+                source = source,
+                candidates = candidates,
+                currentCandidateIndex = currentCandidateIndex,
+                state = CandidateDownloadState.QUEUED,
+                progressMessage = DownloadMessages.queued,
+                progressPercent = 0,
+                errorMessage = null,
+                targetPlaylistId = targetPlaylistId,
+                playlistTargets = playlistTargets,
+                resultSongId = resultSongId,
+                lookupIdentity = lookupIdentity,
+                downloadStarted = downloadStarted,
+                storageCommitted = storageCommitted,
+                overwriteTargetSongId = overwriteTargetSongId,
+                batchId = batchId,
+                titleOverride = titleOverride,
+            )
 
         /** Advance to the next YouTube match; expands via [newCandidates] when the list was a single placeholder. */
         fun withCycledCandidate(
             download: ActiveDownload,
-            newCandidates: List<OnlineCatalogTrack>
+            newCandidates: List<OnlineCatalogTrack>,
         ): ActiveDownload {
             if (newCandidates.isEmpty()) return download
-            val nextIndex = if (download.candidates.size <= 1 && newCandidates.size > 1) {
-                val currentId = download.currentTrack?.id
-                val alt = newCandidates.indexOfFirst { it.id != currentId }.takeIf { it >= 0 } ?: 0
-                alt
-            } else {
-                (download.currentCandidateIndex + 1) % newCandidates.size
-            }
+            val nextIndex =
+                if (download.candidates.size <= 1 && newCandidates.size > 1) {
+                    val currentId = download.currentTrack?.id
+                    val alt = newCandidates.indexOfFirst { it.id != currentId }.takeIf { it >= 0 } ?: 0
+                    alt
+                } else {
+                    (download.currentCandidateIndex + 1) % newCandidates.size
+                }
             val stillFailed = download.state.isFailed
             return download.copy(
-                candidates = newCandidates.mapIndexed { i, t ->
-                    if (i == nextIndex) t.preferMetaFrom(download) else t
-                },
+                candidates =
+                    newCandidates.mapIndexed { i, t ->
+                        if (i == nextIndex) t.preferMetaFrom(download) else t
+                    },
                 currentCandidateIndex = nextIndex,
                 state = if (stillFailed) CandidateDownloadState.ERROR else CandidateDownloadState.IDLE,
                 progressMessage = null,
                 progressPercent = 0,
                 errorMessage = if (stillFailed) "Match actualizado — tocá Reintentar" else null,
-                titleOverride = null
+                titleOverride = null,
             )
         }
     }
@@ -627,8 +669,4 @@ data class ActiveDownload(
 
 fun ActiveDownload.matchesLane(lane: DownloadLane): Boolean = source.lane == lane
 
-fun List<ActiveDownload>.forLane(lane: DownloadLane): List<ActiveDownload> =
-    filter { it.matchesLane(lane) }
-
-
-
+fun List<ActiveDownload>.forLane(lane: DownloadLane): List<ActiveDownload> = filter { it.matchesLane(lane) }

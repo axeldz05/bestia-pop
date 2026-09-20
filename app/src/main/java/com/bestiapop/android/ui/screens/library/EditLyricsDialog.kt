@@ -37,7 +37,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.SyncedLyricLine
 import com.bestiapop.android.data.util.SyncedLyrics
@@ -76,7 +76,7 @@ fun EditLyricsDialog(
     onSave: (lyrics: String?) -> Unit,
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
-    onFetchOnline: ((String?) -> Unit) -> Unit
+    onFetchOnline: ((String?) -> Unit) -> Unit,
 ) {
     val initialLines = remember(song.id, song.lyrics) { SyncedLyrics.parse(song.lyrics.orEmpty()) }
     var lines by remember(song.id, song.lyrics) { mutableStateOf(initialLines) }
@@ -94,7 +94,7 @@ fun EditLyricsDialog(
                 .distinctUntilChanged()
         }
     }.collectAsStateWithLifecycle(
-        initialValue = if (isCurrent) SyncedLyrics.currentLineIndex(lines, positionMsFlow.value) else -1
+        initialValue = if (isCurrent) SyncedLyrics.currentLineIndex(lines, positionMsFlow.value) else -1,
     )
 
     fun applyFetched(raw: String?) {
@@ -124,41 +124,42 @@ fun EditLyricsDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.88f)
+            modifier =
+                Modifier
+                    .fillMaxWidth(0.96f)
+                    .fillMaxHeight(0.88f),
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
                     text = "Editar letra",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     text = song.title,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 TabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.primary
+                    contentColor = MaterialTheme.colorScheme.primary,
                 ) {
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("Texto") }
+                        text = { Text("Texto") },
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = { Text("Sincronizar") }
+                        text = { Text("Sincronizar") },
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -173,7 +174,7 @@ fun EditLyricsDialog(
                             val hasContent = text.isNotBlank() || SyncedLyrics.hasTimestamps(lines)
                             if (hasContent) confirmOverwrite = true else requestFetch()
                         },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                 } else {
                     LyricsSyncTab(
@@ -183,16 +184,18 @@ fun EditLyricsDialog(
                         onStamp = { index ->
                             if (!isCurrent || lines.isEmpty()) return@LyricsSyncTab
                             val currentPos = positionMsFlow.value
-                            lines = lines.mapIndexed { i, line ->
-                                if (i == index) SyncedLyrics.stamp(line, currentPos) else line
-                            }
+                            lines =
+                                lines.mapIndexed { i, line ->
+                                    if (i == index) SyncedLyrics.stamp(line, currentPos) else line
+                                }
                         },
                         onClearTime = { index ->
-                            lines = lines.mapIndexed { i, line ->
-                                if (i == index) line.copy(timeMs = null) else line
-                            }
+                            lines =
+                                lines.mapIndexed { i, line ->
+                                    if (i == index) line.copy(timeMs = null) else line
+                                }
                         },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -202,18 +205,18 @@ fun EditLyricsDialog(
                     isPlaying = thisPlaying,
                     seekEnabled = isCurrent,
                     onPlayPause = onPlayPause,
-                    onSeek = onSeek
+                    onSeek = onSeek,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
                 ) {
                     TextButton(onClick = onDismiss) { Text("Cancelar") }
                     Button(
                         onClick = {
                             onSave(SyncedLyrics.format(lines).ifBlank { null })
-                        }
+                        },
                     ) {
                         Text("Guardar")
                     }
@@ -235,7 +238,7 @@ fun EditLyricsDialog(
             },
             dismissButton = {
                 TextButton(onClick = { confirmOverwrite = false }) { Text("Cancelar") }
-            }
+            },
         )
     }
 }
@@ -248,7 +251,7 @@ private fun LyricsTextTab(
     fetching: Boolean,
     onTextChange: (String) -> Unit,
     onRequestFetch: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -271,7 +274,7 @@ private fun LyricsTextTab(
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(onClick = onRequestFetch, enabled = !fetching) {
                 if (fetching) {
@@ -280,7 +283,7 @@ private fun LyricsTextTab(
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(16.dp),
                     )
                 }
                 Spacer(modifier = Modifier.width(6.dp))
@@ -288,15 +291,15 @@ private fun LyricsTextTab(
             }
         }
         Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outline,
-                    shape = RoundedCornerShape(12.dp)
-                )
-                .padding(12.dp)
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline,
+                        shape = RoundedCornerShape(12.dp),
+                    ).padding(12.dp),
         ) {
             BasicTextField(
                 value = text,
@@ -304,22 +307,23 @@ private fun LyricsTextTab(
                 textStyle = style,
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 onTextLayout = { textLayout = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(scrollState)
-                    .drawBehind {
-                        val layout = textLayout ?: return@drawBehind
-                        if (highlightIndex < 0 || !SyncedLyrics.hasTimestamps(lines)) return@drawBehind
-                        val offset = offsetForLyricLine(text, highlightIndex).coerceIn(0, text.length)
-                        val layoutLine = layout.getLineForOffset(offset)
-                        val top = layout.getLineTop(layoutLine)
-                        val bottom = layout.getLineBottom(layoutLine)
-                        drawRect(
-                            color = highlightColor,
-                            topLeft = Offset(0f, top),
-                            size = Size(size.width, (bottom - top).coerceAtLeast(1f))
-                        )
-                    }
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
+                        .drawBehind {
+                            val layout = textLayout ?: return@drawBehind
+                            if (highlightIndex < 0 || !SyncedLyrics.hasTimestamps(lines)) return@drawBehind
+                            val offset = offsetForLyricLine(text, highlightIndex).coerceIn(0, text.length)
+                            val layoutLine = layout.getLineForOffset(offset)
+                            val top = layout.getLineTop(layoutLine)
+                            val bottom = layout.getLineBottom(layoutLine)
+                            drawRect(
+                                color = highlightColor,
+                                topLeft = Offset(0f, top),
+                                size = Size(size.width, (bottom - top).coerceAtLeast(1f)),
+                            )
+                        },
             )
         }
     }
@@ -332,7 +336,7 @@ private fun LyricsSyncTab(
     canStamp: Boolean,
     onStamp: (Int) -> Unit,
     onClearTime: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
     LaunchedEffect(highlightIndex) {
@@ -345,7 +349,7 @@ private fun LyricsSyncTab(
             Text(
                 text = "Reproducí esta canción para marcar tiempos.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(8.dp))
         }
@@ -354,41 +358,44 @@ private fun LyricsSyncTab(
                 text = "Escribí la letra en Texto para sincronizarla.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 12.dp)
+                modifier = Modifier.padding(top = 12.dp),
             )
         } else {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 itemsIndexed(lines) { index, line ->
                     val current = index == highlightIndex
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = canStamp) { onStamp(index) }
-                            .padding(vertical = 8.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = canStamp) { onStamp(index) }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = line.text.ifBlank { " " },
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontWeight = if (current) FontWeight.Bold else FontWeight.Normal
-                                ),
-                                color = if (current) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                }
+                                style =
+                                    MaterialTheme.typography.bodyLarge.copy(
+                                        fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
+                                    ),
+                                color =
+                                    if (current) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
                             )
                             val timeLabel = line.timeMs?.let(SyncedLyrics::formatTimestamp)
                             if (timeLabel != null) {
                                 Text(
                                     text = timeLabel,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
@@ -396,7 +403,7 @@ private fun LyricsSyncTab(
                             IconButton(onClick = { onClearTime(index) }) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
-                                    contentDescription = "Quitar tiempo"
+                                    contentDescription = "Quitar tiempo",
                                 )
                             }
                         }
@@ -414,16 +421,16 @@ private fun LyricsPlaybackBar(
     isPlaying: Boolean,
     seekEnabled: Boolean,
     onPlayPause: () -> Unit,
-    onSeek: (Long) -> Unit
+    onSeek: (Long) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onPlayPause) {
             Icon(
                 imageVector = playPauseVector(isPlaying),
-                contentDescription = if (isPlaying) "Pausa" else "Reproducir"
+                contentDescription = if (isPlaying) "Pausa" else "Reproducir",
             )
         }
         PlaybackScrubber(
@@ -432,12 +439,15 @@ private fun LyricsPlaybackBar(
             onSeek = onSeek,
             enabled = seekEnabled,
             holdAtZero = !seekEnabled,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         )
     }
 }
 
-private fun offsetForLyricLine(text: String, lineIndex: Int): Int {
+private fun offsetForLyricLine(
+    text: String,
+    lineIndex: Int,
+): Int {
     if (lineIndex <= 0) return 0
     var seen = 0
     text.forEachIndexed { i, c ->

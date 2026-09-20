@@ -7,7 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LoadableUiStateTest {
-
     @Test
     fun transitions_preserveContentUnlessReplacementIsExplicit() {
         val loaded = LoadableUiState(emptyList<String>()).success(listOf("old"))

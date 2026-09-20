@@ -32,10 +32,11 @@ class MainActivityNavigationFunctionalTest {
     private val cleanStateRule = MainActivityStateRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(cleanStateRule)
-        .around(activityRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(cleanStateRule)
+            .around(activityRule)
 
     @Test
     fun rootBottomNavigation_switchesEveryProductionTab() {
@@ -109,20 +110,20 @@ class MainActivityNavigationFunctionalTest {
             .let { check(it.size == 1) { "Expected selected root tab: $label" } }
     }
 
-    private fun selectedTabNodes(label: String) = activityRule
-        .onAllNodes(
-            isSelected() and hasAnyDescendant(hasContentDescription(label)),
-            useUnmergedTree = true
-        )
-        .fetchSemanticsNodes(atLeastOneRootRequired = false)
+    private fun selectedTabNodes(label: String) =
+        activityRule
+            .onAllNodes(
+                isSelected() and hasAnyDescendant(hasContentDescription(label)),
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes(atLeastOneRootRequired = false)
 
     private fun assertBackButtonAbsent() {
-        val backButtons = activityRule
-            .onAllNodes(
-                hasContentDescription("Volver"),
-                useUnmergedTree = true
-            )
-            .fetchSemanticsNodes(atLeastOneRootRequired = false)
+        val backButtons =
+            activityRule
+                .onAllNodes(
+                    hasContentDescription("Volver"),
+                    useUnmergedTree = true,
+                ).fetchSemanticsNodes(atLeastOneRootRequired = false)
         check(backButtons.isEmpty()) { "Settings subsection remained open after Back" }
     }
 
@@ -135,5 +136,4 @@ class MainActivityNavigationFunctionalTest {
         }
         check(activity.isDestroyed) { "MainActivity did not finish after the second root Back" }
     }
-
 }

@@ -30,9 +30,15 @@ internal fun interface AppUpdateGateway {
 
 internal interface AppUpdateStore {
     suspend fun lastCheckAtMs(): Long
+
     suspend fun setLastCheckAtMs(epochMs: Long)
+
     suspend fun cachedNotes(versionName: String): String?
-    suspend fun setCachedNotes(versionName: String, notes: String)
+
+    suspend fun setCachedNotes(
+        versionName: String,
+        notes: String,
+    )
 }
 
 internal fun interface AppUpdateClock {
@@ -41,6 +47,7 @@ internal fun interface AppUpdateClock {
 
 internal interface AppUpdateInstallerBoundary {
     fun canInstallPackages(context: Context): Boolean
+
     fun updateFile(context: Context): File
 
     suspend fun download(
@@ -48,11 +55,15 @@ internal interface AppUpdateInstallerBoundary {
         url: String,
         dest: File,
         userAgent: String,
-        onProgress: (Float?) -> Unit
+        onProgress: (Float?) -> Unit,
     ): Result<File>
 
     fun unknownSourcesIntent(context: Context): Intent
-    fun launchInstaller(context: Context, apk: File): Result<Unit>
+
+    fun launchInstaller(
+        context: Context,
+        apk: File,
+    ): Result<Unit>
 }
 
 internal data class AppUpdateDependencies(
@@ -64,7 +75,7 @@ internal data class AppUpdateDependencies(
     val installer: AppUpdateInstallerBoundary,
     val currentVersionCode: Int,
     val currentVersionName: String,
-    val userAgent: String
+    val userAgent: String,
 ) {
     companion object {
         fun production(app: Application): AppUpdateDependencies {
@@ -73,37 +84,40 @@ internal data class AppUpdateDependencies(
             val userAgent = "BestiaPop/${BuildConfig.VERSION_NAME}"
             return AppUpdateDependencies(
                 repository = repository,
-                gateway = AppUpdateGateway {
-                    GitHubUpdateClient(repository, userAgent).fetchReleases()
-                },
-                store = object : AppUpdateStore {
-                    override suspend fun lastCheckAtMs(): Long = store.lastCheckAtMs()
+                gateway =
+                    AppUpdateGateway {
+                        GitHubUpdateClient(repository, userAgent).fetchReleases()
+                    },
+                store =
+                    object : AppUpdateStore {
+                        override suspend fun lastCheckAtMs(): Long = store.lastCheckAtMs()
 
-                    override suspend fun setLastCheckAtMs(epochMs: Long) {
-                        store.setLastCheckAtMs(epochMs)
-                    }
+                        override suspend fun setLastCheckAtMs(epochMs: Long) {
+                            store.setLastCheckAtMs(epochMs)
+                        }
 
-                    override suspend fun cachedNotes(versionName: String): String? =
-                        store.cachedNotes(versionName)
+                        override suspend fun cachedNotes(versionName: String): String? = store.cachedNotes(versionName)
 
-                    override suspend fun setCachedNotes(versionName: String, notes: String) {
-                        store.setCachedNotes(versionName, notes)
-                    }
-                },
+                        override suspend fun setCachedNotes(
+                            versionName: String,
+                            notes: String,
+                        ) {
+                            store.setCachedNotes(versionName, notes)
+                        }
+                    },
                 clock = AppUpdateClock(System::currentTimeMillis),
                 isDebugBuild = BuildConfig.DEBUG,
                 installer = ProductionAppUpdateInstaller,
                 currentVersionCode = BuildConfig.VERSION_CODE,
                 currentVersionName = BuildConfig.VERSION_NAME,
-                userAgent = userAgent
+                userAgent = userAgent,
             )
         }
     }
 }
 
 private object ProductionAppUpdateInstaller : AppUpdateInstallerBoundary {
-    override fun canInstallPackages(context: Context): Boolean =
-        ApkUpdateInstaller.canInstallPackages(context)
+    override fun canInstallPackages(context: Context): Boolean = ApkUpdateInstaller.canInstallPackages(context)
 
     override fun updateFile(context: Context): File = ApkUpdateInstaller.updateFile(context)
 
@@ -112,25 +126,45 @@ private object ProductionAppUpdateInstaller : AppUpdateInstallerBoundary {
         url: String,
         dest: File,
         userAgent: String,
-        onProgress: (Float?) -> Unit
+        onProgress: (Float?) -> Unit,
     ): Result<File> = ApkUpdateInstaller.download(context, url, dest, userAgent, onProgress)
 
-    override fun unknownSourcesIntent(context: Context): Intent =
-        ApkUpdateInstaller.unknownSourcesIntent(context)
+    override fun unknownSourcesIntent(context: Context): Intent = ApkUpdateInstaller.unknownSourcesIntent(context)
 
-    override fun launchInstaller(context: Context, apk: File): Result<Unit> = runCatching {
-        context.startActivity(ApkUpdateInstaller.installIntent(context, apk))
-    }
+    override fun launchInstaller(
+        context: Context,
+        apk: File,
+    ): Result<Unit> =
+        runCatching {
+            context.startActivity(ApkUpdateInstaller.installIntent(context, apk))
+        }
 }
 
 /** Install flow (dialogs over any screen). Browsing release notes lives in [AppReleaseNotesState]. */
 sealed class AppUpdateUiState {
     data object Idle : AppUpdateUiState()
-    data class Available(val release: AppRelease) : AppUpdateUiState()
-    data class Downloading(val release: AppRelease, val progress: Float?) : AppUpdateUiState()
-    data class ReadyToInstall(val release: AppRelease, val apkFile: File) : AppUpdateUiState()
-    data class NeedsInstallPermission(val release: AppRelease) : AppUpdateUiState()
-    data class Error(val message: String) : AppUpdateUiState()
+
+    data class Available(
+        val release: AppRelease,
+    ) : AppUpdateUiState()
+
+    data class Downloading(
+        val release: AppRelease,
+        val progress: Float?,
+    ) : AppUpdateUiState()
+
+    data class ReadyToInstall(
+        val release: AppRelease,
+        val apkFile: File,
+    ) : AppUpdateUiState()
+
+    data class NeedsInstallPermission(
+        val release: AppRelease,
+    ) : AppUpdateUiState()
+
+    data class Error(
+        val message: String,
+    ) : AppUpdateUiState()
 }
 
 /** Ajustes → Actualización: notes of the installed build plus every newer release. */
@@ -139,14 +173,13 @@ data class AppReleaseNotesState(
     val currentNotes: String? = null,
     val newer: List<AppRelease> = emptyList(),
     val checked: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
 )
 
 class AppUpdateViewModel internal constructor(
     app: Application,
-    private val dependencies: AppUpdateDependencies
+    private val dependencies: AppUpdateDependencies,
 ) : AndroidViewModel(app) {
-
     constructor(app: Application) : this(app, AppUpdateDependencies.production(app))
 
     private val _state = MutableStateFlow<AppUpdateUiState>(AppUpdateUiState.Idle)
@@ -162,8 +195,7 @@ class AppUpdateViewModel internal constructor(
     private var downloadJob: Job? = null
     private var pendingInstall: AppRelease? = null
 
-    private fun isOffline(): Boolean =
-        NetworkPreferencesRepository.isOfflineModeSync(getApplication())
+    private fun isOffline(): Boolean = NetworkPreferencesRepository.isOfflineModeSync(getApplication())
 
     fun maybeCheckOnLaunch() {
         if (dependencies.isDebugBuild) return
@@ -182,27 +214,28 @@ class AppUpdateViewModel internal constructor(
     /** Ajustes → Actualización: cache first, then network unless already fetched and not [force]d. */
     fun refreshReleases(force: Boolean = false) {
         if (checkJob?.isActive == true) return
-        checkJob = viewModelScope.launch {
-            loadCachedNotes()
-            if (!force && _notes.value.checked) return@launch
-            if (isOffline()) {
-                _notes.update { it.copy(loading = false, error = OfflineMessages.connectionDisabled, checked = true) }
-                return@launch
-            }
-            if (dependencies.repository.isBlank()) {
-                _notes.update { it.copy(error = MISSING_REPOSITORY) }
-                return@launch
-            }
-            _notes.update { it.copy(loading = true, error = null) }
-            fetchSelection().fold(
-                onSuccess = ::applySelection,
-                onFailure = { error ->
-                    _notes.update {
-                        it.copy(loading = false, error = error.message ?: CHECK_FAILED)
-                    }
+        checkJob =
+            viewModelScope.launch {
+                loadCachedNotes()
+                if (!force && _notes.value.checked) return@launch
+                if (isOffline()) {
+                    _notes.update { it.copy(loading = false, error = OfflineMessages.connectionDisabled, checked = true) }
+                    return@launch
                 }
-            )
-        }
+                if (dependencies.repository.isBlank()) {
+                    _notes.update { it.copy(error = MISSING_REPOSITORY) }
+                    return@launch
+                }
+                _notes.update { it.copy(loading = true, error = null) }
+                fetchSelection().fold(
+                    onSuccess = ::applySelection,
+                    onFailure = { error ->
+                        _notes.update {
+                            it.copy(loading = false, error = error.message ?: CHECK_FAILED)
+                        }
+                    },
+                )
+            }
     }
 
     fun startUpdate(release: AppRelease) {
@@ -223,18 +256,20 @@ class AppUpdateViewModel internal constructor(
     }
 
     fun confirmUpdate() {
-        val release = when (val current = _state.value) {
-            is AppUpdateUiState.Available -> current.release
-            is AppUpdateUiState.NeedsInstallPermission -> current.release
-            else -> return
-        }
+        val release =
+            when (val current = _state.value) {
+                is AppUpdateUiState.Available -> current.release
+                is AppUpdateUiState.NeedsInstallPermission -> current.release
+                else -> return
+            }
         startUpdate(release)
     }
 
     fun onReturnedFromUnknownSources() {
-        val release = pendingInstall
-            ?: (_state.value as? AppUpdateUiState.NeedsInstallPermission)?.release
-            ?: return
+        val release =
+            pendingInstall
+                ?: (_state.value as? AppUpdateUiState.NeedsInstallPermission)?.release
+                ?: return
         if (!dependencies.installer.canInstallPackages(getApplication())) {
             _state.value = AppUpdateUiState.Available(release)
             return
@@ -242,17 +277,17 @@ class AppUpdateViewModel internal constructor(
         startDownload(release)
     }
 
-    fun unknownSourcesIntent(): Intent =
-        dependencies.installer.unknownSourcesIntent(getApplication())
+    fun unknownSourcesIntent(): Intent = dependencies.installer.unknownSourcesIntent(getApplication())
 
     fun launchInstaller(apk: File) {
         dependencies.installer.launchInstaller(getApplication(), apk).fold(
             onSuccess = { markInstallLaunched() },
             onFailure = { error ->
-                _state.value = AppUpdateUiState.Error(
-                    error.message ?: "No se pudo abrir el instalador"
-                )
-            }
+                _state.value =
+                    AppUpdateUiState.Error(
+                        error.message ?: "No se pudo abrir el instalador",
+                    )
+            },
         )
     }
 
@@ -276,15 +311,16 @@ class AppUpdateViewModel internal constructor(
     private suspend fun fetchSelection(): Result<AppReleaseSelection> =
         dependencies.gateway.fetchReleases().map { releases ->
             dependencies.store.setLastCheckAtMs(dependencies.clock.nowMs())
-            AppReleaseSelection.from(
-                releases = releases,
-                currentVersionCode = dependencies.currentVersionCode,
-                currentVersionName = dependencies.currentVersionName
-            ).also { selection ->
-                selection.current?.notes?.let {
-                    dependencies.store.setCachedNotes(dependencies.currentVersionName, it)
+            AppReleaseSelection
+                .from(
+                    releases = releases,
+                    currentVersionCode = dependencies.currentVersionCode,
+                    currentVersionName = dependencies.currentVersionName,
+                ).also { selection ->
+                    selection.current?.notes?.let {
+                        dependencies.store.setCachedNotes(dependencies.currentVersionName, it)
+                    }
                 }
-            }
         }
 
     private fun applySelection(selection: AppReleaseSelection) {
@@ -294,7 +330,7 @@ class AppUpdateViewModel internal constructor(
                 currentNotes = selection.current?.notes ?: current.currentNotes,
                 newer = selection.newer,
                 checked = true,
-                error = null
+                error = null,
             )
         }
     }
@@ -302,35 +338,38 @@ class AppUpdateViewModel internal constructor(
     private fun startDownload(release: AppRelease) {
         val apkUrl = release.apkUrl ?: return
         downloadJob?.cancel()
-        downloadJob = viewModelScope.launch {
-            _state.value = AppUpdateUiState.Downloading(release, progress = null)
-            val context = getApplication<Application>()
-            val dest = dependencies.installer.updateFile(context)
-            try {
-                val result = dependencies.installer.download(
-                    context = context,
-                    url = apkUrl,
-                    dest = dest,
-                    userAgent = dependencies.userAgent,
-                    onProgress = { progress ->
-                        _state.value = AppUpdateUiState.Downloading(release, progress)
-                    }
-                )
-                ensureActive()
-                result.fold(
-                    onSuccess = { file ->
-                        _state.value = AppUpdateUiState.ReadyToInstall(release, file)
-                    },
-                    onFailure = { error ->
-                        _state.value = AppUpdateUiState.Error(
-                            error.message ?: "No se pudo descargar la actualización"
+        downloadJob =
+            viewModelScope.launch {
+                _state.value = AppUpdateUiState.Downloading(release, progress = null)
+                val context = getApplication<Application>()
+                val dest = dependencies.installer.updateFile(context)
+                try {
+                    val result =
+                        dependencies.installer.download(
+                            context = context,
+                            url = apkUrl,
+                            dest = dest,
+                            userAgent = dependencies.userAgent,
+                            onProgress = { progress ->
+                                _state.value = AppUpdateUiState.Downloading(release, progress)
+                            },
                         )
-                    }
-                )
-            } catch (e: CancellationException) {
-                throw e
+                    ensureActive()
+                    result.fold(
+                        onSuccess = { file ->
+                            _state.value = AppUpdateUiState.ReadyToInstall(release, file)
+                        },
+                        onFailure = { error ->
+                            _state.value =
+                                AppUpdateUiState.Error(
+                                    error.message ?: "No se pudo descargar la actualización",
+                                )
+                        },
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                }
             }
-        }
     }
 
     companion object {

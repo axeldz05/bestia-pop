@@ -13,12 +13,12 @@ sealed interface PlaybackFallbackStep {
 
     data class ReadyLocal(
         override val queueIndex: Int,
-        override val item: PlayableItem.Local
+        override val item: PlayableItem.Local,
     ) : PlaybackFallbackStep
 
     data class ResolveRemote(
         override val queueIndex: Int,
-        override val item: PlayableItem.Remote
+        override val item: PlayableItem.Remote,
     ) : PlaybackFallbackStep
 }
 
@@ -26,17 +26,20 @@ sealed interface PlaybackFallbackStep {
 object PlaybackFallbackPlanner {
     fun circularPlan(
         items: List<PlayableItem>,
-        startIndex: Int
+        startIndex: Int,
     ): List<PlaybackFallbackStep> {
         if (items.isEmpty()) return emptyList()
         val start = startIndex.coerceIn(items.indices)
         return List(items.size) { offset ->
             val queueIndex = (start + offset) % items.size
             when (val item = items[queueIndex]) {
-                is PlayableItem.Local ->
+                is PlayableItem.Local -> {
                     PlaybackFallbackStep.ReadyLocal(queueIndex, item)
-                is PlayableItem.Remote ->
+                }
+
+                is PlayableItem.Remote -> {
                     PlaybackFallbackStep.ResolveRemote(queueIndex, item)
+                }
             }
         }
     }

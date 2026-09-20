@@ -19,28 +19,40 @@ fun formatSortRelevantInfo(
     dateAdded: Long?,
     alreadyShowsArtist: Boolean = false,
     alreadyShowsAlbum: Boolean = false,
-    alreadyShowsTitle: Boolean = false
-): String? {
-    return when (sortOption) {
-        SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM -> null
-        SortOption.GENRE -> genre?.takeIf {
-            it.isNotBlank() && !it.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
+    alreadyShowsTitle: Boolean = false,
+): String? =
+    when (sortOption) {
+        SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM -> {
+            null
         }
-        SortOption.DATE_ADDED -> dateAdded?.let { formatDateAdded(it) }
+
+        SortOption.GENRE -> {
+            genre?.takeIf {
+                it.isNotBlank() && !it.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
+            }
+        }
+
+        SortOption.DATE_ADDED -> {
+            dateAdded?.let { formatDateAdded(it) }
+        }
     }
-}
 
 private object DateAddedFormatters {
     @Volatile
     private var lastLocale: Locale? = null
+
     @Volatile
     private var lastYear: Int = 0
+
     @Volatile
     private var lastYearCheck = 0L
+
     @Volatile
     private var sameYearFormatter: DateTimeFormatter? = null
+
     @Volatile
     private var differentYearFormatter: DateTimeFormatter? = null
+
     @Volatile
     private var defaultZone: ZoneId = ZoneId.systemDefault()
 

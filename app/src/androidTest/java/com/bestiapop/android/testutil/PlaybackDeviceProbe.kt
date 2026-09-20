@@ -19,13 +19,15 @@ internal class PlaybackDeviceProbe {
 
     fun connectController(timeoutSeconds: Long = 10L): MediaController {
         val token = SessionToken(context, ComponentName(context, MusicService::class.java))
-        return MediaController.Builder(context, token)
+        return MediaController
+            .Builder(context, token)
             .buildAsync()
             .get(timeoutSeconds, TimeUnit.SECONDS)
     }
 
     fun playbackNotification(): Notification? =
-        context.getSystemService(NotificationManager::class.java)
+        context
+            .getSystemService(NotificationManager::class.java)
             .activeNotifications
             .firstOrNull { it.id == MusicService.PLAYBACK_NOTIFICATION_ID }
             ?.notification
@@ -33,21 +35,24 @@ internal class PlaybackDeviceProbe {
     @Suppress("DEPRECATION")
     fun musicServiceInfo(): ActivityManager.RunningServiceInfo? {
         val component = ComponentName(context, MusicService::class.java)
-        return context.getSystemService(ActivityManager::class.java)
+        return context
+            .getSystemService(ActivityManager::class.java)
             .getRunningServices(Int.MAX_VALUE)
             .firstOrNull { it.service == component }
     }
 
     fun executeShell(command: String): String =
-        ParcelFileDescriptor.AutoCloseInputStream(
-            instrumentation.uiAutomation.executeShellCommand(command)
-        ).bufferedReader().use { it.readText() }
+        ParcelFileDescriptor
+            .AutoCloseInputStream(
+                instrumentation.uiAutomation.executeShellCommand(command),
+            ).bufferedReader()
+            .use { it.readText() }
 
     fun await(
         description: String,
         timeoutMs: Long = 15_000L,
         pollMs: Long = 50L,
-        condition: () -> Boolean
+        condition: () -> Boolean,
     ) {
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
         while (SystemClock.elapsedRealtime() < deadline) {

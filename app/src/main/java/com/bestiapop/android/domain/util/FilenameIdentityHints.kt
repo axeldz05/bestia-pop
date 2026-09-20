@@ -11,44 +11,65 @@ package com.bestiapop.android.domain.util
 data class FilenameMetadataHints(
     val artist: String?,
     val title: String?,
-    val trackNumber: Int? = null
+    val trackNumber: Int? = null,
 )
 
 private val TRACK_NUM_ONLY = Regex("""^\d{1,3}$""")
 private val DISC_TRACK = Regex("""^\d{1,2}[-.]\d{1,2}\.?$""")
 private val SPACED_DASH = Regex("""\s+[-–—]\s+""")
 private val DISC_TRACK_FILE = Regex("""^(\d{1,2})[-.](\d{1,2})\.?\s*(.+)$""")
-private data class TrackFilenamePattern(val regex: Regex, val trackGroup: Int, val phraseGroup: Int)
 
-private val FILENAME_TRACK_PATTERNS = listOf(
-    TrackFilenamePattern(DISC_TRACK_FILE, trackGroup = 2, phraseGroup = 3),
-    TrackFilenamePattern(Regex("""^(\d{1,3})(?:[-.]\d{1,2})?\s+-\s+(.+)$"""), trackGroup = 1, phraseGroup = 2),
-    TrackFilenamePattern(Regex("""^(\d{1,3})\.\s*(.+)$"""), trackGroup = 1, phraseGroup = 2),
-    TrackFilenamePattern(Regex("""^(\d{1,3})_(.+)$"""), trackGroup = 1, phraseGroup = 2),
-    TrackFilenamePattern(Regex("""^(\d{1,3})\s+([^\d\s].*)$"""), trackGroup = 1, phraseGroup = 2),
-    TrackFilenamePattern(Regex("""^(.+?)\s*[\(\[]\s*(\d{1,3})\s*[\)\]]$"""), trackGroup = 2, phraseGroup = 1),
-    TrackFilenamePattern(Regex("""^(.+?)\s*[-_]\s*(\d{1,3})$"""), trackGroup = 2, phraseGroup = 1)
+private data class TrackFilenamePattern(
+    val regex: Regex,
+    val trackGroup: Int,
+    val phraseGroup: Int,
 )
+
+private val FILENAME_TRACK_PATTERNS =
+    listOf(
+        TrackFilenamePattern(DISC_TRACK_FILE, trackGroup = 2, phraseGroup = 3),
+        TrackFilenamePattern(Regex("""^(\d{1,3})(?:[-.]\d{1,2})?\s+-\s+(.+)$"""), trackGroup = 1, phraseGroup = 2),
+        TrackFilenamePattern(Regex("""^(\d{1,3})\.\s*(.+)$"""), trackGroup = 1, phraseGroup = 2),
+        TrackFilenamePattern(Regex("""^(\d{1,3})_(.+)$"""), trackGroup = 1, phraseGroup = 2),
+        TrackFilenamePattern(Regex("""^(\d{1,3})\s+([^\d\s].*)$"""), trackGroup = 1, phraseGroup = 2),
+        TrackFilenamePattern(Regex("""^(.+?)\s*[\(\[]\s*(\d{1,3})\s*[\)\]]$"""), trackGroup = 2, phraseGroup = 1),
+        TrackFilenamePattern(Regex("""^(.+?)\s*[-_]\s*(\d{1,3})$"""), trackGroup = 2, phraseGroup = 1),
+    )
 private val HOLE_RUN = Regex("""_{2,}""")
 private val WHITESPACE = Regex("""\s+""")
-private val CONTRACTION = Regex(
-    """\b([A-Za-z]+) (s|t|d|m|ll|re|ve)\b""",
-    RegexOption.IGNORE_CASE
-)
-private val KHZ_SUFFIX = Regex(
-    """\s*\(?\s*\d{1,2}\s*[-–]\s*\d{1,2}(?:\.\d)?\s*kHz\s*\)?\s*$""",
-    RegexOption.IGNORE_CASE
-)
+private val CONTRACTION =
+    Regex(
+        """\b([A-Za-z]+) (s|t|d|m|ll|re|ve)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+private val KHZ_SUFFIX =
+    Regex(
+        """\s*\(?\s*\d{1,2}\s*[-–]\s*\d{1,2}(?:\.\d)?\s*kHz\s*\)?\s*$""",
+        RegexOption.IGNORE_CASE,
+    )
 private val DUP_INDEX_SUFFIX = Regex("""\s*\(\d+\)\s*$""")
-private val AUDIO_EXT_SUFFIX = Regex(
-    """\.(mp3|flac|m4a|wav|ogg|opus|aac|wma|alac)$""",
-    RegexOption.IGNORE_CASE
-)
+private val AUDIO_EXT_SUFFIX =
+    Regex(
+        """\.(mp3|flac|m4a|wav|ogg|opus|aac|wma|alac)$""",
+        RegexOption.IGNORE_CASE,
+    )
 private val SINGLE_LETTER_WORDS = setOf("a", "e", "i", "o", "u", "y")
-private val TAIL_SKIP = setOf(
-    "part", "pt", "live", "remaster", "remastered", "bonus", "album", "version",
-    "feat", "ft", "instrumental", "demo", "remix"
-)
+private val TAIL_SKIP =
+    setOf(
+        "part",
+        "pt",
+        "live",
+        "remaster",
+        "remastered",
+        "bonus",
+        "album",
+        "version",
+        "feat",
+        "ft",
+        "instrumental",
+        "demo",
+        "remix",
+    )
 
 /** `02`, `1-12`, `1.03` — not real artist names (unlike `65daysofstatic`). */
 fun isTrackNumberLabel(value: String): Boolean {
@@ -59,13 +80,20 @@ fun isTrackNumberLabel(value: String): Boolean {
 fun stripLeadingTitleJunk(value: String): String {
     var s = value.trim()
     while (s.isNotEmpty()) {
-        val next = when {
-            s.startsWith("- ") || s.startsWith("– ") || s.startsWith("— ") ->
-                s.drop(2).trimStart()
-            s.first() == '-' || s.first() == '–' || s.first() == '—' || s.first() == '_' ->
-                s.drop(1).trimStart()
-            else -> break
-        }
+        val next =
+            when {
+                s.startsWith("- ") || s.startsWith("– ") || s.startsWith("— ") -> {
+                    s.drop(2).trimStart()
+                }
+
+                s.first() == '-' || s.first() == '–' || s.first() == '—' || s.first() == '_' -> {
+                    s.drop(1).trimStart()
+                }
+
+                else -> {
+                    break
+                }
+            }
         if (next == s) break
         s = next
     }
@@ -85,15 +113,19 @@ fun tidyFilenamePhrase(value: String): String {
 }
 
 /** Search strings for identify: full phrase, script runs, pinyin head, OST, tail. */
-fun identifySearchTexts(primary: String, filename: String? = null): List<String> =
-    IdentifyQueryVariants.expand(primary, filename)
+fun identifySearchTexts(
+    primary: String,
+    filename: String? = null,
+): List<String> = IdentifyQueryVariants.expand(primary, filename)
 
 /** `1-07. Midnight Channel` / `1-03_Insisto` — disc-track rip filenames. */
 fun looksLikeDiscTrackRip(nameWithoutExtension: String): Boolean {
-    val raw = nameWithoutExtension.substringAfterLast('/')
-        .replace(AUDIO_EXT_SUFFIX, "")
-        .replace("_-_", " - ")
-        .trim()
+    val raw =
+        nameWithoutExtension
+            .substringAfterLast('/')
+            .replace(AUDIO_EXT_SUFFIX, "")
+            .replace("_-_", " - ")
+            .trim()
     return raw.isNotEmpty() && DISC_TRACK_FILE.matches(raw)
 }
 
@@ -103,10 +135,11 @@ fun looksLikeDiscTrackRip(nameWithoutExtension: String): Boolean {
  */
 fun splitArtistTitleDash(value: String): Pair<String, String>? {
     val normalized = value.replace("_-_", " - ").trim()
-    val parts = normalized
-        .split(SPACED_DASH)
-        .map { tidyFilenamePhrase(it) }
-        .filter { it.isNotEmpty() }
+    val parts =
+        normalized
+            .split(SPACED_DASH)
+            .map { tidyFilenamePhrase(it) }
+            .filter { it.isNotEmpty() }
     if (parts.size < 2) return null
     val artist = parts.first()
     val title = parts.last()
@@ -116,26 +149,31 @@ fun splitArtistTitleDash(value: String): Pair<String, String>? {
 
 fun mergeIdentityHints(
     primary: FilenameMetadataHints,
-    secondary: FilenameMetadataHints
-): FilenameMetadataHints = FilenameMetadataHints(
-    artist = primary.artist?.takeIf { it.isNotBlank() } ?: secondary.artist,
-    title = primary.title?.takeIf { it.isNotBlank() } ?: secondary.title,
-    trackNumber = primary.trackNumber ?: secondary.trackNumber
-)
+    secondary: FilenameMetadataHints,
+): FilenameMetadataHints =
+    FilenameMetadataHints(
+        artist = primary.artist?.takeIf { it.isNotBlank() } ?: secondary.artist,
+        title = primary.title?.takeIf { it.isNotBlank() } ?: secondary.title,
+        trackNumber = primary.trackNumber ?: secondary.trackNumber,
+    )
 
 /**
  * When tags look like track-number rips (`02` / `- Title` / embedded `Artist - Song`),
  * recover searchable artist+title.
  */
-fun resolveWeakIdentityHints(artist: String, title: String): FilenameMetadataHints {
+fun resolveWeakIdentityHints(
+    artist: String,
+    title: String,
+): FilenameMetadataHints {
     val a = artist.trim()
     val cleanedTitle = tidyFilenamePhrase(title)
-    val track = if (isTrackNumberLabel(a)) {
-        a.takeWhile { it.isDigit() }.toIntOrNull()
-            ?: a.filter { it.isDigit() }.take(3).toIntOrNull()
-    } else {
-        null
-    }
+    val track =
+        if (isTrackNumberLabel(a)) {
+            a.takeWhile { it.isDigit() }.toIntOrNull()
+                ?: a.filter { it.isDigit() }.take(3).toIntOrNull()
+        } else {
+            null
+        }
     val artistWeak = IdentifyRanking.isPlaceholderArtist(a)
 
     if (artistWeak) {
@@ -157,8 +195,7 @@ fun parseFilenameMetadataHints(nameWithoutExtension: String): FilenameMetadataHi
     return hintsFromPhraseAndTrack(phrase, track)
 }
 
-fun parseFilenameTrackNumber(nameWithoutExtension: String): Int? =
-    parseFilenameMetadataHints(nameWithoutExtension).trackNumber
+fun parseFilenameTrackNumber(nameWithoutExtension: String): Int? = parseFilenameMetadataHints(nameWithoutExtension).trackNumber
 
 /**
  * When `{artist}_{title}` downloads collapse spaces to `_`, recover artist/title by
@@ -166,7 +203,7 @@ fun parseFilenameTrackNumber(nameWithoutExtension: String): Int? =
  */
 fun splitUsingKnownArtists(
     phrase: String,
-    knownArtists: Collection<String>
+    knownArtists: Collection<String>,
 ): FilenameMetadataHints? {
     val tidy = tidyFilenamePhrase(phrase)
     val haystack = TrackMatchKeys.normalize(tidy)
@@ -194,7 +231,10 @@ private fun isUsableKnownArtistKey(normalized: String): Boolean {
     return tokens.size >= 2 || normalized.length >= 6
 }
 
-private fun titleTailAfterArtist(tidyPhrase: String, artist: String): String? {
+private fun titleTailAfterArtist(
+    tidyPhrase: String,
+    artist: String,
+): String? {
     val nArtist = TrackMatchKeys.normalize(artist)
     val tokens = tidyPhrase.split(' ').filter { it.isNotEmpty() }
     var used = 0
@@ -228,7 +268,10 @@ private fun extractTrackAndPhrase(value: String): Pair<String, Int>? {
 internal fun splitArtistAndTitle(phrase: String): Pair<String, String>? =
     splitArtistTitleDash(phrase) ?: splitSingleUnderscoreArtistTitle(phrase)
 
-private fun hintsFromPhraseAndTrack(phrase: String, track: Int?): FilenameMetadataHints {
+private fun hintsFromPhraseAndTrack(
+    phrase: String,
+    track: Int?,
+): FilenameMetadataHints {
     splitArtistAndTitle(phrase)?.let { (a, t) ->
         return FilenameMetadataHints(a, t, track)
     }
@@ -267,9 +310,10 @@ internal fun glueSingleLetterTokens(text: String): String {
     var i = 0
     while (i < tokens.size) {
         val tok = tokens[i]
-        val hole = tok.length == 1 &&
-            tok[0].isLetter() &&
-            tok.lowercase() !in SINGLE_LETTER_WORDS
+        val hole =
+            tok.length == 1 &&
+                tok[0].isLetter() &&
+                tok.lowercase() !in SINGLE_LETTER_WORDS
         if (!hole) {
             out.add(tok)
             i += 1
@@ -281,14 +325,17 @@ internal fun glueSingleLetterTokens(text: String): String {
                 out.add(tok + tokens[i + 1])
                 i += 2
             }
+
             out.isNotEmpty() -> {
                 out[out.lastIndex] = out.last() + tok
                 i += 1
             }
+
             i + 1 < tokens.size -> {
                 out.add(tok + tokens[i + 1])
                 i += 2
             }
+
             else -> {
                 out.add(tok)
                 i += 1
@@ -302,10 +349,11 @@ internal fun glueSingleLetterTokens(text: String): String {
 internal fun distinctiveSearchTail(text: String): String? {
     val tokens = text.split(' ').filter { it.isNotEmpty() }
     if (tokens.size < 5) return null
-    val useful = tokens.dropLastWhile { token ->
-        val n = token.lowercase().trim('(', ')', ',', '.', '-', '–', '—')
-        n in TAIL_SKIP || n.all { it.isDigit() }
-    }
+    val useful =
+        tokens.dropLastWhile { token ->
+            val n = token.lowercase().trim('(', ')', ',', '.', '-', '–', '—')
+            n in TAIL_SKIP || n.all { it.isDigit() }
+        }
     val tail = useful.takeLast(3).joinToString(" ")
     return tail.takeIf { it.length >= 8 && !it.equals(text, ignoreCase = true) }
 }

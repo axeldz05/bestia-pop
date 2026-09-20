@@ -15,6 +15,6 @@ interface SimilarTracksProvider {
         seed: PlayableItem,
         library: List<Song>,
         excludeKeys: Set<String>,
-        limit: Int
+        limit: Int,
     ): List<PlayableItem>
 }

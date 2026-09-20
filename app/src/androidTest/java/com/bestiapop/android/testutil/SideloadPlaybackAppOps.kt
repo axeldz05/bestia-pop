@@ -10,39 +10,44 @@ internal object SideloadPlaybackAppOps {
     fun acquire(): AutoCloseable {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val packageName = instrumentation.targetContext.packageName
-        val userId = checkNotNull(execute("am get-current-user").trim().toIntOrNull()) {
-            "Could not determine the instrumentation Android user"
-        }
-        val previousRestriction = execute(
-            "cmd activity get-bg-restriction-level --user $userId $packageName"
-        ).trim()
+        val userId =
+            checkNotNull(execute("am get-current-user").trim().toIntOrNull()) {
+                "Could not determine the instrumentation Android user"
+            }
+        val previousRestriction =
+            execute(
+                "cmd activity get-bg-restriction-level --user $userId $packageName",
+            ).trim()
         check(previousRestriction in RESTRICTION_LEVELS) {
             "Could not snapshot sideload background restriction: $previousRestriction"
         }
-        val previousAppOpMode = appOpRestoreMode(
-            execute("cmd appops get --user $userId $packageName RUN_ANY_IN_BACKGROUND")
-        )
+        val previousAppOpMode =
+            appOpRestoreMode(
+                execute("cmd appops get --user $userId $packageName RUN_ANY_IN_BACKGROUND"),
+            )
 
         try {
             execute(
                 "cmd activity set-bg-restriction-level --user $userId " +
-                    "$packageName adaptive_bucket"
+                    "$packageName adaptive_bucket",
             )
             execute(
                 "cmd appops set --user $userId $packageName " +
-                    "RUN_ANY_IN_BACKGROUND allow"
+                    "RUN_ANY_IN_BACKGROUND allow",
             )
             execute("cmd appops write-settings")
 
-            val restriction = execute(
-                "cmd activity get-bg-restriction-level --user $userId $packageName"
-            ).trim()
+            val restriction =
+                execute(
+                    "cmd activity get-bg-restriction-level --user $userId $packageName",
+                ).trim()
             check(restriction == "adaptive_bucket") {
                 "Sideload background restriction was not applied: $restriction"
             }
-            val appOp = execute(
-                "cmd appops get --user $userId $packageName RUN_ANY_IN_BACKGROUND"
-            )
+            val appOp =
+                execute(
+                    "cmd appops get --user $userId $packageName RUN_ANY_IN_BACKGROUND",
+                )
             check(appOpMode(appOp) == "allow") {
                 "RUN_ANY_IN_BACKGROUND was not enabled for sideload playback: $appOp"
             }
@@ -52,7 +57,7 @@ internal object SideloadPlaybackAppOps {
                     packageName = packageName,
                     userId = userId,
                     restriction = previousRestriction,
-                    appOpMode = previousAppOpMode
+                    appOpMode = previousAppOpMode,
                 )
             }.exceptionOrNull()?.let(failure::addSuppressed)
             throw failure
@@ -63,7 +68,7 @@ internal object SideloadPlaybackAppOps {
                 packageName = packageName,
                 userId = userId,
                 restriction = previousRestriction,
-                appOpMode = previousAppOpMode
+                appOpMode = previousAppOpMode,
             )
         }
     }
@@ -72,26 +77,30 @@ internal object SideloadPlaybackAppOps {
         packageName: String,
         userId: Int,
         restriction: String,
-        appOpMode: String
+        appOpMode: String,
     ) {
         var firstFailure: Throwable? = null
+
         fun restoreStep(block: () -> Unit) {
             runCatching(block).exceptionOrNull()?.let { failure ->
-                if (firstFailure == null) firstFailure = failure
-                else firstFailure?.addSuppressed(failure)
+                if (firstFailure == null) {
+                    firstFailure = failure
+                } else {
+                    firstFailure?.addSuppressed(failure)
+                }
             }
         }
 
         restoreStep {
             execute(
                 "cmd activity set-bg-restriction-level --user $userId " +
-                    "$packageName $restriction"
+                    "$packageName $restriction",
             )
         }
         restoreStep {
             execute(
                 "cmd appops set --user $userId $packageName " +
-                    "RUN_ANY_IN_BACKGROUND $appOpMode"
+                    "RUN_ANY_IN_BACKGROUND $appOpMode",
             )
         }
         restoreStep { execute("cmd appops write-settings") }
@@ -107,10 +116,11 @@ internal object SideloadPlaybackAppOps {
             }
         }
 
-    private fun appOpMode(output: String): String? =
-        APP_OP_MODE.find(output)?.groupValues?.get(1)
+    private fun appOpMode(output: String): String? = APP_OP_MODE.find(output)?.groupValues?.get(1)
 
-    private class Restoration(private val restore: () -> Unit) : AutoCloseable {
+    private class Restoration(
+        private val restore: () -> Unit,
+    ) : AutoCloseable {
         private var closed = false
 
         override fun close() {
@@ -124,18 +134,21 @@ internal object SideloadPlaybackAppOps {
 
     private fun execute(command: String): String {
         val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        return ParcelFileDescriptor.AutoCloseInputStream(
-            uiAutomation.executeShellCommand(command)
-        ).bufferedReader().use { it.readText() }
+        return ParcelFileDescriptor
+            .AutoCloseInputStream(
+                uiAutomation.executeShellCommand(command),
+            ).bufferedReader()
+            .use { it.readText() }
     }
 
     private val APP_OP_MODE = Regex("""RUN_ANY_IN_BACKGROUND:\s*([a-z_]+)""")
-    private val RESTRICTION_LEVELS = setOf(
-        "unrestricted",
-        "exempted",
-        "adaptive_bucket",
-        "restricted_bucket",
-        "background_restricted",
-        "hibernation"
-    )
+    private val RESTRICTION_LEVELS =
+        setOf(
+            "unrestricted",
+            "exempted",
+            "adaptive_bucket",
+            "restricted_bucket",
+            "background_restricted",
+            "hibernation",
+        )
 }

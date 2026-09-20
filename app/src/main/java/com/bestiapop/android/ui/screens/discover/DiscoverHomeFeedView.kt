@@ -26,8 +26,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,11 +60,11 @@ import com.bestiapop.android.domain.usecase.RelatedTrackItem
 import com.bestiapop.android.domain.usecase.TopRelatedFeed
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
-import com.bestiapop.android.ui.components.artistAlbumLabel
-import com.bestiapop.android.ui.components.isAlbumDownloading
 import com.bestiapop.android.ui.components.ItemSwipeBox
 import com.bestiapop.android.ui.components.MediaCardDownloadSpinner
 import com.bestiapop.android.ui.components.PlayIconButton
+import com.bestiapop.android.ui.components.artistAlbumLabel
+import com.bestiapop.android.ui.components.isAlbumDownloading
 import com.bestiapop.android.ui.theme.ListDensity
 
 /**
@@ -76,7 +76,7 @@ data class DiscoverTopRelatedActions(
     val onStartRadioForArtist: (String) -> Unit = {},
     val onSelectAlbum: (RelatedAlbumItem) -> Unit = {},
     val onPlayTrack: (RelatedTrackItem) -> Unit = {},
-    val onRefresh: () -> Unit = {}
+    val onRefresh: () -> Unit = {},
 )
 
 /**
@@ -85,7 +85,7 @@ data class DiscoverTopRelatedActions(
 @Immutable
 data class DiscoverListenBrainzActions(
     val onOpenPlaylist: (String) -> Unit = {},
-    val onOpenCfRecommendations: () -> Unit = {}
+    val onOpenCfRecommendations: () -> Unit = {},
 )
 
 /** Level 2: Home feed view using bundled actions. */
@@ -105,7 +105,7 @@ fun DiscoverHomeFeedView(
     showLbSections: Boolean = false,
     actions: DiscoverCatalogActions,
     scrollState: ScrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     DiscoverHomeFeedView(
         feed = feed,
@@ -125,7 +125,7 @@ fun DiscoverHomeFeedView(
         onSelectAlbum = actions.onSelectAlbum,
         onSaveAlbum = actions.onSaveAlbum,
         scrollState = scrollState,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -149,47 +149,49 @@ fun DiscoverHomeFeedView(
     onSelectAlbum: (CatalogAlbum) -> Unit,
     onSaveAlbum: (CatalogAlbum) -> Unit,
     scrollState: ScrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val isFeedEmpty = feed.recommendedTracks.isEmpty() && feed.recommendedAlbums.isEmpty() && feed.chartTracks.isEmpty()
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(bottom = 80.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        modifier =
+            modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(bottom = 80.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         // Section: Fuente del catálogo (Ambos / Deezer / ListenBrainz)
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "Fuente:",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             FilterChip(
                 selected = source == DiscoverSourcePreference.BOTH,
                 onClick = { onSourceChange(DiscoverSourcePreference.BOTH) },
                 label = { Text("Ambos") },
-                modifier = Modifier.height(ListDensity.filterChipHeight)
+                modifier = Modifier.height(ListDensity.filterChipHeight),
             )
             FilterChip(
                 selected = source == DiscoverSourcePreference.DEEZER,
                 onClick = { onSourceChange(DiscoverSourcePreference.DEEZER) },
                 label = { Text("Deezer") },
-                modifier = Modifier.height(ListDensity.filterChipHeight)
+                modifier = Modifier.height(ListDensity.filterChipHeight),
             )
             FilterChip(
                 selected = source == DiscoverSourcePreference.LISTENBRAINZ,
                 onClick = { onSourceChange(DiscoverSourcePreference.LISTENBRAINZ) },
                 label = { Text("ListenBrainz") },
-                modifier = Modifier.height(ListDensity.filterChipHeight)
+                modifier = Modifier.height(ListDensity.filterChipHeight),
             )
         }
 
@@ -197,26 +199,27 @@ fun DiscoverHomeFeedView(
         DiscoverTopRelatedSection(
             feed = topRelatedFeed,
             isLoading = isLoadingTopRelated,
-            actions = topRelatedActions
+            actions = topRelatedActions,
         )
 
         // Section: Recomendados para vos (CF)
         if (showLbSections && cfRecommendations != null && cfRecommendations.matches.isNotEmpty()) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
             ) {
                 DiscoverSectionHeader(
                     title = "Recomendados",
                     badgeText = "ListenBrainz CF",
                     badgeColor = MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.padding(horizontal = 0.dp)
+                    modifier = Modifier.padding(horizontal = 0.dp),
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 CfRecommendationsCardItem(
                     matched = cfRecommendations,
-                    onClick = lbActions.onOpenCfRecommendations
+                    onClick = lbActions.onOpenCfRecommendations,
                 )
             }
         }
@@ -226,17 +229,17 @@ fun DiscoverHomeFeedView(
             DiscoverFeedHorizontalSection(
                 title = "Playlists Para Ti",
                 badgeText = "ListenBrainz",
-                badgeColor = MaterialTheme.colorScheme.tertiary
+                badgeColor = MaterialTheme.colorScheme.tertiary,
             ) {
                 items(
                     items = lbDiscoverPlaylists,
                     key = { "feed-lb-${it.mbid}" },
-                    contentType = { "feed-lb-playlist-card" }
+                    contentType = { "feed-lb-playlist-card" },
                 ) { playlist ->
                     Box(modifier = Modifier.width(280.dp)) {
                         LbPlaylistCardItem(
                             playlist = playlist,
-                            onClick = { lbActions.onOpenPlaylist(playlist.mbid) }
+                            onClick = { lbActions.onOpenPlaylist(playlist.mbid) },
                         )
                     }
                 }
@@ -246,17 +249,17 @@ fun DiscoverHomeFeedView(
         // Section: Canciones recomendadas (Deezer flow/recommendations)
         if (feed.recommendedTracks.isNotEmpty()) {
             DiscoverFeedHorizontalSection(
-                title = "Canciones recomendadas"
+                title = "Canciones recomendadas",
             ) {
                 items(
                     items = feed.recommendedTracks,
                     key = { "rec-track-${it.id.ifEmpty { "${it.artist}|${it.title}" }}" },
-                    contentType = { "rec-track-card" }
+                    contentType = { "rec-track-card" },
                 ) { track ->
                     DiscoverTrackCard(
                         track = track,
                         onPlay = { onPlayTrack(track) },
-                        onDownload = { onDownloadTrack(track) }
+                        onDownload = { onDownloadTrack(track) },
                     )
                 }
             }
@@ -265,17 +268,17 @@ fun DiscoverHomeFeedView(
         // Section: Recommended Albums
         if (feed.recommendedAlbums.isNotEmpty()) {
             DiscoverFeedHorizontalSection(
-                title = "Álbumes recomendados"
+                title = "Álbumes recomendados",
             ) {
                 items(
                     items = feed.recommendedAlbums,
                     key = { "rec-album-${it.id.ifEmpty { "${it.artist}|${it.title}" }}" },
-                    contentType = { "rec-album-card" }
+                    contentType = { "rec-album-card" },
                 ) { album ->
                     DiscoverAlbumCard(
                         album = album,
                         onClick = { onSelectAlbum(album) },
-                        onSave = { onSaveAlbum(album) }
+                        onSave = { onSaveAlbum(album) },
                     )
                 }
             }
@@ -286,7 +289,7 @@ fun DiscoverHomeFeedView(
             Text(
                 text = "Tendencias y Charts",
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
 
             feed.chartTracks.take(8).forEach { track ->
@@ -295,7 +298,7 @@ fun DiscoverHomeFeedView(
                         DiscoverTrackListItem(
                             track = track,
                             onPlay = { onPlayTrack(track) },
-                            onDownload = { onDownloadTrack(track) }
+                            onDownload = { onDownloadTrack(track) },
                         )
                     }
                 }
@@ -304,20 +307,21 @@ fun DiscoverHomeFeedView(
 
         if (isLoading && isFeedEmpty) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 32.dp),
-                contentAlignment = Alignment.Center
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                contentAlignment = Alignment.Center,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
                     Text(
                         text = "Buscando recomendaciones…",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -331,7 +335,7 @@ fun DiscoverTopRelatedSection(
     feed: TopRelatedFeed,
     isLoading: Boolean,
     actions: DiscoverTopRelatedActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     DiscoverTopRelatedSection(
         feed = feed,
@@ -341,7 +345,7 @@ fun DiscoverTopRelatedSection(
         onStartRadioForArtist = actions.onStartRadioForArtist,
         onSelectAlbum = actions.onSelectAlbum,
         onPlayTrack = actions.onPlayTrack,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -355,50 +359,53 @@ fun DiscoverTopRelatedSection(
     onStartRadioForArtist: (String) -> Unit,
     onSelectAlbum: (RelatedAlbumItem) -> Unit,
     onPlayTrack: (RelatedTrackItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        )
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            ),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(22.dp),
                     )
                     Column {
                         Text(
                             text = "Buscar más relacionados",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
                             text = "Lo más escuchado localmente y en ListenBrainz",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -410,7 +417,7 @@ fun DiscoverTopRelatedSection(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Actualizar relacionados",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
@@ -421,22 +428,22 @@ fun DiscoverTopRelatedSection(
             // Tabs
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilterChip(
                     selected = selectedTabIndex == 0,
                     onClick = { selectedTabIndex = 0 },
-                    label = { Text("Artistas (${feed.topArtists.size})") }
+                    label = { Text("Artistas (${feed.topArtists.size})") },
                 )
                 FilterChip(
                     selected = selectedTabIndex == 1,
                     onClick = { selectedTabIndex = 1 },
-                    label = { Text("Álbumes (${feed.topAlbums.size})") }
+                    label = { Text("Álbumes (${feed.topAlbums.size})") },
                 )
                 FilterChip(
                     selected = selectedTabIndex == 2,
                     onClick = { selectedTabIndex = 2 },
-                    label = { Text("Canciones (${feed.topTracks.size})") }
+                    label = { Text("Canciones (${feed.topTracks.size})") },
                 )
             }
 
@@ -447,61 +454,63 @@ fun DiscoverTopRelatedSection(
                     if (feed.topArtists.isEmpty()) {
                         EmptyListHint(
                             text = if (isLoading) "Cargando artistas más escuchados..." else "Sin estadísticas de artistas aún.",
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                         )
                     } else {
                         DiscoverCarouselRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(
                                 items = feed.topArtists,
                                 key = { "rel-artist-${it.name}" },
-                                contentType = { "rel-artist-card" }
+                                contentType = { "rel-artist-card" },
                             ) { artist ->
                                 RelatedArtistCard(
                                     artist = artist,
                                     onSelect = { onSelectArtist(artist.name) },
-                                    onRadio = { onStartRadioForArtist(artist.name) }
+                                    onRadio = { onStartRadioForArtist(artist.name) },
                                 )
                             }
                         }
                     }
                 }
+
                 1 -> {
                     if (feed.topAlbums.isEmpty()) {
                         EmptyListHint(
                             text = if (isLoading) "Cargando álbumes más escuchados..." else "Sin estadísticas de álbumes aún.",
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                         )
                     } else {
                         DiscoverCarouselRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             items(
                                 items = feed.topAlbums,
                                 key = { "rel-album-${it.artist}|${it.title}" },
-                                contentType = { "rel-album-card" }
+                                contentType = { "rel-album-card" },
                             ) { album ->
                                 RelatedAlbumCard(
                                     album = album,
-                                    onSelect = { onSelectAlbum(album) }
+                                    onSelect = { onSelectAlbum(album) },
                                 )
                             }
                         }
                     }
                 }
+
                 2 -> {
                     if (feed.topTracks.isEmpty()) {
                         EmptyListHint(
                             text = if (isLoading) "Cargando canciones más escuchadas..." else "Sin estadísticas de canciones aún.",
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                         )
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             feed.topTracks.take(8).forEach { track ->
                                 RelatedTrackRow(
                                     track = track,
-                                    onPlay = { onPlayTrack(track) }
+                                    onPlay = { onPlayTrack(track) },
                                 )
                             }
                         }
@@ -513,23 +522,36 @@ fun DiscoverTopRelatedSection(
 }
 
 @Composable
-internal fun SourceBadge(source: String, modifier: Modifier = Modifier) {
-    val (bgColor, textColor) = when {
-        source.contains("+") -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
-        source.contains("ListenBrainz", ignoreCase = true) -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
-        else -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
-    }
+internal fun SourceBadge(
+    source: String,
+    modifier: Modifier = Modifier,
+) {
+    val (bgColor, textColor) =
+        when {
+            source.contains("+") -> {
+                MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+            }
+
+            source.contains("ListenBrainz", ignoreCase = true) -> {
+                MaterialTheme.colorScheme.tertiaryContainer to
+                    MaterialTheme.colorScheme.onTertiaryContainer
+            }
+
+            else -> {
+                MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+            }
+        }
     Surface(
         color = bgColor,
         shape = RoundedCornerShape(4.dp),
-        modifier = modifier
+        modifier = modifier,
     ) {
         Text(
             text = source,
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
             color = textColor,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-            maxLines = 1
+            maxLines = 1,
         )
     }
 }
@@ -541,27 +563,29 @@ internal fun RelatedArtistCard(
     onSelect: () -> Unit,
     onRadio: () -> Unit,
     onSwipeAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val cardContent = @Composable {
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 2.dp,
-            modifier = Modifier
-                .width(136.dp)
-                .clickable(onClick = onSelect)
+            modifier =
+                Modifier
+                    .width(136.dp)
+                    .clickable(onClick = onSelect),
         ) {
             Column(
                 modifier = Modifier.padding(10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
+                    modifier =
+                        Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
                 ) {
                     if (!artist.artworkUri.isNullOrBlank()) {
                         ArtworkThumbnail(
@@ -569,13 +593,17 @@ internal fun RelatedArtistCard(
                             contentDescription = artist.name,
                             size = 56.dp,
                             cornerRadius = 28.dp,
-                            modifier = Modifier.clip(CircleShape)
+                            modifier = Modifier.clip(CircleShape),
                         )
                     } else {
                         Text(
-                            text = artist.name.firstOrNull()?.uppercase().orEmpty(),
+                            text =
+                                artist.name
+                                    .firstOrNull()
+                                    ?.uppercase()
+                                    .orEmpty(),
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
                 }
@@ -584,19 +612,19 @@ internal fun RelatedArtistCard(
                     text = artist.name,
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 SourceBadge(source = artist.source)
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     FilledTonalButton(
                         onClick = onSelect,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(26.dp)
+                        modifier = Modifier.height(26.dp),
                     ) {
                         Text("Buscar", style = MaterialTheme.typography.labelSmall)
                     }
@@ -606,19 +634,21 @@ internal fun RelatedArtistCard(
                         contentDescription = "Radio",
                         tint = MaterialTheme.colorScheme.primary,
                         iconSize = 16.dp,
-                        boxSize = 26.dp
+                        boxSize = 26.dp,
                     )
                 }
             }
         }
     }
 
-    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeArtist?.let { cb -> { cb(artist.name) } }
+    val resolvedSwipeAction =
+        onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeArtist
+            ?.let { cb -> { cb(artist.name) } }
     if (resolvedSwipeAction != null) {
         ItemSwipeBox(
             onSwipeAction = resolvedSwipeAction,
             shape = RoundedCornerShape(12.dp),
-            modifier = modifier.width(136.dp)
+            modifier = modifier.width(136.dp),
         ) {
             cardContent()
         }
@@ -637,20 +667,21 @@ internal fun RelatedAlbumCard(
     activeDownloads: List<ActiveDownload>? = LocalDiscoverContext.current.activeDownloads,
     isDownloading: Boolean = activeDownloads?.isAlbumDownloading(album) ?: false,
     onSwipeAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeAlbum?.let { cb ->
-        {
-            cb(
-                CatalogAlbum(
-                    id = "",
-                    title = album.title,
-                    artist = album.artist,
-                    coverUrl = album.artworkUri
+    val resolvedSwipeAction =
+        onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeAlbum?.let { cb ->
+            {
+                cb(
+                    CatalogAlbum(
+                        id = "",
+                        title = album.title,
+                        artist = album.artist,
+                        coverUrl = album.artworkUri,
+                    ),
                 )
-            )
+            }
         }
-    }
     DiscoverAlbumCard(
         title = album.title,
         artist = album.artist,
@@ -663,14 +694,18 @@ internal fun RelatedAlbumCard(
         topEndBadge = {
             SourceBadge(
                 source = album.source,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp),
             )
         },
-        bottomEndAction = if (isDownloading) {
-            { MediaCardDownloadSpinner(size = 28.dp, indicatorSize = 14.dp) }
-        } else null
+        bottomEndAction =
+            if (isDownloading) {
+                { MediaCardDownloadSpinner(size = 28.dp, indicatorSize = 14.dp) }
+            } else {
+                null
+            },
     )
 }
 
@@ -680,7 +715,7 @@ internal fun RelatedTrackRow(
     track: RelatedTrackItem,
     onPlay: () -> Unit,
     onSwipeAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     DiscoverTrackListItem(
         track = track,
@@ -690,16 +725,16 @@ internal fun RelatedTrackRow(
         trailing = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 SourceBadge(source = track.source)
                 PlayIconButton(
                     onClick = onPlay,
                     contentDescription = "Reproducir",
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(32.dp),
                 )
             }
         },
-        modifier = modifier
+        modifier = modifier,
     )
 }

@@ -12,22 +12,25 @@ import kotlin.math.max
  * Pure: no I/O. Used by [com.bestiapop.android.data.repository.MusicRepository.proposeSongIdentity].
  */
 object IdentifyRanking {
-
     const val HIGH_SCORE = 0.85f
     const val HIGH_GAP = 0.12f
     const val MEDIUM_SCORE = 0.55f
     const val TOP_N = 5
 
-    fun scoreToConfidence(score: Float): IdentifyConfidence = when {
-        score >= HIGH_SCORE -> IdentifyConfidence.HIGH
-        score >= MEDIUM_SCORE -> IdentifyConfidence.MEDIUM
-        score > 0f -> IdentifyConfidence.LOW
-        else -> IdentifyConfidence.NONE
-    }
+    fun scoreToConfidence(score: Float): IdentifyConfidence =
+        when {
+            score >= HIGH_SCORE -> IdentifyConfidence.HIGH
+            score >= MEDIUM_SCORE -> IdentifyConfidence.MEDIUM
+            score > 0f -> IdentifyConfidence.LOW
+            else -> IdentifyConfidence.NONE
+        }
+
     /** Page size for “mostrar más” in identify review. */
     const val PAGE_SIZE = 5
+
     /** Catalog fetch page (Deezer/iTunes limit). */
     const val CATALOG_PAGE = 25
+
     /** Drop trailing candidates whose score is this far below the top. */
     const val TAIL_RELATIVE_CUTOFF = 0.4f
     const val CONTAINMENT_BOOST = 0.60f
@@ -56,7 +59,7 @@ object IdentifyRanking {
         val sourceTitle: String? = null,
         val sourceAlbum: String? = null,
         /** Optional refine year from identify filters / song tag. */
-        val preferYear: Int = 0
+        val preferYear: Int = 0,
     )
 
     fun stripTitleNoise(raw: String): String {
@@ -79,7 +82,10 @@ object IdentifyRanking {
      * Display/apply title: drop artist prefixes/suffixes, leading track numbers,
      * cosmetic mix/lyrics/video noise, while keeping live/remix/acoustic versions.
      */
-    fun cleanIdentityTitle(raw: String, artist: String? = null): String {
+    fun cleanIdentityTitle(
+        raw: String,
+        artist: String? = null,
+    ): String {
         var t = raw.trim()
         if (t.isEmpty()) return t
 
@@ -133,7 +139,10 @@ object IdentifyRanking {
         return s
     }
 
-    fun stripArtistFromTitle(titleText: String, artist: String): String {
+    fun stripArtistFromTitle(
+        titleText: String,
+        artist: String,
+    ): String {
         var t = titleText.trim()
         val normArtist = TrackMatchKeys.normalize(artist)
         if (normArtist.isEmpty()) return t
@@ -185,7 +194,10 @@ object IdentifyRanking {
         return t
     }
 
-    private fun isArtistWithFeatures(normPrefix: String, normArtist: String): Boolean {
+    private fun isArtistWithFeatures(
+        normPrefix: String,
+        normArtist: String,
+    ): Boolean {
         if (!normPrefix.startsWith(normArtist)) return false
         val rest = normPrefix.removePrefix(normArtist).trimStart()
         return rest.startsWith("feat") || rest.startsWith("ft") || rest.startsWith("&") || rest.startsWith("x ")
@@ -210,20 +222,29 @@ object IdentifyRanking {
 
     private fun stripPunctuationJunk(text: String): String {
         var s = text.trim()
-        while (s.isNotEmpty() && (s.startsWith("-") || s.startsWith("–") || s.startsWith("—") ||
-                s.startsWith(":") || s.startsWith("|") || s.startsWith("~") || s.startsWith(".") ||
-                s.startsWith(",") || s.startsWith("_") || s.startsWith("/") || s.startsWith("\\"))) {
+        while (s.isNotEmpty() && (
+                s.startsWith("-") || s.startsWith("–") || s.startsWith("—") ||
+                    s.startsWith(":") || s.startsWith("|") || s.startsWith("~") || s.startsWith(".") ||
+                    s.startsWith(",") || s.startsWith("_") || s.startsWith("/") || s.startsWith("\\")
+            )
+        ) {
             s = s.drop(1).trim()
         }
-        while (s.isNotEmpty() && (s.endsWith("-") || s.endsWith("–") || s.endsWith("—") ||
-                s.endsWith(":") || s.endsWith("|") || s.endsWith("~") || s.endsWith(",") ||
-                s.endsWith(".") || s.endsWith(";") || s.endsWith("_") || s.endsWith("/") || s.endsWith("\\"))) {
+        while (s.isNotEmpty() && (
+                s.endsWith("-") || s.endsWith("–") || s.endsWith("—") ||
+                    s.endsWith(":") || s.endsWith("|") || s.endsWith("~") || s.endsWith(",") ||
+                    s.endsWith(".") || s.endsWith(";") || s.endsWith("_") || s.endsWith("/") || s.endsWith("\\")
+            )
+        ) {
             s = s.dropLast(1).trim()
         }
         return s.trim()
     }
 
-    fun similarity(a: String, b: String): Float {
+    fun similarity(
+        a: String,
+        b: String,
+    ): Float {
         if (a.isEmpty() || b.isEmpty()) return 0f
         if (a == b) return 1f
         val ta = a.split(' ').filter { it.isNotEmpty() }.toSet()
@@ -243,7 +264,10 @@ object IdentifyRanking {
      * Space-stripped similarity for sanitizer holes (`Fog n` ≈ `Fogón`) and
      * apostrophes (`I m` ≈ `I'm`). Token Jaccard stays the default.
      */
-    fun compactSimilarity(a: String, b: String): Float {
+    fun compactSimilarity(
+        a: String,
+        b: String,
+    ): Float {
         val ca = a.replace(" ", "")
         val cb = b.replace(" ", "")
         if (ca.isEmpty() || cb.isEmpty()) return 0f
@@ -258,28 +282,36 @@ object IdentifyRanking {
         return (1f - dist.toFloat() / max(ca.length, cb.length)).coerceIn(0f, 1f)
     }
 
-    fun fieldSimilarity(a: String, b: String): Float =
-        max(similarity(a, b), compactSimilarity(a, b))
+    fun fieldSimilarity(
+        a: String,
+        b: String,
+    ): Float = max(similarity(a, b), compactSimilarity(a, b))
 
     /** Title-only: also compare latin vs CJK/kana runs and pinyin heads. */
-    fun titleFieldSimilarity(a: String, b: String): Float =
-        max(fieldSimilarity(a, b), scriptRunSimilarity(a, b))
+    fun titleFieldSimilarity(
+        a: String,
+        b: String,
+    ): Float = max(fieldSimilarity(a, b), scriptRunSimilarity(a, b))
 
     /**
      * Compare latin vs CJK/kana runs separately so `Mirror Jing Zi` ≈ `Mirror`
      * and `夜鷹` ≈ a haystack that also contains `Yodaka`.
      */
-    fun scriptRunSimilarity(a: String, b: String): Float {
+    fun scriptRunSimilarity(
+        a: String,
+        b: String,
+    ): Float {
         val ra = IdentifyQueryVariants.letterRuns(a)
         val rb = IdentifyQueryVariants.letterRuns(b)
         var best = 0f
         for (x in ra) {
             for (y in rb) {
                 if (x.kind != y.kind) continue
-                best = max(
-                    best,
-                    max(similarity(x.normalized, y.normalized), compactSimilarity(x.normalized, y.normalized))
-                )
+                best =
+                    max(
+                        best,
+                        max(similarity(x.normalized, y.normalized), compactSimilarity(x.normalized, y.normalized)),
+                    )
             }
         }
         IdentifyQueryVariants.latinHeadDroppingPinyin(a)?.let { head ->
@@ -297,7 +329,10 @@ object IdentifyRanking {
      * Keep catalog script + source script/pinyin when they complement each other.
      * Does not invent romanization: `夜鷹` + `Yodaka` → `夜鷹 (Yodaka)`.
      */
-    fun preferBilingualTitle(catalog: String, source: String): String {
+    fun preferBilingualTitle(
+        catalog: String,
+        source: String,
+    ): String {
         val cat = cleanIdentityTitle(catalog).ifBlank { catalog.trim() }
         val src = source.trim()
         if (cat.isEmpty()) return src
@@ -335,7 +370,10 @@ object IdentifyRanking {
         return cat
     }
 
-    fun shouldApplyBilingualTitle(catalog: String, source: String): Boolean {
+    fun shouldApplyBilingualTitle(
+        catalog: String,
+        source: String,
+    ): Boolean {
         val merged = preferBilingualTitle(catalog, source)
         if (merged.isBlank()) return false
         val src = source.trim()
@@ -348,7 +386,10 @@ object IdentifyRanking {
     }
 
     /** Generic/blank album → `"$artist - Single"`; otherwise keep [current]. */
-    fun fallbackAlbum(artist: String, current: String = ""): String {
+    fun fallbackAlbum(
+        artist: String,
+        current: String = "",
+    ): String {
         val trimmed = current.trim()
         if (trimmed.isNotEmpty() && !isGenericAlbum(trimmed)) return trimmed
         return "${artist.ifBlank { "Unknown" }} - Single"
@@ -375,12 +416,12 @@ object IdentifyRanking {
             p == "catalog"
     }
 
-    fun isYouTubeProvider(provider: String): Boolean =
-        provider.contains("youtube", ignoreCase = true)
+    fun isYouTubeProvider(provider: String): Boolean = provider.contains("youtube", ignoreCase = true)
 
     fun strongVersionMarkers(raw: String): Set<String> {
         if (raw.isBlank()) return emptySet()
-        return STRONG_MARKER_REGEX.findAll(raw.lowercase())
+        return STRONG_MARKER_REGEX
+            .findAll(raw.lowercase())
             .mapNotNull { canonicalizeStrongMarker(it.groupValues[1]) }
             .toSet()
     }
@@ -388,7 +429,10 @@ object IdentifyRanking {
     /**
      * Score one catalog hit against the library query. Returns score in 0..1 and UI reasons.
      */
-    fun score(query: Query, track: OnlineCatalogTrack): Pair<Float, List<String>> {
+    fun score(
+        query: Query,
+        track: OnlineCatalogTrack,
+    ): Pair<Float, List<String>> {
         val reasons = ArrayList<String>(4)
         var total = 0f
 
@@ -455,8 +499,14 @@ object IdentifyRanking {
                     val rounded = diffSec.toInt()
                     reasons.add(if (rounded <= 0) "duración exacta" else "duración ±${rounded}s")
                 }
-                diffSec <= 5f -> total += nearBoost
-                else -> total -= DURATION_FAR_PENALTY
+
+                diffSec <= 5f -> {
+                    total += nearBoost
+                }
+
+                else -> {
+                    total -= DURATION_FAR_PENALTY
+                }
             }
         } else {
             total += 0.08f
@@ -481,16 +531,20 @@ object IdentifyRanking {
                         total += SOURCE_ALBUM_AGREE_BOOST
                         reasons.add("álbum coincidente")
                     }
-                    albumSim < SOURCE_CONFLICT_SIM -> reasons.add("álbum distinto")
+
+                    albumSim < SOURCE_CONFLICT_SIM -> {
+                        reasons.add("álbum distinto")
+                    }
                 }
             }
         }
 
         val srcArtist = query.sourceArtist?.trim().orEmpty()
         val srcTitle = query.sourceTitle?.let { stripTitleNoise(it) }.orEmpty()
-        val srcAll = stripTitleNoise(
-            "${srcArtist.takeUnless { isPlaceholderArtist(it) }.orEmpty()} ${query.sourceTitle.orEmpty()}"
-        )
+        val srcAll =
+            stripTitleNoise(
+                "${srcArtist.takeUnless { isPlaceholderArtist(it) }.orEmpty()} ${query.sourceTitle.orEmpty()}",
+            )
         val srcCombined = if (srcAll.isNotEmpty()) fieldSimilarity(srcAll, cAll) else 0f
         // A first-underscore split (`Anibal` / `Troilo Barrio de Tango`) is not a real
         // artist/title conflict when the concatenated tags match the candidate.
@@ -505,8 +559,9 @@ object IdentifyRanking {
         // Filename `{artist}_{title}` with spaces as `_` stores artist+title in sourceTitle
         // (`Clever Girl Elm` vs catalog `Elm`). That is not a title conflict.
         // Real mismatch: ID3 title `Radiohead` vs catalog `Creep`.
-        val sourceIsArtistPlusTitle = srcTitle.isNotEmpty() &&
-            fieldSimilarity(srcTitle, cAll) >= SOURCE_AGREE_SIM
+        val sourceIsArtistPlusTitle =
+            srcTitle.isNotEmpty() &&
+                fieldSimilarity(srcTitle, cAll) >= SOURCE_AGREE_SIM
         if (srcTitle.isNotEmpty() &&
             !sourceIsArtistPlusTitle &&
             titleFieldSimilarity(srcTitle, cTitle) < SOURCE_CONFLICT_SIM
@@ -536,12 +591,16 @@ object IdentifyRanking {
                     total += YEAR_EXACT_BOOST
                     reasons.add("año coincidente")
                 }
-                delta <= 1 -> total += YEAR_NEAR_BOOST
+
+                delta <= 1 -> {
+                    total += YEAR_NEAR_BOOST
+                }
             }
         }
 
-        val queryMarkers = strongVersionMarkers(query.title) +
-            strongVersionMarkers(query.filenameTitle.orEmpty())
+        val queryMarkers =
+            strongVersionMarkers(query.title) +
+                strongVersionMarkers(query.filenameTitle.orEmpty())
         val extraMarkers = strongVersionMarkers(track.title) - queryMarkers
         if (extraMarkers.isNotEmpty()) {
             total -= VERSION_MISMATCH_PENALTY
@@ -552,16 +611,21 @@ object IdentifyRanking {
         return total.coerceIn(0f, 1f) to reasons
     }
 
-    fun toCandidate(track: OnlineCatalogTrack, score: Float, reasons: List<String>): IdentifyCandidate {
+    fun toCandidate(
+        track: OnlineCatalogTrack,
+        score: Float,
+        reasons: List<String>,
+    ): IdentifyCandidate {
         val cleaned = cleanIdentityTitle(track.title, track.artist).ifBlank { track.title }
         return IdentifyCandidate(
-            track = if (cleaned == track.title) {
-                track
-            } else {
-                track.withIdentity { copy(title = cleaned) }
-            },
+            track =
+                if (cleaned == track.title) {
+                    track
+                } else {
+                    track.withIdentity { copy(title = cleaned) }
+                },
             score = score,
-            reasons = reasons
+            reasons = reasons,
         )
     }
 
@@ -573,7 +637,7 @@ object IdentifyRanking {
     fun rank(
         query: Query,
         tracks: List<OnlineCatalogTrack>,
-        limit: Int = TOP_N
+        limit: Int = TOP_N,
     ): List<IdentifyCandidate> {
         if (tracks.isEmpty() || limit <= 0) return emptyList()
 
@@ -593,17 +657,19 @@ object IdentifyRanking {
             }
         }
 
-        val ranked = bestByKey.values.sortedWith(
-            compareByDescending<IdentifyCandidate> { it.score }
-                .thenBy { strongVersionMarkers(it.title).size }
-        )
+        val ranked =
+            bestByKey.values.sortedWith(
+                compareByDescending<IdentifyCandidate> { it.score }
+                    .thenBy { strongVersionMarkers(it.title).size },
+            )
         if (ranked.isEmpty()) return emptyList()
 
         val topScore = ranked.first().score
         val capped = if (limit == Int.MAX_VALUE) ranked else ranked.take(limit)
-        val trimmed = capped.filterIndexed { index, c ->
-            index < 3 || c.score >= topScore - TAIL_RELATIVE_CUTOFF
-        }
+        val trimmed =
+            capped.filterIndexed { index, c ->
+                index < 3 || c.score >= topScore - TAIL_RELATIVE_CUTOFF
+            }
         return trimmed
     }
 
@@ -613,7 +679,7 @@ object IdentifyRanking {
      */
     fun appendCandidates(
         existing: List<IdentifyCandidate>,
-        newcomers: List<IdentifyCandidate>
+        newcomers: List<IdentifyCandidate>,
     ): List<IdentifyCandidate> {
         if (newcomers.isEmpty()) return existing
         if (existing.isEmpty()) return newcomers
@@ -630,18 +696,20 @@ object IdentifyRanking {
 
     fun confidence(
         ranked: List<IdentifyCandidate>,
-        query: Query? = null
+        query: Query? = null,
     ): IdentifyConfidence {
         if (ranked.isEmpty()) return IdentifyConfidence.NONE
         val top = ranked.first()
         val gap = if (ranked.size >= 2) top.score - ranked[1].score else 1f
-        var base = when {
-            top.score >= HIGH_SCORE && gap >= HIGH_GAP -> IdentifyConfidence.HIGH
-            top.score >= MEDIUM_SCORE -> IdentifyConfidence.MEDIUM
-            else -> IdentifyConfidence.LOW
-        }
-        val genericTitle = query != null &&
-            (titleUninformative(query) || isGenericIdentifyTitle(query.title))
+        var base =
+            when {
+                top.score >= HIGH_SCORE && gap >= HIGH_GAP -> IdentifyConfidence.HIGH
+                top.score >= MEDIUM_SCORE -> IdentifyConfidence.MEDIUM
+                else -> IdentifyConfidence.LOW
+            }
+        val genericTitle =
+            query != null &&
+                (titleUninformative(query) || isGenericIdentifyTitle(query.title))
         if (isYouTubeProvider(top.provider) || hasSevereConflict(top.reasons) || genericTitle) {
             if (base == IdentifyConfidence.HIGH) base = IdentifyConfidence.MEDIUM
         }
@@ -671,7 +739,7 @@ object IdentifyRanking {
 
     private fun sourceMatchesConcatenatedIdentity(
         query: Query,
-        track: OnlineCatalogTrack
+        track: OnlineCatalogTrack,
     ): Boolean {
         val src = stripTitleNoise(query.sourceTitle ?: query.title)
         if (src.isEmpty()) return false
@@ -681,17 +749,21 @@ object IdentifyRanking {
 
     private fun uniqueCloseDuration(
         ranked: List<IdentifyCandidate>,
-        query: Query
+        query: Query,
     ): Boolean {
         if (query.durationMs <= 0L) return false
-        val close = ranked.filter { candidate ->
-            candidate.durationMs > 0L &&
-                abs(candidate.durationMs - query.durationMs) <= CLOSE_DURATION_MS
-        }
+        val close =
+            ranked.filter { candidate ->
+                candidate.durationMs > 0L &&
+                    abs(candidate.durationMs - query.durationMs) <= CLOSE_DURATION_MS
+            }
         return close.size == 1 && close.first().track.id == ranked.first().track.id
     }
 
-    private fun titleOverlaps(query: Query, track: OnlineCatalogTrack): Boolean {
+    private fun titleOverlaps(
+        query: Query,
+        track: OnlineCatalogTrack,
+    ): Boolean {
         val qTitle = stripTitleNoise(query.title)
         val cTitle = stripTitleNoise(track.title)
         if (qTitle.isEmpty() || cTitle.isEmpty()) return false
@@ -702,8 +774,9 @@ object IdentifyRanking {
 
     private fun titleUninformative(query: Query): Boolean {
         val title = query.sourceTitle ?: query.title
-        val artist = query.sourceArtist
-            ?: query.artist.takeUnless { query.artistIsPlaceholder || isPlaceholderArtist(it) }
+        val artist =
+            query.sourceArtist
+                ?: query.artist.takeUnless { query.artistIsPlaceholder || isPlaceholderArtist(it) }
         return titleCollidesWithArtistOrAlbum(title, artist, query.sourceAlbum)
     }
 
@@ -723,7 +796,10 @@ object IdentifyRanking {
                 reason.startsWith("título distinto")
         }
 
-    private fun sourceAlbumSimilarity(source: String, candidate: String): Float {
+    private fun sourceAlbumSimilarity(
+        source: String,
+        candidate: String,
+    ): Float {
         if (albumNamesMatch(source, candidate)) return 1f
         return similarity(TrackMatchKeys.normalize(source), TrackMatchKeys.normalize(candidate))
     }
@@ -735,7 +811,7 @@ object IdentifyRanking {
     fun titleCollidesWithArtistOrAlbum(
         title: String,
         artist: String? = null,
-        album: String? = null
+        album: String? = null,
     ): Boolean {
         val t = TrackMatchKeys.normalize(title)
         if (t.isEmpty()) return false
@@ -755,7 +831,7 @@ object IdentifyRanking {
         artist: String,
         title: String,
         album: String = "",
-        artistIsPlaceholder: Boolean = false
+        artistIsPlaceholder: Boolean = false,
     ): String {
         val artistOk = !artistIsPlaceholder && artist.isNotBlank() && !isPlaceholderArtist(artist)
         val albumOk = album.isNotBlank() && !isGenericAlbum(album)
@@ -775,8 +851,11 @@ object IdentifyRanking {
             isTrackNumberLabel(a)
     }
 
-    fun dedupeKey(artist: String, title: String, album: String): String =
-        "${TrackMatchKeys.normalize(artist)}|${stripTitleNoise(title)}|${TrackMatchKeys.normalize(album)}"
+    fun dedupeKey(
+        artist: String,
+        title: String,
+        album: String,
+    ): String = "${TrackMatchKeys.normalize(artist)}|${stripTitleNoise(title)}|${TrackMatchKeys.normalize(album)}"
 
     private fun canonicalizeStrongMarker(token: String): String? {
         val t = token.lowercase()
@@ -788,10 +867,11 @@ object IdentifyRanking {
         }
     }
 
-    private val FEAT_PAREN = Regex(
-        """\s*[\(\[][^)\]]*?\bfeat\.?\b[^)\]]*[\)\]]""",
-        RegexOption.IGNORE_CASE
-    )
+    private val FEAT_PAREN =
+        Regex(
+            """\s*[\(\[][^)\]]*?\bfeat\.?\b[^)\]]*[\)\]]""",
+            RegexOption.IGNORE_CASE,
+        )
     private val COSMETIC_BODY =
         """(?:official\s+)?(?:music\s+)?video|""" +
             """video\s+oficial|v[ií]deo\s+oficial|videoclip(?:\s+oficial)?|video\s*clip|""" +
@@ -810,30 +890,36 @@ object IdentifyRanking {
     private val SCORE_NOISE_BODY =
         """$COSMETIC_BODY|live|concert|performance|session|remix|bootleg|cover|karaoke|acoustic"""
 
-    private val SCORE_NOISE_PAREN = Regex(
-        """\s*[\(\[]\s*($SCORE_NOISE_BODY)\s*[\)\]]""",
-        RegexOption.IGNORE_CASE
-    )
-    private val SCORE_NOISE_SUFFIX = Regex(
-        """\s*[-–—|~]\s*($SCORE_NOISE_BODY)\s*$""",
-        RegexOption.IGNORE_CASE
-    )
-    private val COSMETIC_PAREN = Regex(
-        """\s*[\(\[]\s*($COSMETIC_BODY)\s*[\)\]]""",
-        RegexOption.IGNORE_CASE
-    )
-    private val COSMETIC_SUFFIX = Regex(
-        """\s*[\-–—|~]\s*($COSMETIC_BODY)\s*$""",
-        RegexOption.IGNORE_CASE
-    )
-    private val PLUS_LYRICS = Regex(
-        """\s*[+|]\s*(?:letras?|lyrics?)\b""",
-        RegexOption.IGNORE_CASE
-    )
-    private val TRAILING_LYRICS = Regex(
-        """\s+(?:letras?|lyrics?)\s*$""",
-        RegexOption.IGNORE_CASE
-    )
+    private val SCORE_NOISE_PAREN =
+        Regex(
+            """\s*[\(\[]\s*($SCORE_NOISE_BODY)\s*[\)\]]""",
+            RegexOption.IGNORE_CASE,
+        )
+    private val SCORE_NOISE_SUFFIX =
+        Regex(
+            """\s*[-–—|~]\s*($SCORE_NOISE_BODY)\s*$""",
+            RegexOption.IGNORE_CASE,
+        )
+    private val COSMETIC_PAREN =
+        Regex(
+            """\s*[\(\[]\s*($COSMETIC_BODY)\s*[\)\]]""",
+            RegexOption.IGNORE_CASE,
+        )
+    private val COSMETIC_SUFFIX =
+        Regex(
+            """\s*[\-–—|~]\s*($COSMETIC_BODY)\s*$""",
+            RegexOption.IGNORE_CASE,
+        )
+    private val PLUS_LYRICS =
+        Regex(
+            """\s*[+|]\s*(?:letras?|lyrics?)\b""",
+            RegexOption.IGNORE_CASE,
+        )
+    private val TRAILING_LYRICS =
+        Regex(
+            """\s+(?:letras?|lyrics?)\s*$""",
+            RegexOption.IGNORE_CASE,
+        )
     private val EMPTY_PARENS_BRACKETS = Regex("""\s*[\(\[\{【]\s*[\)\]\}】]""")
     private val ARTIST_TITLE_SEPARATOR = Regex("""\s*[\-–—:|~]\s+|\s+[\-–—]\s*|_-_""")
     private val ARTIST_QUOTED_TITLE = Regex("""^(.+?)\s+["“'«](.+)["”'»]$""")
@@ -842,18 +928,41 @@ object IdentifyRanking {
     private val TRACK_NUMBER_PREFIX = Regex("""^(?:(?:\d{1,3}[-.]\d{1,2})|\d{1,3})\s*[\.\-–—]\s*(.+)$""")
     private val ZERO_PADDED_TRACK = Regex("""^0\d{1,2}\s+(.+)$""")
     private val UNDERSCORE_TRACK = Regex("""^\d{1,3}_+(.+)$""")
-    private val GENERIC_IDENTIFY_TITLES = setOf(
-        "black hole", "castle", "computer", "d", "rose", "flashback", "sauna",
-        "demo", "instrumental", "remix", "intro", "outro", "untitled", "title",
-        "theme", "ost", "soundtrack", "bonus", "bonus track", "track", "pista"
-    )
+    private val GENERIC_IDENTIFY_TITLES =
+        setOf(
+            "black hole",
+            "castle",
+            "computer",
+            "d",
+            "rose",
+            "flashback",
+            "sauna",
+            "demo",
+            "instrumental",
+            "remix",
+            "intro",
+            "outro",
+            "untitled",
+            "title",
+            "theme",
+            "ost",
+            "soundtrack",
+            "bonus",
+            "bonus track",
+            "track",
+            "pista",
+        )
     private val WHITESPACE = Regex("""\s+""")
-    private val STRONG_MARKER_REGEX = Regex(
-        """\b(live|concert|performance|session|letra|letras|lyrics?|remix|bootleg|cover|karaoke|acoustic)\b""",
-        RegexOption.IGNORE_CASE
-    )
+    private val STRONG_MARKER_REGEX =
+        Regex(
+            """\b(live|concert|performance|session|letra|letras|lyrics?|remix|bootleg|cover|karaoke|acoustic)\b""",
+            RegexOption.IGNORE_CASE,
+        )
 
-    private fun levenshtein(a: String, b: String): Int {
+    private fun levenshtein(
+        a: String,
+        b: String,
+    ): Int {
         if (a == b) return 0
         if (a.isEmpty()) return b.length
         if (b.isEmpty()) return a.length

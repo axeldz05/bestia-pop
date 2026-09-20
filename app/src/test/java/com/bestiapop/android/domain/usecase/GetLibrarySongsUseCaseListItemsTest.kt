@@ -19,14 +19,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GetLibrarySongsUseCaseListItemsTest {
-
     private val useCase = GetLibrarySongsUseCase()
 
-    private val songs = listOf(
-        Song(id = 1, uriString = "u1", title = "A", artist = "Queen", album = "Opera"),
-        Song(id = 2, uriString = "u2", title = "B", artist = "Queen", album = "Opera"),
-        Song(id = 3, uriString = "u3", title = "C", artist = "Eagles", album = "Hotel")
-    )
+    private val songs =
+        listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Queen", album = "Opera"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Queen", album = "Opera"),
+            Song(id = 3, uriString = "u3", title = "C", artist = "Eagles", album = "Hotel"),
+        )
 
     @Test
     fun buildListItems_flat_preservesIndices() {
@@ -59,21 +59,24 @@ class GetLibrarySongsUseCaseListItemsTest {
         assertEquals(
             listOf(items[1] as LibraryListItem.SongRow, items[3] as LibraryListItem.SongRow, items[4] as LibraryListItem.SongRow)
                 .map { it.song },
-            useCase.songsInOrder(songs, header1.songIds + header2.songIds)
+            useCase.songsInOrder(songs, header1.songIds + header2.songIds),
         )
     }
 
     @Test
     fun buildListItems_albumGroups_sortsByTrackThenTitle() {
-        val mixed = listOf(
-            Song(id = 1, uriString = "u1", title = "Zebra", album = "Opera", trackNumber = 3),
-            Song(id = 2, uriString = "u2", title = "Alpha", album = "Opera", trackNumber = 0),
-            Song(id = 3, uriString = "u3", title = "Beta", album = "Opera", trackNumber = 1),
-            Song(id = 4, uriString = "u4", title = "Only", album = "Hotel", trackNumber = 2)
-        )
+        val mixed =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "Zebra", album = "Opera", trackNumber = 3),
+                Song(id = 2, uriString = "u2", title = "Alpha", album = "Opera", trackNumber = 0),
+                Song(id = 3, uriString = "u3", title = "Beta", album = "Opera", trackNumber = 1),
+                Song(id = 4, uriString = "u4", title = "Only", album = "Hotel", trackNumber = 2),
+            )
         val items = useCase.buildListItems(mixed, LibraryViewMode.ALBUM_GROUPS)
-        val operaRows = items.filterIsInstance<LibraryListItem.SongRow>()
-            .filter { it.song.album == "Opera" }
+        val operaRows =
+            items
+                .filterIsInstance<LibraryListItem.SongRow>()
+                .filter { it.song.album == "Opera" }
         assertEquals(listOf(3L, 1L, 2L), operaRows.map { it.song.id })
         assertEquals(listOf(1, 2, 3), operaRows.map { it.index })
         assertEquals(listOf(4L, 3L, 1L, 2L), useCase.songsFromListItems(items).map { it.id })
@@ -81,14 +84,17 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun buildListItems_albumGroups_inheritsArtworkOntoRows() {
-        val mixed = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "X", album = "Real Album", artworkUri = "file:///cover"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "X", album = "Real Album", artworkUri = null),
-            Song(id = 3, uriString = "u3", title = "C", artist = "Y", album = "Unknown Album", artworkUri = "file:///other"),
-            Song(id = 4, uriString = "u4", title = "D", artist = "Y", album = "Unknown Album", artworkUri = null)
-        )
-        val rows = useCase.buildListItems(mixed, LibraryViewMode.ALBUM_GROUPS)
-            .filterIsInstance<LibraryListItem.SongRow>()
+        val mixed =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "X", album = "Real Album", artworkUri = "file:///cover"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "X", album = "Real Album", artworkUri = null),
+                Song(id = 3, uriString = "u3", title = "C", artist = "Y", album = "Unknown Album", artworkUri = "file:///other"),
+                Song(id = 4, uriString = "u4", title = "D", artist = "Y", album = "Unknown Album", artworkUri = null),
+            )
+        val rows =
+            useCase
+                .buildListItems(mixed, LibraryViewMode.ALBUM_GROUPS)
+                .filterIsInstance<LibraryListItem.SongRow>()
         assertEquals("file:///cover", rows.first { it.song.id == 2L }.artworkUri)
         assertEquals(null, rows.first { it.song.id == 2L }.song.artworkUri)
         assertEquals(null, rows.first { it.song.id == 4L }.artworkUri)
@@ -96,44 +102,53 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun buildListItems_albumGroups_ordersBlocksLikeExtractAlbums() {
-        val mixed = listOf(
-            Song(id = 1, uriString = "u1", title = "Zed", artist = "B", album = "Zebra", dateAdded = 10),
-            Song(id = 2, uriString = "u2", title = "Amy", artist = "A", album = "Alpha", dateAdded = 30),
-            Song(id = 3, uriString = "u3", title = "Old", artist = "C", album = "Mid", dateAdded = 20)
-        )
-        val byName = useCase.buildListItems(
-            mixed, LibraryViewMode.ALBUM_GROUPS, sortOption = SortOption.TITLE
-        )
+        val mixed =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "Zed", artist = "B", album = "Zebra", dateAdded = 10),
+                Song(id = 2, uriString = "u2", title = "Amy", artist = "A", album = "Alpha", dateAdded = 30),
+                Song(id = 3, uriString = "u3", title = "Old", artist = "C", album = "Mid", dateAdded = 20),
+            )
+        val byName =
+            useCase.buildListItems(
+                mixed,
+                LibraryViewMode.ALBUM_GROUPS,
+                sortOption = SortOption.TITLE,
+            )
         assertEquals(
             listOf("Alpha", "Mid", "Zebra"),
-            byName.filterIsInstance<LibraryListItem.AlbumHeader>().map { it.albumName }
+            byName.filterIsInstance<LibraryListItem.AlbumHeader>().map { it.albumName },
         )
-        val byDateDesc = useCase.buildListItems(
-            mixed,
-            LibraryViewMode.ALBUM_GROUPS,
-            sortOption = SortOption.DATE_ADDED,
-            sortDirection = SortDirection.DESC
-        )
+        val byDateDesc =
+            useCase.buildListItems(
+                mixed,
+                LibraryViewMode.ALBUM_GROUPS,
+                sortOption = SortOption.DATE_ADDED,
+                sortDirection = SortDirection.DESC,
+            )
         assertEquals(
             listOf("Alpha", "Mid", "Zebra"),
-            byDateDesc.filterIsInstance<LibraryListItem.AlbumHeader>().map { it.albumName }
+            byDateDesc.filterIsInstance<LibraryListItem.AlbumHeader>().map { it.albumName },
         )
-        val byArtist = useCase.buildListItems(
-            mixed, LibraryViewMode.ALBUM_GROUPS, sortOption = SortOption.ARTIST
-        )
+        val byArtist =
+            useCase.buildListItems(
+                mixed,
+                LibraryViewMode.ALBUM_GROUPS,
+                sortOption = SortOption.ARTIST,
+            )
         assertEquals(
             listOf("Alpha", "Zebra", "Mid"),
-            byArtist.filterIsInstance<LibraryListItem.AlbumHeader>().map { it.albumName }
+            byArtist.filterIsInstance<LibraryListItem.AlbumHeader>().map { it.albumName },
         )
     }
 
     @Test
     fun sortSongsWithinAlbum_unknownTracksLast() {
-        val mixed = listOf(
-            Song(id = 1, uriString = "u1", title = "B", trackNumber = 0),
-            Song(id = 2, uriString = "u2", title = "A", trackNumber = 2),
-            Song(id = 3, uriString = "u3", title = "C", trackNumber = 1)
-        )
+        val mixed =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "B", trackNumber = 0),
+                Song(id = 2, uriString = "u2", title = "A", trackNumber = 2),
+                Song(id = 3, uriString = "u3", title = "C", trackNumber = 1),
+            )
         assertEquals(listOf(3L, 2L, 1L), useCase.sortSongsWithinAlbum(mixed).map { it.id })
     }
 
@@ -144,13 +159,14 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractAlbums_groupsCaseDeluxeAndCjkVariants() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Muse", album = "eureka"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Muse", album = "Eureka"),
-            Song(id = 3, uriString = "u3", title = "C", artist = "Muse", album = "Eureka (Deluxe)"),
-            Song(id = 4, uriString = "u4", title = "D", artist = "Band", album = "Balance - EP"),
-            Song(id = 5, uriString = "u5", title = "E", artist = "Band", album = "Balance - 平衡")
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Muse", album = "eureka"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Muse", album = "Eureka"),
+                Song(id = 3, uriString = "u3", title = "C", artist = "Muse", album = "Eureka (Deluxe)"),
+                Song(id = 4, uriString = "u4", title = "D", artist = "Band", album = "Balance - EP"),
+                Song(id = 5, uriString = "u5", title = "E", artist = "Band", album = "Balance - 平衡"),
+            )
         val albums = useCase.extractAlbums(list)
         assertEquals(setOf("Eureka", "Balance"), albums.map { it.name }.toSet())
         assertEquals(3, albums.first { it.name == "Eureka" }.songCount)
@@ -161,11 +177,12 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractAlbums_sessionFoldsIntoSoleStudioAlbum() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "TTNG", album = "This Town Needs Guns"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "TTNG", album = "Audiotree Live"),
-            Song(id = 3, uriString = "u3", title = "C", artist = "Other", album = "Audiotree Live")
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "TTNG", album = "This Town Needs Guns"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "TTNG", album = "Audiotree Live"),
+                Song(id = 3, uriString = "u3", title = "C", artist = "Other", album = "Audiotree Live"),
+            )
         val albums = useCase.extractAlbums(list)
         assertEquals(2, albums.size)
         val studio = albums.first { it.name == "This Town Needs Guns" }
@@ -185,15 +202,16 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun buildListItems_sessionMajorityDoesNotDuplicateAudiotreeHeaderKeys() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "Studio", artist = "TTNG", album = "This Town Needs Guns"),
-            Song(id = 2, uriString = "u2", title = "Live1", artist = "TTNG", album = "Audiotree Live"),
-            Song(id = 3, uriString = "u3", title = "Live2", artist = "TTNG", album = "Audiotree Live"),
-            Song(id = 4, uriString = "u4", title = "Live3", artist = "TTNG", album = "Audiotree Live"),
-            Song(id = 5, uriString = "u5", title = "Live4", artist = "TTNG", album = "Audiotree Live"),
-            Song(id = 6, uriString = "u6", title = "Live5", artist = "TTNG", album = "Audiotree Live"),
-            Song(id = 7, uriString = "u7", title = "OtherLive", artist = "Other", album = "Audiotree Live")
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "Studio", artist = "TTNG", album = "This Town Needs Guns"),
+                Song(id = 2, uriString = "u2", title = "Live1", artist = "TTNG", album = "Audiotree Live"),
+                Song(id = 3, uriString = "u3", title = "Live2", artist = "TTNG", album = "Audiotree Live"),
+                Song(id = 4, uriString = "u4", title = "Live3", artist = "TTNG", album = "Audiotree Live"),
+                Song(id = 5, uriString = "u5", title = "Live4", artist = "TTNG", album = "Audiotree Live"),
+                Song(id = 6, uriString = "u6", title = "Live5", artist = "TTNG", album = "Audiotree Live"),
+                Song(id = 7, uriString = "u7", title = "OtherLive", artist = "Other", album = "Audiotree Live"),
+            )
         val albums = useCase.extractAlbums(list)
         assertEquals(2, albums.size)
         assertEquals("This Town Needs Guns", albums.first { it.songCount == 6 }.name)
@@ -210,11 +228,12 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractAlbums_dominantArtistIgnoresFirstRowTrioSuffix() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Björk Trió", album = "Gling-Gló"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Björk", album = "Gling-Gló"),
-            Song(id = 3, uriString = "u3", title = "C", artist = "Björk", album = "Gling-Glo")
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Björk Trió", album = "Gling-Gló"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Björk", album = "Gling-Gló"),
+                Song(id = 3, uriString = "u3", title = "C", artist = "Björk", album = "Gling-Glo"),
+            )
         val albums = useCase.extractAlbums(list)
         assertEquals(1, albums.size)
         assertEquals("Björk", albums.single().artist)
@@ -223,20 +242,36 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractAlbums_includesDominantGenreAndMaxDateAdded() {
-        val withMeta = listOf(
-            Song(
-                id = 1, uriString = "u1", title = "A", artist = "Q", album = "Opera",
-                genre = "Rock", dateAdded = 100
-            ),
-            Song(
-                id = 2, uriString = "u2", title = "B", artist = "Q", album = "Opera",
-                genre = "Rock", dateAdded = 300
-            ),
-            Song(
-                id = 3, uriString = "u3", title = "C", artist = "Q", album = "Opera",
-                genre = "Pop", dateAdded = 200
+        val withMeta =
+            listOf(
+                Song(
+                    id = 1,
+                    uriString = "u1",
+                    title = "A",
+                    artist = "Q",
+                    album = "Opera",
+                    genre = "Rock",
+                    dateAdded = 100,
+                ),
+                Song(
+                    id = 2,
+                    uriString = "u2",
+                    title = "B",
+                    artist = "Q",
+                    album = "Opera",
+                    genre = "Rock",
+                    dateAdded = 300,
+                ),
+                Song(
+                    id = 3,
+                    uriString = "u3",
+                    title = "C",
+                    artist = "Q",
+                    album = "Opera",
+                    genre = "Pop",
+                    dateAdded = 200,
+                ),
             )
-        )
         val albums = useCase.extractAlbums(withMeta)
         assertEquals(1, albums.size)
         assertEquals("Rock", albums[0].genre)
@@ -245,16 +280,27 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractArtists_includesDominantGenreAndMaxDateAdded() {
-        val withMeta = listOf(
-            Song(
-                id = 1, uriString = "u1", title = "A", artist = "Queen", album = "Opera",
-                genre = "Rock", dateAdded = 50
-            ),
-            Song(
-                id = 2, uriString = "u2", title = "B", artist = "Queen", album = "News",
-                genre = "Rock", dateAdded = 90
+        val withMeta =
+            listOf(
+                Song(
+                    id = 1,
+                    uriString = "u1",
+                    title = "A",
+                    artist = "Queen",
+                    album = "Opera",
+                    genre = "Rock",
+                    dateAdded = 50,
+                ),
+                Song(
+                    id = 2,
+                    uriString = "u2",
+                    title = "B",
+                    artist = "Queen",
+                    album = "News",
+                    genre = "Rock",
+                    dateAdded = 90,
+                ),
             )
-        )
         val artists = useCase.extractArtists(withMeta)
         assertEquals(1, artists.size)
         assertEquals("Rock", artists[0].genre)
@@ -264,12 +310,13 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractGenres_sortsKnownAndPutsUnknownLast() {
-        val withMeta = listOf(
-            Song(id = 1, uriString = "u1", title = "A", genre = "Rock", dateAdded = 10),
-            Song(id = 2, uriString = "u2", title = "B", genre = "Pop", dateAdded = 40),
-            Song(id = 3, uriString = "u3", title = "C", genre = "", dateAdded = 20),
-            Song(id = 4, uriString = "u4", title = "D", genre = "Rock", dateAdded = 30)
-        )
+        val withMeta =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", genre = "Rock", dateAdded = 10),
+                Song(id = 2, uriString = "u2", title = "B", genre = "Pop", dateAdded = 40),
+                Song(id = 3, uriString = "u3", title = "C", genre = "", dateAdded = 20),
+                Song(id = 4, uriString = "u4", title = "D", genre = "Rock", dateAdded = 30),
+            )
         val genres = useCase.extractGenres(withMeta)
         assertEquals(listOf("Pop", "Rock", Song.UNKNOWN_GENRE), genres.map { it.name })
         assertEquals(2, genres.first { it.name == "Rock" }.songCount)
@@ -278,94 +325,103 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractAlbums_respectsSortOptionAndDirection() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Zed", album = "Beta", genre = "Rock", dateAdded = 10),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Amy", album = "Alpha", genre = "Pop", dateAdded = 50),
-            Song(id = 3, uriString = "u3", title = "C", artist = "Bob", album = "Gamma", genre = "Jazz", dateAdded = 30)
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Zed", album = "Beta", genre = "Rock", dateAdded = 10),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Amy", album = "Alpha", genre = "Pop", dateAdded = 50),
+                Song(id = 3, uriString = "u3", title = "C", artist = "Bob", album = "Gamma", genre = "Jazz", dateAdded = 30),
+            )
         assertEquals(
             listOf("Alpha", "Beta", "Gamma"),
-            useCase.extractAlbums(list, sortOption = SortOption.TITLE).map { it.displayName }
+            useCase.extractAlbums(list, sortOption = SortOption.TITLE).map { it.displayName },
         )
         assertEquals(
             listOf("Gamma", "Beta", "Alpha"),
-            useCase.extractAlbums(list, sortOption = SortOption.TITLE, sortDirection = SortDirection.DESC)
-                .map { it.displayName }
+            useCase
+                .extractAlbums(list, sortOption = SortOption.TITLE, sortDirection = SortDirection.DESC)
+                .map { it.displayName },
         )
         assertEquals(
             listOf("Alpha", "Gamma", "Beta"),
-            useCase.extractAlbums(list, sortOption = SortOption.ARTIST).map { it.displayName }
+            useCase.extractAlbums(list, sortOption = SortOption.ARTIST).map { it.displayName },
         )
         assertEquals(
             listOf("Beta", "Gamma", "Alpha"),
-            useCase.extractAlbums(list, sortOption = SortOption.DATE_ADDED).map { it.displayName }
+            useCase.extractAlbums(list, sortOption = SortOption.DATE_ADDED).map { it.displayName },
         )
     }
 
     @Test
     fun extractArtists_respectsGenreAndDateSort() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Zed", genre = "Rock", dateAdded = 10),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Amy", genre = "Pop", dateAdded = 50),
-            Song(id = 3, uriString = "u3", title = "C", artist = "Bob", genre = "Jazz", dateAdded = 30)
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Zed", genre = "Rock", dateAdded = 10),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Amy", genre = "Pop", dateAdded = 50),
+                Song(id = 3, uriString = "u3", title = "C", artist = "Bob", genre = "Jazz", dateAdded = 30),
+            )
         assertEquals(
             listOf("Bob", "Amy", "Zed"),
-            useCase.extractArtists(list, sortOption = SortOption.GENRE).map { it.name }
+            useCase.extractArtists(list, sortOption = SortOption.GENRE).map { it.name },
         )
         assertEquals(
             listOf("Zed", "Bob", "Amy"),
-            useCase.extractArtists(list, sortOption = SortOption.DATE_ADDED).map { it.name }
+            useCase.extractArtists(list, sortOption = SortOption.DATE_ADDED).map { it.name },
         )
     }
 
     @Test
     fun extractGenres_dateAddedKeepsUnknownLast() {
-        val withMeta = listOf(
-            Song(id = 1, uriString = "u1", title = "A", genre = "Rock", dateAdded = 10),
-            Song(id = 2, uriString = "u2", title = "B", genre = "Pop", dateAdded = 40),
-            Song(id = 3, uriString = "u3", title = "C", genre = "", dateAdded = 99)
-        )
-        val genres = useCase.extractGenres(
-            withMeta,
-            sortOption = SortOption.DATE_ADDED,
-            sortDirection = SortDirection.DESC
-        )
+        val withMeta =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", genre = "Rock", dateAdded = 10),
+                Song(id = 2, uriString = "u2", title = "B", genre = "Pop", dateAdded = 40),
+                Song(id = 3, uriString = "u3", title = "C", genre = "", dateAdded = 99),
+            )
+        val genres =
+            useCase.extractGenres(
+                withMeta,
+                sortOption = SortOption.DATE_ADDED,
+                sortDirection = SortDirection.DESC,
+            )
         assertEquals(
             listOf("Pop", "Rock", Song.UNKNOWN_GENRE),
-            genres.map { it.name }
+            genres.map { it.name },
         )
     }
 
     @Test
     fun songsForBrowseProjection_albumsConcatenatesWithinAlbumOrder() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "Z", artist = "A", album = "Beta", trackNumber = 2),
-            Song(id = 2, uriString = "u2", title = "A", artist = "A", album = "Beta", trackNumber = 1),
-            Song(id = 3, uriString = "u3", title = "X", artist = "B", album = "Alpha", trackNumber = 1)
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "Z", artist = "A", album = "Beta", trackNumber = 2),
+                Song(id = 2, uriString = "u2", title = "A", artist = "A", album = "Beta", trackNumber = 1),
+                Song(id = 3, uriString = "u3", title = "X", artist = "B", album = "Alpha", trackNumber = 1),
+            )
         val albums = useCase.extractAlbums(list)
-        val projected = useCase.songsForBrowseProjection(
-            filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.ALBUMS,
-            songs = list,
-            albums = albums
-        )
+        val projected =
+            useCase.songsForBrowseProjection(
+                filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.ALBUMS,
+                songs = list,
+                albums = albums,
+            )
         // Albums sorted by display name: Alpha then Beta; within Beta by track
         assertEquals(listOf(3L, 2L, 1L), projected.map { it.id })
     }
 
     @Test
     fun songsForBrowseProjection_recent_sortsByLastPlayedDesc() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "Old", lastPlayedAt = 10),
-            Song(id = 2, uriString = "u2", title = "New", lastPlayedAt = 30),
-            Song(id = 3, uriString = "u3", title = "Mid", lastPlayedAt = 20),
-            Song(id = 4, uriString = "u4", title = "Never", lastPlayedAt = 0)
-        )
-        val projected = useCase.songsForBrowseProjection(
-            filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.RECENT,
-            songs = list
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "Old", lastPlayedAt = 10),
+                Song(id = 2, uriString = "u2", title = "New", lastPlayedAt = 30),
+                Song(id = 3, uriString = "u3", title = "Mid", lastPlayedAt = 20),
+                Song(id = 4, uriString = "u4", title = "Never", lastPlayedAt = 0),
+            )
+        val projected =
+            useCase.songsForBrowseProjection(
+                filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.RECENT,
+                songs = list,
+            )
         assertEquals(listOf(2L, 3L, 1L), projected.map { it.id })
     }
 
@@ -387,48 +443,57 @@ class GetLibrarySongsUseCaseListItemsTest {
         val albumIds = listOf(1L, 2L, 3L, 4L)
         assertEquals(
             AlbumHeaderSelectionState.NONE,
-            albumHeaderSelectionState(albumIds, emptySet(), isSelectionMode = false)
+            albumHeaderSelectionState(albumIds, emptySet(), isSelectionMode = false),
         )
         assertEquals(
             AlbumHeaderSelectionState.NONE,
-            albumHeaderSelectionState(albumIds, emptySet(), isSelectionMode = true)
+            albumHeaderSelectionState(albumIds, emptySet(), isSelectionMode = true),
         )
         assertEquals(
             AlbumHeaderSelectionState.ALL,
-            albumHeaderSelectionState(albumIds, albumIds.toSet(), isSelectionMode = true)
+            albumHeaderSelectionState(albumIds, albumIds.toSet(), isSelectionMode = true),
         )
         assertEquals(
             AlbumHeaderSelectionState.PARTIAL,
-            albumHeaderSelectionState(albumIds, setOf(1L), isSelectionMode = true)
+            albumHeaderSelectionState(albumIds, setOf(1L), isSelectionMode = true),
         )
         assertEquals(
             AlbumHeaderSelectionState.PARTIAL,
-            albumHeaderSelectionState(albumIds, setOf(1L, 3L), isSelectionMode = true)
+            albumHeaderSelectionState(albumIds, setOf(1L, 3L), isSelectionMode = true),
         )
     }
 
     @Test
     fun filterCollapsedAlbumSongs_hidesVariantAndSessionRowsInSameGroup() {
-        val mixed = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Muse", album = "eureka"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Muse", album = "Eureka"),
-            Song(id = 3, uriString = "u3", title = "C", artist = "Muse", album = "Eureka (Deluxe)"),
-            Song(id = 4, uriString = "u4", title = "D", artist = "TTNG", album = "This Town Needs Guns"),
-            Song(id = 5, uriString = "u5", title = "E", artist = "TTNG", album = "Audiotree Live")
-        )
+        val mixed =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Muse", album = "eureka"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Muse", album = "Eureka"),
+                Song(id = 3, uriString = "u3", title = "C", artist = "Muse", album = "Eureka (Deluxe)"),
+                Song(id = 4, uriString = "u4", title = "D", artist = "TTNG", album = "This Town Needs Guns"),
+                Song(id = 5, uriString = "u5", title = "E", artist = "TTNG", album = "Audiotree Live"),
+            )
         val items = useCase.buildListItems(mixed, LibraryViewMode.ALBUM_GROUPS)
-        val eureka = items.filterIsInstance<LibraryListItem.AlbumHeader>()
-            .first { it.albumName.equals("Eureka", ignoreCase = true) }
+        val eureka =
+            items
+                .filterIsInstance<LibraryListItem.AlbumHeader>()
+                .first { it.albumName.equals("Eureka", ignoreCase = true) }
         val filtered = filterCollapsedAlbumSongs(items, setOf(eureka.albumName))
-        val leftover = filtered.filterIsInstance<LibraryListItem.SongRow>()
-            .filter { row -> eureka.songIds.contains(row.song.id) }
+        val leftover =
+            filtered
+                .filterIsInstance<LibraryListItem.SongRow>()
+                .filter { row -> eureka.songIds.contains(row.song.id) }
         assertEquals(emptyList<String>(), leftover.map { it.song.album })
 
-        val studio = items.filterIsInstance<LibraryListItem.AlbumHeader>()
-            .first { it.albumName == "This Town Needs Guns" }
+        val studio =
+            items
+                .filterIsInstance<LibraryListItem.AlbumHeader>()
+                .first { it.albumName == "This Town Needs Guns" }
         val filteredStudio = filterCollapsedAlbumSongs(items, setOf(studio.albumName))
-        val leftoverStudio = filteredStudio.filterIsInstance<LibraryListItem.SongRow>()
-            .filter { row -> studio.songIds.contains(row.song.id) }
+        val leftoverStudio =
+            filteredStudio
+                .filterIsInstance<LibraryListItem.SongRow>()
+                .filter { row -> studio.songIds.contains(row.song.id) }
         assertEquals(emptyList<String>(), leftoverStudio.map { it.song.album })
     }
 
@@ -440,7 +505,7 @@ class GetLibrarySongsUseCaseListItemsTest {
         assertEquals(listOf(3L), model.segments.first { it.albumName == "Hotel" }.songIds)
         assertEquals(
             model.albumNames,
-            model.collapsed(setOf("Opera")).albumNames
+            model.collapsed(setOf("Opera")).albumNames,
         )
     }
 
@@ -452,18 +517,19 @@ class GetLibrarySongsUseCaseListItemsTest {
         assertEquals(filtered.map { it.key }, collapsed.map { it.key })
         assertEquals(
             model.songsVisual.map { it.id },
-            useCase.songsFromListItems(model.toListItems()).map { it.id }
+            useCase.songsFromListItems(model.toListItems()).map { it.id },
         )
     }
 
     @Test
     fun libraryListModel_artworkQueryHelpers_returnExpectedUris() {
-        val testSongs = listOf(
-            Song(id = 1, uriString = "u1", title = "Song 1", album = "Album A", artworkUri = "content://art/a"),
-            Song(id = 2, uriString = "u2", title = "Song 2", album = "Album A", artworkUri = "content://art/a"),
-            Song(id = 3, uriString = "u3", title = "Song 3", album = "Album B", artworkUri = "content://art/b"),
-            Song(id = 4, uriString = "u4", title = "Song 4", album = "Album C", artworkUri = null)
-        )
+        val testSongs =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "Song 1", album = "Album A", artworkUri = "content://art/a"),
+                Song(id = 2, uriString = "u2", title = "Song 2", album = "Album A", artworkUri = "content://art/a"),
+                Song(id = 3, uriString = "u3", title = "Song 3", album = "Album B", artworkUri = "content://art/b"),
+                Song(id = 4, uriString = "u4", title = "Song 4", album = "Album C", artworkUri = null),
+            )
         val flatModel = useCase.buildListModel(testSongs, LibraryViewMode.FLAT)
         assertEquals("content://art/a", flatModel.artworkUriAt(0))
         assertEquals("content://art/a", flatModel.artworkUriAt(1))
@@ -483,28 +549,44 @@ class GetLibrarySongsUseCaseListItemsTest {
     fun formatSortRelevantInfo_showsGenreAndDateOnlyWhenNotAlreadyVisible() {
         assertNull(
             formatSortRelevantInfo(
-                SortOption.ARTIST, genre = "Rock", dateAdded = 1L,
-                alreadyShowsArtist = true, alreadyShowsAlbum = true, alreadyShowsTitle = true
-            )
+                SortOption.ARTIST,
+                genre = "Rock",
+                dateAdded = 1L,
+                alreadyShowsArtist = true,
+                alreadyShowsAlbum = true,
+                alreadyShowsTitle = true,
+            ),
         )
         assertEquals(
             "Rock",
             formatSortRelevantInfo(
-                SortOption.GENRE, genre = "Rock", dateAdded = 1L,
-                alreadyShowsArtist = true, alreadyShowsAlbum = true, alreadyShowsTitle = true
-            )
+                SortOption.GENRE,
+                genre = "Rock",
+                dateAdded = 1L,
+                alreadyShowsArtist = true,
+                alreadyShowsAlbum = true,
+                alreadyShowsTitle = true,
+            ),
         )
         assertNotNull(
             formatSortRelevantInfo(
-                SortOption.DATE_ADDED, genre = "Rock", dateAdded = 1_700_000_000_000L,
-                alreadyShowsArtist = true, alreadyShowsAlbum = true, alreadyShowsTitle = true
-            )
+                SortOption.DATE_ADDED,
+                genre = "Rock",
+                dateAdded = 1_700_000_000_000L,
+                alreadyShowsArtist = true,
+                alreadyShowsAlbum = true,
+                alreadyShowsTitle = true,
+            ),
         )
         assertNull(
             formatSortRelevantInfo(
-                SortOption.GENRE, genre = "Unknown Genre", dateAdded = null,
-                alreadyShowsArtist = true, alreadyShowsAlbum = true, alreadyShowsTitle = true
-            )
+                SortOption.GENRE,
+                genre = "Unknown Genre",
+                dateAdded = null,
+                alreadyShowsArtist = true,
+                alreadyShowsAlbum = true,
+                alreadyShowsTitle = true,
+            ),
         )
     }
 
@@ -517,17 +599,18 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun sortEmphasisFor_mapsDominantFieldsAndSortKeyTrailing() {
-        val song = Song(
-            id = 1,
-            uriString = "u1",
-            title = "Song",
-            artist = "Artist",
-            album = "Album",
-            genre = "Rock",
-            durationMs = 125_000,
-            trackNumber = 4,
-            dateAdded = 1_700_000_000_000L
-        )
+        val song =
+            Song(
+                id = 1,
+                uriString = "u1",
+                title = "Song",
+                artist = "Artist",
+                album = "Album",
+                genre = "Rock",
+                durationMs = 125_000,
+                trackNumber = 4,
+                dateAdded = 1_700_000_000_000L,
+            )
 
         val byTitle = sortEmphasisFor(song, SortOption.TITLE)
         assertEquals("Song", byTitle.title)
@@ -558,10 +641,11 @@ class GetLibrarySongsUseCaseListItemsTest {
         assertNotNull(byDate.trailing)
         assertTrue(byDate.trailingIsSortKey)
 
-        val unknownGenre = sortEmphasisFor(
-            song.copy(genre = "Unknown Genre"),
-            SortOption.GENRE
-        )
+        val unknownGenre =
+            sortEmphasisFor(
+                song.copy(genre = "Unknown Genre"),
+                SortOption.GENRE,
+            )
         assertEquals("2:05", unknownGenre.trailing)
         assertFalse(unknownGenre.trailingIsSortKey)
     }
@@ -582,11 +666,13 @@ class GetLibrarySongsUseCaseListItemsTest {
     @Test
     fun extractArtists_unifiesMixedScriptArtists() {
         // Mixed-script name "Elephant Gym 大象體操" shares its Latin portion with "Elephant Gym"
-        val crossScriptSongs = (1..9).map { i ->
-            Song(id = i.toLong(), uriString = "u$i", title = "T$i", artist = "Elephant Gym 大象體操", album = "A")
-        } + (10..18).map { i ->
-            Song(id = i.toLong(), uriString = "u$i", title = "T$i", artist = "Elephant Gym", album = "B")
-        }
+        val crossScriptSongs =
+            (1..9).map { i ->
+                Song(id = i.toLong(), uriString = "u$i", title = "T$i", artist = "Elephant Gym 大象體操", album = "A")
+            } +
+                (10..18).map { i ->
+                    Song(id = i.toLong(), uriString = "u$i", title = "T$i", artist = "Elephant Gym", album = "B")
+                }
         val artists = useCase.extractArtists(crossScriptSongs)
         // Must unify into a single artist — mixed-script variant preferred as display name
         assertEquals(1, artists.size)
@@ -596,10 +682,11 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractArtists_unifiesDiacriticVariants() {
-        val diacriticSongs = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz", album = "X"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Diego Saenz", album = "Y")
-        )
+        val diacriticSongs =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz", album = "X"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Diego Saenz", album = "Y"),
+            )
         val artists = useCase.extractArtists(diacriticSongs)
         assertEquals(1, artists.size)
         assertEquals("Diego Sáenz", artists[0].name) // prefers diacritics
@@ -608,10 +695,11 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractArtists_unifiesCaseVariants() {
-        val caseSongs = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "ASIAN KUNG-FU GENERATION"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Asian Kung-Fu Generation")
-        )
+        val caseSongs =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "ASIAN KUNG-FU GENERATION"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Asian Kung-Fu Generation"),
+            )
         val artists = useCase.extractArtists(caseSongs)
         assertEquals(1, artists.size)
         assertEquals("Asian Kung-Fu Generation", artists[0].name) // prefers mixed case
@@ -619,12 +707,13 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractGenres_unifiesGenreVariants() {
-        val genreSongs = listOf(
-            Song(id = 1, uriString = "u1", title = "A", genre = "Pop Rock"),
-            Song(id = 2, uriString = "u2", title = "B", genre = "Rock & Pop"),
-            Song(id = 3, uriString = "u3", title = "C", genre = "pop-rock"),
-            Song(id = 4, uriString = "u4", title = "D", genre = "rock pop")
-        )
+        val genreSongs =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", genre = "Pop Rock"),
+                Song(id = 2, uriString = "u2", title = "B", genre = "Rock & Pop"),
+                Song(id = 3, uriString = "u3", title = "C", genre = "pop-rock"),
+                Song(id = 4, uriString = "u4", title = "D", genre = "rock pop"),
+            )
         val genres = useCase.extractGenres(genreSongs)
         // All four variants should unify into one genre
         assertEquals(1, genres.size)
@@ -634,12 +723,13 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractGenres_unifiesSingularPluralAndLemma() {
-        val genreSongs = listOf(
-            Song(id = 1, uriString = "u1", title = "A", genre = "Soundtrack"),
-            Song(id = 2, uriString = "u2", title = "B", genre = "Soundtracks"),
-            Song(id = 3, uriString = "u3", title = "C", genre = "Electronic"),
-            Song(id = 4, uriString = "u4", title = "D", genre = "Electronica")
-        )
+        val genreSongs =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", genre = "Soundtrack"),
+                Song(id = 2, uriString = "u2", title = "B", genre = "Soundtracks"),
+                Song(id = 3, uriString = "u3", title = "C", genre = "Electronic"),
+                Song(id = 4, uriString = "u4", title = "D", genre = "Electronica"),
+            )
         val genres = useCase.extractGenres(genreSongs)
         assertEquals(2, genres.size)
         val soundtrack = genres.first { it.name.startsWith("Soundtrack") }
@@ -650,11 +740,12 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun songsForArtist_matchesByIdentityKeyAcrossVariants() {
-        val mixed = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Diego Saenz"),
-            Song(id = 3, uriString = "u3", title = "C", artist = "Other")
-        )
+        val mixed =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Diego Saenz"),
+                Song(id = 3, uriString = "u3", title = "C", artist = "Other"),
+            )
         // Searching with either variant should return both songs
         assertEquals(2, useCase.songsForArtist(mixed, "Diego Sáenz").size)
         assertEquals(2, useCase.songsForArtist(mixed, "Diego Saenz").size)
@@ -662,11 +753,12 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun songsMatchingGenre_matchesByIdentityKeyAcrossVariants() {
-        val mixed = listOf(
-            Song(id = 1, uriString = "u1", title = "A", genre = "Pop Rock"),
-            Song(id = 2, uriString = "u2", title = "B", genre = "Rock & Pop"),
-            Song(id = 3, uriString = "u3", title = "C", genre = "Jazz")
-        )
+        val mixed =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", genre = "Pop Rock"),
+                Song(id = 2, uriString = "u2", title = "B", genre = "Rock & Pop"),
+                Song(id = 3, uriString = "u3", title = "C", genre = "Jazz"),
+            )
         // Searching with any variant should return all pop/rock songs
         assertEquals(2, useCase.songsMatchingGenre(mixed, "Pop Rock").size)
         assertEquals(2, useCase.songsMatchingGenre(mixed, "Rock & Pop").size)
@@ -676,9 +768,10 @@ class GetLibrarySongsUseCaseListItemsTest {
     @Test
     fun extractArtists_doesNotDuplicateSongWhenMultipleTokensShareKey() {
         // Tag with variants that resolve to the same key
-        val songs = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz; Diego Saenz")
-        )
+        val songs =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz; Diego Saenz"),
+            )
         val artists = useCase.extractArtists(songs)
         assertEquals(1, artists.size)
         assertEquals("Diego Sáenz", artists[0].name)
@@ -687,9 +780,10 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun extractGenres_doesNotDuplicateSongWhenMultipleTokensShareKey() {
-        val songs = listOf(
-            Song(id = 1, uriString = "u1", title = "A", genre = "Pop-Rock, Pop Rock")
-        )
+        val songs =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", genre = "Pop-Rock, Pop Rock"),
+            )
         val genres = useCase.extractGenres(songs)
         assertEquals(1, genres.size)
         assertEquals("Pop Rock", genres[0].name)
@@ -698,28 +792,32 @@ class GetLibrarySongsUseCaseListItemsTest {
 
     @Test
     fun songsForBrowseProjection_artists_matchesByIdentityKey() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz"),
-            Song(id = 2, uriString = "u2", title = "B", artist = "Diego Saenz")
-        )
-        val projected = useCase.songsForBrowseProjection(
-            filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.ARTISTS,
-            songs = list
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz"),
+                Song(id = 2, uriString = "u2", title = "B", artist = "Diego Saenz"),
+            )
+        val projected =
+            useCase.songsForBrowseProjection(
+                filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.ARTISTS,
+                songs = list,
+            )
         // Both songs should be projected under the unified artist
         assertEquals(listOf(1L, 2L), projected.map { it.id })
     }
 
     @Test
     fun songsForBrowseProjection_genres_matchesByIdentityKey() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "A", genre = "Pop Rock"),
-            Song(id = 2, uriString = "u2", title = "B", genre = "Rock & Pop")
-        )
-        val projected = useCase.songsForBrowseProjection(
-            filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.GENRES,
-            songs = list
-        )
+        val list =
+            listOf(
+                Song(id = 1, uriString = "u1", title = "A", genre = "Pop Rock"),
+                Song(id = 2, uriString = "u2", title = "B", genre = "Rock & Pop"),
+            )
+        val projected =
+            useCase.songsForBrowseProjection(
+                filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.GENRES,
+                songs = list,
+            )
         // Both songs should be projected under the unified genre
         assertEquals(listOf(1L, 2L), projected.map { it.id })
     }

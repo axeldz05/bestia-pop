@@ -6,22 +6,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayableItemCandidateMappingTest {
-
     @Test
     fun fromLibraryOrRemote_withLocal_returnsLocalPlayable() {
-        val song = Song(
-            id = 42L,
-            uriString = "content://music/42",
-            title = "Bohemian Rhapsody",
-            artist = "Queen"
-        )
+        val song =
+            Song(
+                id = 42L,
+                uriString = "content://music/42",
+                title = "Bohemian Rhapsody",
+                artist = "Queen",
+            )
         val identity = TrackIdentity(title = "Bohemian Rhapsody", artist = "Queen")
 
-        val result = PlayableItem.fromLibraryOrRemote(
-            local = song,
-            identity = identity,
-            youtubeQueryOrId = "Queen - Bohemian Rhapsody Official Video"
-        )
+        val result =
+            PlayableItem.fromLibraryOrRemote(
+                local = song,
+                identity = identity,
+                youtubeQueryOrId = "Queen - Bohemian Rhapsody Official Video",
+            )
 
         assertTrue(result is PlayableItem.Local)
         assertEquals(42L, (result as PlayableItem.Local).song.id)
@@ -31,11 +32,12 @@ class PlayableItemCandidateMappingTest {
     fun fromLibraryOrRemote_withoutLocal_returnsRemoteWithQuery() {
         val identity = TrackIdentity(title = "Stairway to Heaven", artist = "Led Zeppelin")
 
-        val result = PlayableItem.fromLibraryOrRemote(
-            local = null,
-            identity = identity,
-            youtubeQueryOrId = "https://youtube.com/watch?v=specific_id"
-        )
+        val result =
+            PlayableItem.fromLibraryOrRemote(
+                local = null,
+                identity = identity,
+                youtubeQueryOrId = "https://youtube.com/watch?v=specific_id",
+            )
 
         assertTrue(result is PlayableItem.Remote)
         val remote = result as PlayableItem.Remote
@@ -46,39 +48,46 @@ class PlayableItemCandidateMappingTest {
 
     @Test
     fun toPlayableItems_mapsCandidatesCorrectlyPreservingQueries() {
-        val localSong = Song(
-            id = 101L,
-            uriString = "content://music/101",
-            title = "Track One",
-            artist = "Artist A"
-        )
-        val index = mapOf(
-            com.bestiapop.android.domain.util.TrackMatchKeys.matchKey("Artist A", "Track One") to localSong
-        )
-
-        val candidateLocal = CatalogTrackCandidate(
-            identity = TrackIdentity(title = "Track One", artist = "Artist A"),
-            candidates = listOf(
-                OnlineCatalogTrack(
-                    id = "yt_1",
-                    title = "Track One",
-                    artist = "Artist A",
-                    audioUrl = "https://youtube.com/watch?v=yt_1"
-                )
+        val localSong =
+            Song(
+                id = 101L,
+                uriString = "content://music/101",
+                title = "Track One",
+                artist = "Artist A",
             )
-        )
-
-        val candidateRemote = CatalogTrackCandidate(
-            identity = TrackIdentity(title = "Track Two", artist = "Artist B"),
-            candidates = listOf(
-                OnlineCatalogTrack(
-                    id = "yt_2",
-                    title = "Track Two",
-                    artist = "Artist B",
-                    audioUrl = "https://youtube.com/watch?v=yt_2"
-                )
+        val index =
+            mapOf(
+                com.bestiapop.android.domain.util.TrackMatchKeys
+                    .matchKey("Artist A", "Track One") to localSong,
             )
-        )
+
+        val candidateLocal =
+            CatalogTrackCandidate(
+                identity = TrackIdentity(title = "Track One", artist = "Artist A"),
+                candidates =
+                    listOf(
+                        OnlineCatalogTrack(
+                            id = "yt_1",
+                            title = "Track One",
+                            artist = "Artist A",
+                            audioUrl = "https://youtube.com/watch?v=yt_1",
+                        ),
+                    ),
+            )
+
+        val candidateRemote =
+            CatalogTrackCandidate(
+                identity = TrackIdentity(title = "Track Two", artist = "Artist B"),
+                candidates =
+                    listOf(
+                        OnlineCatalogTrack(
+                            id = "yt_2",
+                            title = "Track Two",
+                            artist = "Artist B",
+                            audioUrl = "https://youtube.com/watch?v=yt_2",
+                        ),
+                    ),
+            )
 
         val items = listOf(candidateLocal, candidateRemote).toPlayableItems(index)
 

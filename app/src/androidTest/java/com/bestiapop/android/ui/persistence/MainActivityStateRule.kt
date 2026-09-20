@@ -33,13 +33,14 @@ class MainActivityStateRule : ExternalResource() {
         resetState()
     }
 
-    private fun resetState() = runBlocking {
-        withContext(Dispatchers.IO) {
-            AppDatabase.getDatabase(context).clearAllTables()
-            libraryPreferences.setInitialScanCompleted()
-            libraryPreferences.setNavSnapshot(UiNavSnapshot())
+    private fun resetState() =
+        runBlocking {
+            withContext(Dispatchers.IO) {
+                AppDatabase.getDatabase(context).clearAllTables()
+                libraryPreferences.setInitialScanCompleted()
+                libraryPreferences.setNavSnapshot(UiNavSnapshot())
+            }
         }
-    }
 
     private fun grantStartupPermissions() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return

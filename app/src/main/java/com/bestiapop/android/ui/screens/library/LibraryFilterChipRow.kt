@@ -20,31 +20,33 @@ fun LibraryFilterChipRow(
     selected: LibraryBrowseFilter,
     onSelect: (LibraryBrowseFilter) -> Unit,
     modifier: Modifier = Modifier,
-    filters: List<LibraryBrowseFilter> = LibraryBrowseFilter.entries
+    filters: List<LibraryBrowseFilter> = LibraryBrowseFilter.entries,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         filters.forEach { filter ->
             FilterChip(
                 selected = selected == filter,
                 onClick = { onSelect(filter) },
                 label = { Text(filter.chipLabel()) },
-                modifier = Modifier.height(ListDensity.filterChipHeight)
+                modifier = Modifier.height(ListDensity.filterChipHeight),
             )
         }
     }
 }
 
-fun LibraryBrowseFilter.chipLabel(): String = when (this) {
-    LibraryBrowseFilter.SONGS -> "Canciones"
-    LibraryBrowseFilter.ALBUMS -> "Álbumes"
-    LibraryBrowseFilter.ARTISTS -> "Artistas"
-    LibraryBrowseFilter.GENRES -> "Géneros"
-    LibraryBrowseFilter.PLAYLISTS -> "Playlists"
-    LibraryBrowseFilter.RECENT -> "Recientes"
-}
+fun LibraryBrowseFilter.chipLabel(): String =
+    when (this) {
+        LibraryBrowseFilter.SONGS -> "Canciones"
+        LibraryBrowseFilter.ALBUMS -> "Álbumes"
+        LibraryBrowseFilter.ARTISTS -> "Artistas"
+        LibraryBrowseFilter.GENRES -> "Géneros"
+        LibraryBrowseFilter.PLAYLISTS -> "Playlists"
+        LibraryBrowseFilter.RECENT -> "Recientes"
+    }

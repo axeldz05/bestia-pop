@@ -1,5 +1,12 @@
 package com.bestiapop.android.data.network
 
+import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.data.model.youtubeSearchQuery
+import com.bestiapop.android.data.util.CrashReporter
+import com.bestiapop.android.domain.util.IdentifyRanking
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,20 +18,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
-import com.bestiapop.android.data.model.OnlineCatalogTrack
-import com.bestiapop.android.data.model.TrackIdentity
-import com.bestiapop.android.data.model.TrackMeta
-import com.bestiapop.android.data.model.youtubeSearchQuery
-import com.bestiapop.android.domain.util.IdentifyRanking
-import com.bestiapop.android.domain.util.TrackMatchKeys
-import com.bestiapop.android.data.util.CrashReporter
 
 data class YouTubeStreamResult(
     val identity: TrackIdentity,
     val videoId: String,
     val audioUrl: String,
     val userAgent: String,
-    val clientName: String = "VISIONOS"
+    val clientName: String = "VISIONOS",
 ) : TrackMeta by identity {
     companion object {
         /** L2: flat stream construction (identity is Level 1). */
@@ -36,48 +36,57 @@ data class YouTubeStreamResult(
             durationMs: Long = 0L,
             audioUrl: String,
             userAgent: String,
-            clientName: String = "VISIONOS"
-        ): YouTubeStreamResult = YouTubeStreamResult(
-            identity = TrackIdentity(
-                title = title,
-                artist = artist,
-                artworkUri = artworkUrl,
-                durationMs = durationMs
-            ),
-            videoId = videoId,
-            audioUrl = audioUrl,
-            userAgent = userAgent,
-            clientName = clientName
-        )
+            clientName: String = "VISIONOS",
+        ): YouTubeStreamResult =
+            YouTubeStreamResult(
+                identity =
+                    TrackIdentity(
+                        title = title,
+                        artist = artist,
+                        artworkUri = artworkUrl,
+                        durationMs = durationMs,
+                    ),
+                videoId = videoId,
+                audioUrl = audioUrl,
+                userAgent = userAgent,
+                clientName = clientName,
+            )
     }
 }
 
 sealed class YouTubeExtractResult {
-    data class Success(val result: YouTubeStreamResult) : YouTubeExtractResult()
-    data class Error(val message: String) : YouTubeExtractResult()
+    data class Success(
+        val result: YouTubeStreamResult,
+    ) : YouTubeExtractResult()
+
+    data class Error(
+        val message: String,
+    ) : YouTubeExtractResult()
 }
 
 internal data class YouTubeEndpoints(
     val webBaseUrl: String = "https://www.youtube.com",
-    val googleApiBaseUrl: String = "https://youtubei.googleapis.com"
+    val googleApiBaseUrl: String = "https://youtubei.googleapis.com",
 )
 
 object YouTubeExtractor {
+    fun videoThumbnailUrl(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
 
-    fun videoThumbnailUrl(videoId: String): String =
-        "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+    private val defaultClient =
+        HttpClients.api
+            .newBuilder()
+            .readTimeout(10, TimeUnit.SECONDS)
+            .build()
 
-    private val defaultClient = HttpClients.api.newBuilder()
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
     @Volatile
     private var client: OkHttpClient = defaultClient
+
     @Volatile
     private var endpoints = YouTubeEndpoints()
 
     internal fun configureForTest(
         http: OkHttpClient,
-        endpoints: YouTubeEndpoints
+        endpoints: YouTubeEndpoints,
     ) {
         client = http
         this.endpoints = endpoints
@@ -91,8 +100,10 @@ object YouTubeExtractor {
         resetClientCooldowns()
     }
 
-    private fun endpoint(baseUrl: String, pathAndQuery: String): String =
-        "${baseUrl.trimEnd('/')}/${pathAndQuery.trimStart('/')}"
+    private fun endpoint(
+        baseUrl: String,
+        pathAndQuery: String,
+    ): String = "${baseUrl.trimEnd('/')}/${pathAndQuery.trimStart('/')}"
 
     data class ClientProfile(
         val name: String,
@@ -102,64 +113,73 @@ object YouTubeExtractor {
         val clientId: String,
         val osName: String,
         val osVersion: String,
-        val extraContextJson: String?
+        val extraContextJson: String?,
     )
 
     // yt-dlp: TVHTML5 7.x is SABR-only; 5.x still returns HTTPS URLs without PO token.
-    private val TV_DOWNGRADED = ClientProfile(
-        name = "TVHTML5",
-        version = "5.20260707",
-        apiKey = "",
-        userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
-        clientId = "7",
-        osName = "TV",
-        osVersion = "5.0",
-        extraContextJson = null
-    )
+    private val TV_DOWNGRADED =
+        ClientProfile(
+            name = "TVHTML5",
+            version = "5.20260707",
+            apiKey = "",
+            userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+            clientId = "7",
+            osName = "TV",
+            osVersion = "5.0",
+            extraContextJson = null,
+        )
 
-    private val TV_EMBED = ClientProfile(
-        name = "TVHTML5",
-        version = "7.20260707.07.00",
-        apiKey = "",
-        userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)",
-        clientId = "7",
-        osName = "TV",
-        osVersion = "7.0",
-        extraContextJson = null
-    )
+    private val TV_EMBED =
+        ClientProfile(
+            name = "TVHTML5",
+            version = "7.20260707.07.00",
+            apiKey = "",
+            userAgent =
+                "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), " +
+                    "Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)",
+            clientId = "7",
+            osName = "TV",
+            osVersion = "7.0",
+            extraContextJson = null,
+        )
 
-    private val VISION_OS = ClientProfile(
-        name = "VISIONOS",
-        version = "1.02",
-        apiKey = "",
-        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
-        clientId = "101",
-        osName = "visionOS",
-        osVersion = "26.5.23O471",
-        extraContextJson = """{"deviceMake":"Apple","deviceModel":"RealityDevice17,1"}"""
-    )
+    private val VISION_OS =
+        ClientProfile(
+            name = "VISIONOS",
+            version = "1.02",
+            apiKey = "",
+            userAgent =
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 " +
+                    "(KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+            clientId = "101",
+            osName = "visionOS",
+            osVersion = "26.5.23O471",
+            extraContextJson = """{"deviceMake":"Apple","deviceModel":"RealityDevice17,1"}""",
+        )
 
-    private val ANDROID_MUSIC = ClientProfile(
-        name = "ANDROID_MUSIC",
-        version = "7.27.52",
-        apiKey = "AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI",
-        userAgent = "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 14)",
-        clientId = "21",
-        osName = "Android",
-        osVersion = "14",
-        extraContextJson = """{"androidSdkVersion":34}"""
-    )
+    private val ANDROID_MUSIC =
+        ClientProfile(
+            name = "ANDROID_MUSIC",
+            version = "7.27.52",
+            apiKey = "AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI",
+            userAgent = "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 14)",
+            clientId = "21",
+            osName = "Android",
+            osVersion = "14",
+            extraContextJson = """{"androidSdkVersion":34}""",
+        )
 
-    private val ANDROID_MAIN = ClientProfile(
-        name = "ANDROID",
-        version = "21.26.364",
-        apiKey = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
-        userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
-        clientId = "3",
-        osName = "Android",
-        osVersion = "11",
-        extraContextJson = """{"androidSdkVersion":30}"""
-    )
+    private val ANDROID_MAIN =
+        ClientProfile(
+            name = "ANDROID",
+            version = "21.26.364",
+            apiKey = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
+            userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
+            clientId = "3",
+            osName = "Android",
+            osVersion = "11",
+            extraContextJson = """{"androidSdkVersion":30}""",
+        )
 
     // All audio-only clients are attempted first to preserve minimal bandwidth (~3-4MB).
     // ANDROID_MAIN is the last resort (fallback on CDN 403/410; provides muxed format 18 AAC).
@@ -168,7 +188,10 @@ object YouTubeExtractor {
     private val clientCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
     const val DEFAULT_CLIENT_COOLDOWN_MS = 30 * 60 * 1000L
 
-    fun reportClientHttpFailure(clientName: String, httpCode: Int) {
+    fun reportClientHttpFailure(
+        clientName: String,
+        httpCode: Int,
+    ) {
         if (httpCode == 403 || httpCode == 410) {
             clientCooldowns[clientName] = System.currentTimeMillis() + DEFAULT_CLIENT_COOLDOWN_MS
         }
@@ -187,33 +210,41 @@ object YouTubeExtractor {
         return true
     }
 
-    internal fun setClientCooldownForTest(clientName: String, expiryEpochMs: Long) {
+    internal fun setClientCooldownForTest(
+        clientName: String,
+        expiryEpochMs: Long,
+    ) {
         clientCooldowns[clientName] = expiryEpochMs
     }
 
-    private val AUDIO_ONLY_TITLE = Regex(
-        """(?i)(?:\b(?:official\s+)?audio\b|\baudio\s+oficial\b|\báudio\s+oficial\b)"""
-    )
+    private val AUDIO_ONLY_TITLE =
+        Regex(
+            """(?i)(?:\b(?:official\s+)?audio\b|\baudio\s+oficial\b|\báudio\s+oficial\b)""",
+        )
     private val LYRICS_TITLE = Regex("""(?i)\b(?:lyrics?|letra(?:s)?)\b""")
     private val VISUALIZER_TITLE = Regex("""(?i)\bvisuali[sz]er\b""")
-    private val MUSIC_VIDEO_TITLE = Regex(
-        """(?i)(?:official\s+(?:music\s+)?video|music\s*video|\bm\s*/\s*v\b|\bmv\b|\(video\)|\[video\])"""
-    )
+    private val MUSIC_VIDEO_TITLE =
+        Regex(
+            """(?i)(?:official\s+(?:music\s+)?video|music\s*video|\bm\s*/\s*v\b|\bmv\b|\(video\)|\[video\])""",
+        )
     private val LIVE_TITLE = Regex("""(?i)\b(?:live|concert|performance|session)\b""")
-    private val COVER_OR_NOISE_TITLE = Regex(
-        """(?i)\b(?:cover|karaoke|react(?:ion)?s?|mashup)\b"""
-    )
+    private val COVER_OR_NOISE_TITLE =
+        Regex(
+            """(?i)\b(?:cover|karaoke|react(?:ion)?s?|mashup)\b""",
+        )
     private val ISRC_REGEX = Regex("""^[A-Z]{2}[A-Z0-9]{3}\d{7}$""")
-    private val SNIPPET_OR_PART_TITLE = Regex(
-        """(?i)\b(?:(?:best|end|intro|first|second)\s+part|looped?|loop|parts?|snippet|shorts?|clip|preview|sample|edit|sped\s*up|slowed(?:\s*\+\s*reverb)?|nightcore|reverb|8d\s*audio|ringtone)\b"""
-    )
+    private val SNIPPET_OR_PART_TITLE =
+        Regex(
+            """(?i)\b(?:(?:best|end|intro|first|second)\s+part|looped?|loop|parts?|snippet|shorts?|clip|preview|sample|edit|sped\s*up|slowed(?:\s*\+\s*reverb)?|nightcore|reverb|8d\s*audio|ringtone)\b""",
+        )
 
     private val YOUTUBE_ID_EXACT_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{11}$")
-    private val YOUTUBE_URL_PATTERN = Pattern.compile(
-        "(?:youtube\\.com\\/(?:[^\\/]+\\/.+\\/|(?:v|e(?:mbed)?)\\/" +
-            "|.*[?&]v=)|youtu\\.be\\/|music\\.youtube\\.com\\/watch\\?v=)" +
-            "([a-zA-Z0-9_-]{11})"
-    )
+    private val YOUTUBE_URL_PATTERN =
+        Pattern.compile(
+            "(?:youtube\\.com\\/(?:[^\\/]+\\/.+\\/|(?:v|e(?:mbed)?)\\/" +
+                "|.*[?&]v=)|youtu\\.be\\/|music\\.youtube\\.com\\/watch\\?v=)" +
+                "([a-zA-Z0-9_-]{11})",
+        )
 
     private val OFFICIAL_MUSIC_VIDEO_PAREN = Regex("""(?i)\(Official\s+(?:Music\s+)?Video\)""")
     private val OFFICIAL_MUSIC_VIDEO_BRACKET = Regex("""(?i)\[Official\s+(?:Music\s+)?Video\]""")
@@ -243,25 +274,31 @@ object YouTubeExtractor {
 
     private fun isTrackNumberPrefix(s: String): Boolean {
         val trimmed = s.trim()
-        return trimmed.isNotEmpty() && (trimmed.all { it.isDigit() } || trimmed.matches(Regex("""^(?:track\s*)?\d{1,3}\.?$""", RegexOption.IGNORE_CASE)))
+        return trimmed.isNotEmpty() &&
+            (trimmed.all { it.isDigit() } || trimmed.matches(Regex("""^(?:track\s*)?\d{1,3}\.?$""", RegexOption.IGNORE_CASE)))
     }
 
-    fun formatTitleAndArtist(rawTitle: String, rawAuthor: String): Pair<String, String> {
-        var cleanTitle = rawTitle
-            .replace(OFFICIAL_MUSIC_VIDEO_PAREN, "")
-            .replace(OFFICIAL_MUSIC_VIDEO_BRACKET, "")
-            .replace(OFFICIAL_AUDIO_PAREN, "")
-            .replace(OFFICIAL_AUDIO_BRACKET, "")
-            .replace(VIDEO_PAREN, "")
-            .replace(LYRICS_BRACKET, "")
-            .replace(LYRICS_PAREN, "")
-            .replace(HD_4K, "")
-            .trim()
+    fun formatTitleAndArtist(
+        rawTitle: String,
+        rawAuthor: String,
+    ): Pair<String, String> {
+        var cleanTitle =
+            rawTitle
+                .replace(OFFICIAL_MUSIC_VIDEO_PAREN, "")
+                .replace(OFFICIAL_MUSIC_VIDEO_BRACKET, "")
+                .replace(OFFICIAL_AUDIO_PAREN, "")
+                .replace(OFFICIAL_AUDIO_BRACKET, "")
+                .replace(VIDEO_PAREN, "")
+                .replace(LYRICS_BRACKET, "")
+                .replace(LYRICS_PAREN, "")
+                .replace(HD_4K, "")
+                .trim()
 
-        var artist = rawAuthor
-            .replace(" - Topic", "")
-            .replace("VEVO", "", ignoreCase = true)
-            .trim()
+        var artist =
+            rawAuthor
+                .replace(" - Topic", "")
+                .replace("VEVO", "", ignoreCase = true)
+                .trim()
 
         val sepMatch = YOUTUBE_TITLE_SEPARATOR.find(cleanTitle)
         if (sepMatch != null) {
@@ -311,7 +348,7 @@ object YouTubeExtractor {
         rawAuthor: String,
         candidateDurationMs: Long = 0L,
         expected: TrackMeta? = null,
-        isLive: Boolean = false
+        isLive: Boolean = false,
     ): Int {
         val expectedDurationMs = expected?.durationMs ?: 0L
         val expectedTitle = expected?.title
@@ -327,8 +364,9 @@ object YouTubeExtractor {
             score -= 300
         }
 
-        val isSnippetOrPart = SNIPPET_OR_PART_TITLE.containsMatchIn(title) ||
-            title.contains("#shorts") || title.contains("#short")
+        val isSnippetOrPart =
+            SNIPPET_OR_PART_TITLE.containsMatchIn(title) ||
+                title.contains("#shorts") || title.contains("#short")
         if (isSnippetOrPart) {
             score -= 200
         }
@@ -416,21 +454,27 @@ object YouTubeExtractor {
         expectedTitle: String? = null,
         expectedArtist: String? = null,
         expectedAlbum: String? = null,
-        isLive: Boolean = false
-    ): Int = audioPreferenceScore(
-        rawTitle = rawTitle,
-        rawAuthor = rawAuthor,
-        candidateDurationMs = candidateDurationMs,
-        expected = if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() || !expectedAlbum.isNullOrBlank()) {
-            TrackIdentity(
-                title = expectedTitle.orEmpty(),
-                artist = expectedArtist.orEmpty(),
-                album = expectedAlbum.orEmpty(),
-                durationMs = expectedDurationMs
-            )
-        } else null,
-        isLive = isLive
-    )
+        isLive: Boolean = false,
+    ): Int =
+        audioPreferenceScore(
+            rawTitle = rawTitle,
+            rawAuthor = rawAuthor,
+            candidateDurationMs = candidateDurationMs,
+            expected =
+                if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() ||
+                    !expectedAlbum.isNullOrBlank()
+                ) {
+                    TrackIdentity(
+                        title = expectedTitle.orEmpty(),
+                        artist = expectedArtist.orEmpty(),
+                        album = expectedAlbum.orEmpty(),
+                        durationMs = expectedDurationMs,
+                    )
+                } else {
+                    null
+                },
+            isLive = isLive,
+        )
 
     /** Prefer audio-oriented uploads while keeping relative YouTube order among equal scores. */
     internal fun <T> rankByAudioPreference(
@@ -439,23 +483,23 @@ object YouTubeExtractor {
         rawAuthor: (T) -> String,
         isLiveOf: ((T) -> Boolean)? = null,
         durationMsOf: ((T) -> Long)? = null,
-        expected: TrackMeta? = null
+        expected: TrackMeta? = null,
     ): List<T> {
         if (items.size <= 1) return items
         return items
             .mapIndexed { index, item ->
                 val candDur = durationMsOf?.invoke(item) ?: 0L
                 val isLive = isLiveOf?.invoke(item) ?: false
-                val s = audioPreferenceScore(
-                    rawTitle = rawTitle(item),
-                    rawAuthor = rawAuthor(item),
-                    candidateDurationMs = candDur,
-                    expected = expected,
-                    isLive = isLive
-                )
+                val s =
+                    audioPreferenceScore(
+                        rawTitle = rawTitle(item),
+                        rawAuthor = rawAuthor(item),
+                        candidateDurationMs = candDur,
+                        expected = expected,
+                        isLive = isLive,
+                    )
                 Triple(s, index, item)
-            }
-            .sortedWith(compareByDescending<Triple<Int, Int, T>> { it.first }.thenBy { it.second })
+            }.sortedWith(compareByDescending<Triple<Int, Int, T>> { it.first }.thenBy { it.second })
             .map { it.third }
     }
 
@@ -469,22 +513,28 @@ object YouTubeExtractor {
         expectedDurationMs: Long = 0L,
         expectedTitle: String? = null,
         expectedArtist: String? = null,
-        expectedAlbum: String? = null
-    ): List<T> = rankByAudioPreference(
-        items = items,
-        rawTitle = rawTitle,
-        rawAuthor = rawAuthor,
-        isLiveOf = isLiveOf,
-        durationMsOf = durationMsOf,
-        expected = if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() || !expectedAlbum.isNullOrBlank()) {
-            TrackIdentity(
-                title = expectedTitle.orEmpty(),
-                artist = expectedArtist.orEmpty(),
-                album = expectedAlbum.orEmpty(),
-                durationMs = expectedDurationMs
-            )
-        } else null
-    )
+        expectedAlbum: String? = null,
+    ): List<T> =
+        rankByAudioPreference(
+            items = items,
+            rawTitle = rawTitle,
+            rawAuthor = rawAuthor,
+            isLiveOf = isLiveOf,
+            durationMsOf = durationMsOf,
+            expected =
+                if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() ||
+                    !expectedAlbum.isNullOrBlank()
+                ) {
+                    TrackIdentity(
+                        title = expectedTitle.orEmpty(),
+                        artist = expectedArtist.orEmpty(),
+                        album = expectedAlbum.orEmpty(),
+                        durationMs = expectedDurationMs,
+                    )
+                } else {
+                    null
+                },
+        )
 
     /**
      * Resolve a catalog track to a YouTube video id or search query.
@@ -504,13 +554,13 @@ object YouTubeExtractor {
 
     internal fun parseSearchContents(
         contents: JSONArray,
-        expected: TrackMeta? = null
+        expected: TrackMeta? = null,
     ): List<OnlineCatalogTrack> {
         data class ParsedHit(
             val rawTitle: String,
             val rawAuthor: String,
             val isLive: Boolean,
-            val track: OnlineCatalogTrack
+            val track: OnlineCatalogTrack,
         )
 
         fun rank(hits: List<ParsedHit>): List<OnlineCatalogTrack> =
@@ -520,7 +570,7 @@ object YouTubeExtractor {
                 rawAuthor = { it.rawAuthor },
                 isLiveOf = { it.isLive },
                 durationMsOf = { it.track.durationMs },
-                expected = expected
+                expected = expected,
             ).map { it.track }
 
         val hits = mutableListOf<ParsedHit>()
@@ -528,37 +578,49 @@ object YouTubeExtractor {
             val section = contents.optJSONObject(i)?.optJSONObject("itemSectionRenderer") ?: continue
             val items = section.optJSONArray("contents") ?: continue
             for (j in 0 until items.length()) {
-                val video = items.optJSONObject(j)?.optJSONObject("compactVideoRenderer")
-                    ?: items.optJSONObject(j)?.optJSONObject("videoRenderer")
-                    ?: continue
+                val video =
+                    items.optJSONObject(j)?.optJSONObject("compactVideoRenderer")
+                        ?: items.optJSONObject(j)?.optJSONObject("videoRenderer")
+                        ?: continue
                 val videoId = video.optString("videoId")
                 if (videoId.isEmpty()) continue
 
-                val rawTitle = video.optJSONObject("title")
-                    ?.optJSONArray("runs")
-                    ?.optJSONObject(0)
-                    ?.optString("text")
-                    ?: video.optJSONObject("title")?.optString("simpleText", "YouTube Video")
-                    ?: "YouTube Video"
-                val rawAuthor = video.optJSONObject("ownerText")
-                    ?.optJSONArray("runs")
-                    ?.optJSONObject(0)
-                    ?.optString("text")
-                    ?: video.optJSONObject("longBylineText")
+                val rawTitle =
+                    video
+                        .optJSONObject("title")
                         ?.optJSONArray("runs")
                         ?.optJSONObject(0)
                         ?.optString("text")
-                    ?: "YouTube Artist"
+                        ?: video.optJSONObject("title")?.optString("simpleText", "YouTube Video")
+                        ?: "YouTube Video"
+                val rawAuthor =
+                    video
+                        .optJSONObject("ownerText")
+                        ?.optJSONArray("runs")
+                        ?.optJSONObject(0)
+                        ?.optString("text")
+                        ?: video
+                            .optJSONObject("longBylineText")
+                            ?.optJSONArray("runs")
+                            ?.optJSONObject(0)
+                            ?.optString("text")
+                        ?: "YouTube Artist"
                 val (title, artist) = formatTitleAndArtist(rawTitle, rawAuthor)
                 val thumbnails = video.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                val artworkUrl = thumbnails?.let {
-                    if (it.length() > 0) it.optJSONObject(it.length() - 1)?.optString("url")
-                    else null
-                }?.takeIf(String::isNotBlank) ?: videoThumbnailUrl(videoId)
+                val artworkUrl =
+                    thumbnails
+                        ?.let {
+                            if (it.length() > 0) {
+                                it.optJSONObject(it.length() - 1)?.optString("url")
+                            } else {
+                                null
+                            }
+                        }?.takeIf(String::isNotBlank) ?: videoThumbnailUrl(videoId)
 
                 val lengthTextObj = video.optJSONObject("lengthText")
-                var rawDurationText = lengthTextObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                    ?: lengthTextObj?.optString("simpleText", "").orEmpty()
+                var rawDurationText =
+                    lengthTextObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: lengthTextObj?.optString("simpleText", "").orEmpty()
                 if (rawDurationText.isBlank()) {
                     rawDurationText = video.optString("lengthText", "")
                 }
@@ -567,17 +629,22 @@ object YouTubeExtractor {
                 val overlays = video.optJSONArray("thumbnailOverlays")
                 if (overlays != null) {
                     for (k in 0 until overlays.length()) {
-                        val timeStatus = overlays.optJSONObject(k)
-                            ?.optJSONObject("thumbnailOverlayTimeStatusRenderer") ?: continue
+                        val timeStatus =
+                            overlays
+                                .optJSONObject(k)
+                                ?.optJSONObject("thumbnailOverlayTimeStatusRenderer") ?: continue
                         val style = timeStatus.optString("style", "")
                         if (style.equals("LIVE", ignoreCase = true)) {
                             isLiveVideo = true
                         }
                         if (rawDurationText.isBlank()) {
-                            rawDurationText = timeStatus.optJSONObject("text")?.let { textObj ->
-                                textObj.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                    ?: textObj.optString("simpleText", "")
-                            }.orEmpty()
+                            rawDurationText =
+                                timeStatus
+                                    .optJSONObject("text")
+                                    ?.let { textObj ->
+                                        textObj.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                            ?: textObj.optString("simpleText", "")
+                                    }.orEmpty()
                         }
                     }
                 }
@@ -600,17 +667,18 @@ object YouTubeExtractor {
                         rawTitle = rawTitle,
                         rawAuthor = rawAuthor,
                         isLive = isLiveVideo,
-                        track = OnlineCatalogTrack(
-                            id = videoId,
-                            title = title,
-                            artist = artist,
-                            album = "YouTube",
-                            artworkUri = artworkUrl,
-                            durationMs = durationMs,
-                            audioUrl = "https://www.youtube.com/watch?v=$videoId",
-                            provider = "YouTube"
-                        )
-                    )
+                        track =
+                            OnlineCatalogTrack(
+                                id = videoId,
+                                title = title,
+                                artist = artist,
+                                album = "YouTube",
+                                artworkUri = artworkUrl,
+                                durationMs = durationMs,
+                                audioUrl = "https://www.youtube.com/watch?v=$videoId",
+                                provider = "YouTube",
+                            ),
+                    ),
                 )
                 if (hits.size >= 25) {
                     return rank(hits)
@@ -625,109 +693,123 @@ object YouTubeExtractor {
 
     suspend fun searchYouTube(
         query: String,
-        expected: TrackMeta? = null
-    ): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
-        val results = mutableListOf<OnlineCatalogTrack>()
-        val trimmed = query.trim()
-        if (trimmed.isEmpty()) return@withContext results
+        expected: TrackMeta? = null,
+    ): List<OnlineCatalogTrack> =
+        withContext(Dispatchers.IO) {
+            val results = mutableListOf<OnlineCatalogTrack>()
+            val trimmed = query.trim()
+            if (trimmed.isEmpty()) return@withContext results
 
-        // 1. InnerTube API Search (/youtubei/v1/search)
-        try {
-            val clientCtx = JSONObject().apply {
-                put("clientName", ANDROID_MAIN.name)
-                put("clientVersion", ANDROID_MAIN.version)
-                put("hl", "es")
-                put("gl", "US")
-                put("userAgent", ANDROID_MAIN.userAgent)
-                put("osName", ANDROID_MAIN.osName)
-                put("osVersion", ANDROID_MAIN.osVersion)
-            }
-
-            val bodyJson = JSONObject().apply {
-                put("context", JSONObject().put("client", clientCtx))
-                put("query", trimmed)
-            }
-
-            val request = Request.Builder()
-                .url(endpoint(endpoints.webBaseUrl, "youtubei/v1/search"))
-                .header("X-YouTube-Client-Name", ANDROID_MAIN.clientId)
-                .header("X-YouTube-Client-Version", ANDROID_MAIN.version)
-                .header("User-Agent", ANDROID_MAIN.userAgent)
-                .header("Content-Type", "application/json")
-                .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-
-            client.newCall(request).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val bodyStr = resp.body?.string() ?: ""
-                    val json = JSONObject(bodyStr)
-
-                    val contents = json.optJSONObject("contents")
-                        ?.optJSONObject("sectionListRenderer")
-                        ?.optJSONArray("contents")
-                        ?: json.optJSONObject("contents")
-                            ?.optJSONObject("twoColumnSearchResultsRenderer")
-                            ?.optJSONObject("primaryContents")
-                            ?.optJSONObject("sectionListRenderer")
-                            ?.optJSONArray("contents")
-
-                    if (contents != null) {
-                        results.addAll(
-                            parseSearchContents(
-                                contents,
-                                expected = expected
-                            )
-                        )
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // 2. Fallback to HTML Scraping if InnerTube returned empty
-        if (results.isEmpty()) {
+            // 1. InnerTube API Search (/youtubei/v1/search)
             try {
-                val encodedQ = java.net.URLEncoder.encode(trimmed, "UTF-8")
-                val url = endpoint(endpoints.webBaseUrl, "results?search_query=$encodedQ")
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-                    .header("Accept-Language", "es-ES,es;q=0.9,en;q=0.8")
-                    .build()
+                val clientCtx =
+                    JSONObject().apply {
+                        put("clientName", ANDROID_MAIN.name)
+                        put("clientVersion", ANDROID_MAIN.version)
+                        put("hl", "es")
+                        put("gl", "US")
+                        put("userAgent", ANDROID_MAIN.userAgent)
+                        put("osName", ANDROID_MAIN.osName)
+                        put("osVersion", ANDROID_MAIN.osVersion)
+                    }
+
+                val bodyJson =
+                    JSONObject().apply {
+                        put("context", JSONObject().put("client", clientCtx))
+                        put("query", trimmed)
+                    }
+
+                val request =
+                    Request
+                        .Builder()
+                        .url(endpoint(endpoints.webBaseUrl, "youtubei/v1/search"))
+                        .header("X-YouTube-Client-Name", ANDROID_MAIN.clientId)
+                        .header("X-YouTube-Client-Version", ANDROID_MAIN.version)
+                        .header("User-Agent", ANDROID_MAIN.userAgent)
+                        .header("Content-Type", "application/json")
+                        .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+                        .build()
 
                 client.newCall(request).execute().use { resp ->
                     if (resp.isSuccessful) {
-                        val html = resp.body?.string() ?: ""
-                        val p = Pattern.compile("var ytInitialData = (\\{.*?\\});</script>")
-                        val m = p.matcher(html)
-                        if (m.find()) {
-                            val jsonStr = m.group(1) ?: ""
-                            val data = JSONObject(jsonStr)
-                            val contents = data.optJSONObject("contents")
-                                ?.optJSONObject("twoColumnSearchResultsRenderer")
-                                ?.optJSONObject("primaryContents")
+                        val bodyStr = resp.body?.string() ?: ""
+                        val json = JSONObject(bodyStr)
+
+                        val contents =
+                            json
+                                .optJSONObject("contents")
                                 ?.optJSONObject("sectionListRenderer")
                                 ?.optJSONArray("contents")
+                                ?: json
+                                    .optJSONObject("contents")
+                                    ?.optJSONObject("twoColumnSearchResultsRenderer")
+                                    ?.optJSONObject("primaryContents")
+                                    ?.optJSONObject("sectionListRenderer")
+                                    ?.optJSONArray("contents")
 
-                            if (contents != null) {
-                                results.addAll(
-                                    parseSearchContents(
-                                        contents,
-                                        expected = expected
-                                    )
-                                )
-                            }
+                        if (contents != null) {
+                            results.addAll(
+                                parseSearchContents(
+                                    contents,
+                                    expected = expected,
+                                ),
+                            )
                         }
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-        }
 
-        return@withContext results
-    }
+            // 2. Fallback to HTML Scraping if InnerTube returned empty
+            if (results.isEmpty()) {
+                try {
+                    val encodedQ = java.net.URLEncoder.encode(trimmed, "UTF-8")
+                    val url = endpoint(endpoints.webBaseUrl, "results?search_query=$encodedQ")
+                    val request =
+                        Request
+                            .Builder()
+                            .url(url)
+                            .header(
+                                "User-Agent",
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                            ).header("Accept-Language", "es-ES,es;q=0.9,en;q=0.8")
+                            .build()
+
+                    client.newCall(request).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val html = resp.body?.string() ?: ""
+                            val p = Pattern.compile("var ytInitialData = (\\{.*?\\});</script>")
+                            val m = p.matcher(html)
+                            if (m.find()) {
+                                val jsonStr = m.group(1) ?: ""
+                                val data = JSONObject(jsonStr)
+                                val contents =
+                                    data
+                                        .optJSONObject("contents")
+                                        ?.optJSONObject("twoColumnSearchResultsRenderer")
+                                        ?.optJSONObject("primaryContents")
+                                        ?.optJSONObject("sectionListRenderer")
+                                        ?.optJSONArray("contents")
+
+                                if (contents != null) {
+                                    results.addAll(
+                                        parseSearchContents(
+                                            contents,
+                                            expected = expected,
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            return@withContext results
+        }
 
     /** L1 primitive overload for searchYouTube to preserve continuous granularity. */
     suspend fun searchYouTube(
@@ -735,18 +817,24 @@ object YouTubeExtractor {
         expectedDurationMs: Long = 0L,
         expectedTitle: String? = null,
         expectedArtist: String? = null,
-        expectedAlbum: String? = null
-    ): List<OnlineCatalogTrack> = searchYouTube(
-        query = query,
-        expected = if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() || !expectedAlbum.isNullOrBlank()) {
-            TrackIdentity(
-                title = expectedTitle.orEmpty(),
-                artist = expectedArtist.orEmpty(),
-                album = expectedAlbum.orEmpty(),
-                durationMs = expectedDurationMs
-            )
-        } else null
-    )
+        expectedAlbum: String? = null,
+    ): List<OnlineCatalogTrack> =
+        searchYouTube(
+            query = query,
+            expected =
+                if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() ||
+                    !expectedAlbum.isNullOrBlank()
+                ) {
+                    TrackIdentity(
+                        title = expectedTitle.orEmpty(),
+                        artist = expectedArtist.orEmpty(),
+                        album = expectedAlbum.orEmpty(),
+                        durationMs = expectedDurationMs,
+                    )
+                } else {
+                    null
+                },
+        )
 
     private fun parseDurationTextToMs(durStr: String): Long {
         if (durStr.isBlank()) return 0L
@@ -766,14 +854,15 @@ object YouTubeExtractor {
         urlOrQuery: String,
         expected: TrackMeta? = null,
         fallbackQuery: String? = null,
-        excludedClients: Set<String> = emptySet()
+        excludedClients: Set<String> = emptySet(),
     ): YouTubeStreamResult? {
-        val res = extractAudioStreamDetailed(
-            urlOrQuery = urlOrQuery,
-            expected = expected,
-            fallbackQuery = fallbackQuery,
-            excludedClients = excludedClients
-        )
+        val res =
+            extractAudioStreamDetailed(
+                urlOrQuery = urlOrQuery,
+                expected = expected,
+                fallbackQuery = fallbackQuery,
+                excludedClients = excludedClients,
+            )
         return if (res is YouTubeExtractResult.Success) res.result else null
     }
 
@@ -784,127 +873,143 @@ object YouTubeExtractor {
         expectedTitle: String? = null,
         expectedArtist: String? = null,
         expectedAlbum: String? = null,
-        fallbackQuery: String? = null
-    ): YouTubeStreamResult? = extractAudioStream(
-        urlOrQuery = urlOrQuery,
-        expected = if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() || !expectedAlbum.isNullOrBlank()) {
-            TrackIdentity(
-                title = expectedTitle.orEmpty(),
-                artist = expectedArtist.orEmpty(),
-                album = expectedAlbum.orEmpty(),
-                durationMs = expectedDurationMs
-            )
-        } else null,
-        fallbackQuery = fallbackQuery
-    )
+        fallbackQuery: String? = null,
+    ): YouTubeStreamResult? =
+        extractAudioStream(
+            urlOrQuery = urlOrQuery,
+            expected =
+                if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() ||
+                    !expectedAlbum.isNullOrBlank()
+                ) {
+                    TrackIdentity(
+                        title = expectedTitle.orEmpty(),
+                        artist = expectedArtist.orEmpty(),
+                        album = expectedAlbum.orEmpty(),
+                        durationMs = expectedDurationMs,
+                    )
+                } else {
+                    null
+                },
+            fallbackQuery = fallbackQuery,
+        )
 
     suspend fun extractAudioStreamDetailed(
         urlOrQuery: String,
         expected: TrackMeta? = null,
         fallbackQuery: String? = null,
-        excludedClients: Set<String> = emptySet()
-    ): YouTubeExtractResult = withContext(Dispatchers.IO) {
-        val trimmed = urlOrQuery.trim()
+        excludedClients: Set<String> = emptySet(),
+    ): YouTubeExtractResult =
+        withContext(Dispatchers.IO) {
+            val trimmed = urlOrQuery.trim()
 
-        val isUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://")
-        if (isUrl && !trimmed.contains("youtube.com") && !trimmed.contains("youtu.be")) {
-            return@withContext YouTubeExtractResult.Error("Solo se pueden procesar enlaces provenientes de YouTube (youtube.com o youtu.be)")
-        }
-
-        var videoId = extractYouTubeId(trimmed)
-        if (videoId == null && isUrl) {
-            return@withContext YouTubeExtractResult.Error("El enlace ingresado no contiene un ID de video de YouTube válido")
-        }
-
-        if (videoId == null) {
-            val isIsrc = ISRC_REGEX.matches(trimmed)
-            val primaryQuery = if (isIsrc) {
-                fallbackQuery?.takeIf { it.isNotBlank() && !ISRC_REGEX.matches(it) }
-                    ?: listOfNotNull(expected?.artist, expected?.title).joinToString(" ").trim()
-            } else {
-                trimmed
+            val isUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://")
+            if (isUrl && !trimmed.contains("youtube.com") && !trimmed.contains("youtu.be")) {
+                return@withContext YouTubeExtractResult.Error(
+                    "Solo se pueden procesar enlaces provenientes de YouTube (youtube.com o youtu.be)",
+                )
             }
 
-            if (primaryQuery.isNotBlank()) {
-                val searchResults = searchYouTube(
-                    query = primaryQuery,
-                    expected = expected
-                )
-                if (searchResults.isNotEmpty()) {
-                    videoId = searchResults.first().id
-                } else {
-                    // Fallback query: Limpiar paréntesis, "Remastered", "Deluxe", "feat.", y caracteres especiales
-                    val candidateFallback = fallbackQuery?.takeIf { it != primaryQuery && !ISRC_REGEX.matches(it) } ?: run {
-                        primaryQuery
-                            .replace(FALLBACK_PAREN, "")
-                            .replace(FALLBACK_BRACKET, "")
-                            .replace(NON_ALPHANUM_SPACE, " ")
-                            .trim()
+            var videoId = extractYouTubeId(trimmed)
+            if (videoId == null && isUrl) {
+                return@withContext YouTubeExtractResult.Error("El enlace ingresado no contiene un ID de video de YouTube válido")
+            }
+
+            if (videoId == null) {
+                val isIsrc = ISRC_REGEX.matches(trimmed)
+                val primaryQuery =
+                    if (isIsrc) {
+                        fallbackQuery?.takeIf { it.isNotBlank() && !ISRC_REGEX.matches(it) }
+                            ?: listOfNotNull(expected?.artist, expected?.title).joinToString(" ").trim()
+                    } else {
+                        trimmed
                     }
-                    if (candidateFallback.isNotBlank() && candidateFallback != primaryQuery) {
-                        val fallbackResults = searchYouTube(
-                            query = candidateFallback,
-                            expected = expected
+
+                if (primaryQuery.isNotBlank()) {
+                    val searchResults =
+                        searchYouTube(
+                            query = primaryQuery,
+                            expected = expected,
                         )
-                        if (fallbackResults.isNotEmpty()) {
-                            videoId = fallbackResults.first().id
+                    if (searchResults.isNotEmpty()) {
+                        videoId = searchResults.first().id
+                    } else {
+                        // Fallback query: Limpiar paréntesis, "Remastered", "Deluxe", "feat.", y caracteres especiales
+                        val candidateFallback =
+                            fallbackQuery?.takeIf { it != primaryQuery && !ISRC_REGEX.matches(it) } ?: run {
+                                primaryQuery
+                                    .replace(FALLBACK_PAREN, "")
+                                    .replace(FALLBACK_BRACKET, "")
+                                    .replace(NON_ALPHANUM_SPACE, " ")
+                                    .trim()
+                            }
+                        if (candidateFallback.isNotBlank() && candidateFallback != primaryQuery) {
+                            val fallbackResults =
+                                searchYouTube(
+                                    query = candidateFallback,
+                                    expected = expected,
+                                )
+                            if (fallbackResults.isNotEmpty()) {
+                                videoId = fallbackResults.first().id
+                            }
                         }
                     }
                 }
             }
-        }
 
-        if (videoId == null) {
-            return@withContext YouTubeExtractResult.Error("No se encontró ningún video en YouTube para la búsqueda ingresada")
-        }
-
-        var lastErrorReason = ""
-
-        val candidateProfiles = AUDIO_CLIENTS.filter {
-            it.name !in excludedClients && !isClientOnCooldown(it.name)
-        }.ifEmpty {
-            AUDIO_CLIENTS.filter { it.name !in excludedClients }.ifEmpty { AUDIO_CLIENTS }
-        }
-
-        for (clientProfile in candidateProfiles) {
-            try {
-                val (res, reason) = callPlayerApi(clientProfile, videoId)
-                if (res != null) {
-                    return@withContext YouTubeExtractResult.Success(res)
-                }
-                if (!reason.isNullOrBlank()) {
-                    lastErrorReason = reason
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                CrashReporter.recordNonFatal(
-                    e,
-                    mapOf(
-                        "yt_phase" to "player_api",
-                        "yt_client" to clientProfile.name,
-                        "yt_video_id" to videoId
-                    )
-                )
+            if (videoId == null) {
+                return@withContext YouTubeExtractResult.Error("No se encontró ningún video en YouTube para la búsqueda ingresada")
             }
-        }
 
-        val finalErrorMsg = if (lastErrorReason.isNotBlank()) {
-            "El video de YouTube no está disponible ($lastErrorReason)"
-        } else {
-            "No se pudo extraer la pista de audio de este video de YouTube"
-        }
+            var lastErrorReason = ""
 
-        CrashReporter.recordNonFatal(
-            IllegalStateException(finalErrorMsg),
-            mapOf(
-                "yt_phase" to "extract_exhausted",
-                "yt_video_id" to videoId,
-                "yt_last_reason" to lastErrorReason.ifBlank { "none" }
+            val candidateProfiles =
+                AUDIO_CLIENTS
+                    .filter {
+                        it.name !in excludedClients && !isClientOnCooldown(it.name)
+                    }.ifEmpty {
+                        AUDIO_CLIENTS.filter { it.name !in excludedClients }.ifEmpty { AUDIO_CLIENTS }
+                    }
+
+            for (clientProfile in candidateProfiles) {
+                try {
+                    val (res, reason) = callPlayerApi(clientProfile, videoId)
+                    if (res != null) {
+                        return@withContext YouTubeExtractResult.Success(res)
+                    }
+                    if (!reason.isNullOrBlank()) {
+                        lastErrorReason = reason
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    CrashReporter.recordNonFatal(
+                        e,
+                        mapOf(
+                            "yt_phase" to "player_api",
+                            "yt_client" to clientProfile.name,
+                            "yt_video_id" to videoId,
+                        ),
+                    )
+                }
+            }
+
+            val finalErrorMsg =
+                if (lastErrorReason.isNotBlank()) {
+                    "El video de YouTube no está disponible ($lastErrorReason)"
+                } else {
+                    "No se pudo extraer la pista de audio de este video de YouTube"
+                }
+
+            CrashReporter.recordNonFatal(
+                IllegalStateException(finalErrorMsg),
+                mapOf(
+                    "yt_phase" to "extract_exhausted",
+                    "yt_video_id" to videoId,
+                    "yt_last_reason" to lastErrorReason.ifBlank { "none" },
+                ),
             )
-        )
 
-        return@withContext YouTubeExtractResult.Error(finalErrorMsg)
-    }
+            return@withContext YouTubeExtractResult.Error(finalErrorMsg)
+        }
 
     /** L1 primitive overload for extractAudioStreamDetailed to preserve continuous granularity. */
     suspend fun extractAudioStreamDetailed(
@@ -913,19 +1018,25 @@ object YouTubeExtractor {
         expectedTitle: String? = null,
         expectedArtist: String? = null,
         expectedAlbum: String? = null,
-        fallbackQuery: String? = null
-    ): YouTubeExtractResult = extractAudioStreamDetailed(
-        urlOrQuery = urlOrQuery,
-        expected = if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() || !expectedAlbum.isNullOrBlank()) {
-            TrackIdentity(
-                title = expectedTitle.orEmpty(),
-                artist = expectedArtist.orEmpty(),
-                album = expectedAlbum.orEmpty(),
-                durationMs = expectedDurationMs
-            )
-        } else null,
-        fallbackQuery = fallbackQuery
-    )
+        fallbackQuery: String? = null,
+    ): YouTubeExtractResult =
+        extractAudioStreamDetailed(
+            urlOrQuery = urlOrQuery,
+            expected =
+                if (expectedDurationMs > 0L || !expectedTitle.isNullOrBlank() || !expectedArtist.isNullOrBlank() ||
+                    !expectedAlbum.isNullOrBlank()
+                ) {
+                    TrackIdentity(
+                        title = expectedTitle.orEmpty(),
+                        artist = expectedArtist.orEmpty(),
+                        album = expectedAlbum.orEmpty(),
+                        durationMs = expectedDurationMs,
+                    )
+                } else {
+                    null
+                },
+            fallbackQuery = fallbackQuery,
+        )
 
     @Volatile
     private var cachedVisitorData: String? = null
@@ -937,11 +1048,15 @@ object YouTubeExtractor {
         }
         return try {
             val url = endpoint(endpoints.webBaseUrl, "watch?v=$videoId")
-            val req = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
-                .header("Accept-Language", "es-ES,es;q=0.9")
-                .build()
+            val req =
+                Request
+                    .Builder()
+                    .url(url)
+                    .header(
+                        "User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+                    ).header("Accept-Language", "es-ES,es;q=0.9")
+                    .build()
 
             client.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) {
@@ -963,57 +1078,63 @@ object YouTubeExtractor {
         }
     }
 
-
-    private fun callPlayerApi(clientProfile: ClientProfile, videoId: String): Pair<YouTubeStreamResult?, String?> {
-        val playerEndpoint = if (clientProfile.apiKey.isEmpty()) {
-            endpoint(endpoints.webBaseUrl, "youtubei/v1/player")
-        } else {
-            endpoint(
-                endpoints.googleApiBaseUrl,
-                "youtubei/v1/player?key=${clientProfile.apiKey}"
-            )
-        }
+    private fun callPlayerApi(
+        clientProfile: ClientProfile,
+        videoId: String,
+    ): Pair<YouTubeStreamResult?, String?> {
+        val playerEndpoint =
+            if (clientProfile.apiKey.isEmpty()) {
+                endpoint(endpoints.webBaseUrl, "youtubei/v1/player")
+            } else {
+                endpoint(
+                    endpoints.googleApiBaseUrl,
+                    "youtubei/v1/player?key=${clientProfile.apiKey}",
+                )
+            }
 
         val visitorData = fetchVisitorData(videoId)
 
-        val clientCtx = JSONObject().apply {
-            put("clientName", clientProfile.name)
-            put("clientVersion", clientProfile.version)
-            put("hl", "es")
-            put("gl", "US")
-            put("userAgent", clientProfile.userAgent)
-            put("osName", clientProfile.osName)
-            put("osVersion", clientProfile.osVersion)
-            if (!visitorData.isNullOrBlank()) {
-                put("visitorData", visitorData)
-            }
-            clientProfile.extraContextJson?.let {
-                val extraObj = JSONObject(it)
-                val keys = extraObj.keys()
-                while (keys.hasNext()) {
-                    val k = keys.next()
-                    put(k, extraObj.get(k))
+        val clientCtx =
+            JSONObject().apply {
+                put("clientName", clientProfile.name)
+                put("clientVersion", clientProfile.version)
+                put("hl", "es")
+                put("gl", "US")
+                put("userAgent", clientProfile.userAgent)
+                put("osName", clientProfile.osName)
+                put("osVersion", clientProfile.osVersion)
+                if (!visitorData.isNullOrBlank()) {
+                    put("visitorData", visitorData)
+                }
+                clientProfile.extraContextJson?.let {
+                    val extraObj = JSONObject(it)
+                    val keys = extraObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        put(k, extraObj.get(k))
+                    }
                 }
             }
-        }
 
+        val bodyJson =
+            JSONObject().apply {
+                put("context", JSONObject().put("client", clientCtx))
+                put("videoId", videoId)
+                put("playbackContext", JSONObject().put("contentPlaybackContext", JSONObject().put("html5Preference", "HTML5_PREF_WANTS")))
+                put("contentCheckOk", true)
+                put("racyCheckOk", true)
+            }
 
-        val bodyJson = JSONObject().apply {
-            put("context", JSONObject().put("client", clientCtx))
-            put("videoId", videoId)
-            put("playbackContext", JSONObject().put("contentPlaybackContext", JSONObject().put("html5Preference", "HTML5_PREF_WANTS")))
-            put("contentCheckOk", true)
-            put("racyCheckOk", true)
-        }
-
-        val request = Request.Builder()
-            .url(playerEndpoint)
-            .header("X-YouTube-Client-Name", clientProfile.clientId)
-            .header("X-YouTube-Client-Version", clientProfile.version)
-            .header("User-Agent", clientProfile.userAgent)
-            .header("Content-Type", "application/json")
-            .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
-            .build()
+        val request =
+            Request
+                .Builder()
+                .url(playerEndpoint)
+                .header("X-YouTube-Client-Name", clientProfile.clientId)
+                .header("X-YouTube-Client-Version", clientProfile.version)
+                .header("User-Agent", clientProfile.userAgent)
+                .header("Content-Type", "application/json")
+                .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+                .build()
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return Pair(null, "HTTP ${response.code}")
@@ -1087,18 +1208,18 @@ object YouTubeExtractor {
                 checkFormatArray(regularFormats)
             }
 
-
             if (bestAudioUrl != null) {
-                val streamResult = YouTubeStreamResult(
-                    videoId = videoId,
-                    title = title,
-                    artist = author,
-                    artworkUrl = thumbUrl,
-                    durationMs = durationSec * 1000L,
-                    audioUrl = bestAudioUrl!!,
-                    userAgent = clientProfile.userAgent.removeSuffix(" gzip").trim(),
-                    clientName = clientProfile.name
-                )
+                val streamResult =
+                    YouTubeStreamResult(
+                        videoId = videoId,
+                        title = title,
+                        artist = author,
+                        artworkUrl = thumbUrl,
+                        durationMs = durationSec * 1000L,
+                        audioUrl = bestAudioUrl!!,
+                        userAgent = clientProfile.userAgent.removeSuffix(" gzip").trim(),
+                        clientName = clientProfile.name,
+                    )
                 return Pair(streamResult, null)
             }
         }

@@ -11,21 +11,18 @@ data class AppRelease(
     val notes: String?,
     val htmlUrl: String?,
     val publishedAtMs: Long?,
-    val apkUrl: String?
+    val apkUrl: String?,
 ) {
     val isInstallable: Boolean
         get() = versionCode != null && !apkUrl.isNullOrBlank()
 }
 
 object GitHubReleaseUrls {
-    fun repoUrl(repository: String): String =
-        "https://github.com/${repository.trim()}"
+    fun repoUrl(repository: String): String = "https://github.com/${repository.trim()}"
 
-    fun latestPageUrl(repository: String): String =
-        "${repoUrl(repository)}/releases/latest"
+    fun latestPageUrl(repository: String): String = "${repoUrl(repository)}/releases/latest"
 
-    fun latestApkDownloadUrl(repository: String): String =
-        "${repoUrl(repository)}/releases/latest/download/BestiaPop.apk"
+    fun latestApkDownloadUrl(repository: String): String = "${repoUrl(repository)}/releases/latest/download/BestiaPop.apk"
 
     fun apiReleasesUrl(repository: String): String =
         "https://api.github.com/repos/${repository.trim()}/releases?per_page=$RELEASES_PAGE_SIZE"

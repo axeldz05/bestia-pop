@@ -15,11 +15,8 @@ Guía de referencia para diagnosticar, ejecutar y solucionar problemas reportado
 | Linter | Alcance | Comando |
 |---|---|---|
 | **Android Lint** | APIs Android, manifest, recursos, extensiones KTX, seguridad | `./gradlew lintDebug` / `./gradlew lintRelease` |
-| **ktlint** | Estilo oficial de Kotlin, indentación, espaciado, firmas, expresiones | `ktlint --editorconfig=.editorconfig <archivos>` |
+| **ktlint** | Estilo oficial de Kotlin, indentación, espaciado, firmas, expresiones | `ktlint --editorconfig=.editorconfig <archivos>` (o `-F` para autocorregir formato) |
 | **Compilador Kotlin** | Tipos, compatibilidad, deprecaciones, overrides | `./gradlew compileDebugKotlin -Pkotlin.compiler.allWarningsAsErrors=true` |
-
-> [!IMPORTANT]
-> El binario oficial de **ktlint** proviene exclusivamente de la organización canónica: `https://github.com/ktlint/ktlint`. No usar repositorios obsoletos de terceros.
 
 ---
 
@@ -68,7 +65,33 @@ Guía de referencia para diagnosticar, ejecutar y solucionar problemas reportado
   private fun hasAudioPermission(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { ... }
   ```
 - **Bloques vacíos:** `catch (_: Exception) {}` en una sola línea.
-- **Longitud de línea:** Máximo 120 caracteres; romper strings largas usando concatenación `+` con sangría.
+- **Longitud de línea:** Máximo 140 caracteres; romper strings largas usando concatenación `+` con sangría.
+
+### H. `standard:property-naming`
+- **Problema:** Nombres de `const val` o propiedades de objeto inmutables que no usan SCREAMING_SNAKE_CASE, o variables `var` con mayúsculas.
+- **Solución:**
+  - Variables mutables (`var`): usar camelCase (`private var instance: AppDatabase? = null`).
+  - Constantes de interfaz/mensajes en objetos: si se requiere mantener camelCase sin alterar el código de llamada, definir la propiedad con getter: `val searching get() = "..."`.
+
+### I. `standard:backing-property-naming`
+- **Problema:** Propiedad privada con prefijo `_` (ej. `_libraryPrefsReady`) sin una propiedad pública correspondiente (`libraryPrefsReady`).
+- **Solución:** Si la propiedad es estrictamente interna y no tiene par público, remover el guion bajo: `private val libraryPrefsReady = MutableStateFlow(...)`.
+
+### J. `standard:filename`
+- **Problema:** Archivo que contiene una sola clase/interfaz/enum pero su nombre de archivo no coincide con el de la clase.
+- **Solución:** Renombrar el archivo para que coincida exactamente con la clase principal con `git mv` (ej. `DiscoverUiState.kt` $\rightarrow$ `ItemLibraryStatus.kt`), actualizando referencias en skills y documentación.
+
+### K. `standard:no-wildcard-imports`
+- **Problema:** Uso de imports con comodín `import com.bestiapop.android.data.model.*`.
+- **Solución:** Reemplazar siempre por imports explícitos ordenados alfabéticamente.
+
+### L. `standard:kdoc` y `standard:no-consecutive-comments`
+- **Problema:** KDocs colgantes o dos bloques KDoc consecutivos inmediatamente anteriores a una misma declaración.
+- **Solución:** Consolidar múltiples descripciones en un único bloque KDoc situado directamente sobre la declaración correspondiente.
+
+### M. `standard:mixed-condition-operators`
+- **Problema:** Condiciones que combinan `&&` y `||` sin paréntesis explícitos.
+- **Solución:** Envolver las sub-condiciones en paréntesis: `(a && b) || c`.
 
 ---
 

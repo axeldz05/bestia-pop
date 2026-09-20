@@ -7,34 +7,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IdentifyWorkCodecTest {
-
     @Test
     fun roundTrip_keepsRemainingIdsAndFields() {
-        val original = IdentifyWorkSnapshot(
-            remainingSongIds = listOf(3L, 8L, 21L),
-            force = true,
-            showReview = false,
-            applyFields = IdentifyApplyFields(
-                artwork = true,
-                title = false,
-                artist = true,
-                album = false,
-                year = true,
-                trackNumber = false
-            ),
-            processedCount = 2,
-            totalCount = 5,
-            updated = 1,
-            skipped = 1,
-            medium = 2,
-            low = 0,
-            none = 1,
-            lbHits = 3,
-            alreadyQueued = 4,
-            reviewCount = 3,
-            interrupted = true,
-            fillGapsOnlySongIds = setOf(3L, 21L)
-        )
+        val original =
+            IdentifyWorkSnapshot(
+                remainingSongIds = listOf(3L, 8L, 21L),
+                force = true,
+                showReview = false,
+                applyFields =
+                    IdentifyApplyFields(
+                        artwork = true,
+                        title = false,
+                        artist = true,
+                        album = false,
+                        year = true,
+                        trackNumber = false,
+                    ),
+                processedCount = 2,
+                totalCount = 5,
+                updated = 1,
+                skipped = 1,
+                medium = 2,
+                low = 0,
+                none = 1,
+                lbHits = 3,
+                alreadyQueued = 4,
+                reviewCount = 3,
+                interrupted = true,
+                fillGapsOnlySongIds = setOf(3L, 21L),
+            )
         val restored = IdentifyWorkCodec.decode(IdentifyWorkCodec.encode(original))
         assertEquals(original, restored)
     }

@@ -17,33 +17,34 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 @Category(MediumTest::class)
 class AppUpdateCheckStoreTest {
-
     @Test
-    fun launchThrottleTimestampAndVersionNotes_areAvailableAfterColdStart() = runTest {
-        val storage = TemporaryPreferencesDataStore(
-            ApplicationProvider.getApplicationContext(),
-            "app-update"
-        )
-        try {
-            val repository = AppUpdateCheckStore(storage.dataStore)
-            val completedCheckAt = 1_786_503_600_000L
-            repository.setLastCheckAtMs(completedCheckAt)
-            repository.setCachedNotes(
-                versionName = "2.4.1",
-                notes = "Mejoras de continuidad y descargas."
-            )
+    fun launchThrottleTimestampAndVersionNotes_areAvailableAfterColdStart() =
+        runTest {
+            val storage =
+                TemporaryPreferencesDataStore(
+                    ApplicationProvider.getApplicationContext(),
+                    "app-update",
+                )
+            try {
+                val repository = AppUpdateCheckStore(storage.dataStore)
+                val completedCheckAt = 1_786_503_600_000L
+                repository.setLastCheckAtMs(completedCheckAt)
+                repository.setCachedNotes(
+                    versionName = "2.4.1",
+                    notes = "Mejoras de continuidad y descargas.",
+                )
 
-            storage.restart()
+                storage.restart()
 
-            val restored = AppUpdateCheckStore(storage.dataStore)
-            assertEquals(completedCheckAt, restored.lastCheckAtMs())
-            assertEquals(
-                "Mejoras de continuidad y descargas.",
-                restored.cachedNotes("2.4.1")
-            )
-            assertNull(restored.cachedNotes("2.4.0"))
-        } finally {
-            storage.close()
+                val restored = AppUpdateCheckStore(storage.dataStore)
+                assertEquals(completedCheckAt, restored.lastCheckAtMs())
+                assertEquals(
+                    "Mejoras de continuidad y descargas.",
+                    restored.cachedNotes("2.4.1"),
+                )
+                assertNull(restored.cachedNotes("2.4.0"))
+            } finally {
+                storage.close()
+            }
         }
-    }
 }

@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -19,22 +20,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.Immutable
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.ItemSwipeBox
+import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.theme.ListDensity
-
-/** Generic actions for aggregate browse rows (artists, genres, etc.) */
-import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
 
 @Immutable
 data class AggregateBrowseActions<T>(
     val onClick: (T) -> Unit,
     val onPlay: (T) -> Unit,
     val onShuffle: (T) -> Unit,
-    val onSwipeAction: ((T) -> Unit)? = null
+    val onSwipeAction: ((T) -> Unit)? = null,
 )
 
 /** Shared row chrome for artist / genre browse aggregates. */
@@ -52,7 +50,7 @@ fun LibraryAggregateListItem(
     onShuffle: () -> Unit,
     modifier: Modifier = Modifier,
     swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
-    onSwipeAction: (() -> Unit)? = null
+    onSwipeAction: (() -> Unit)? = null,
 ) {
     val canSwipe = onSwipeAction != null && swipeAction != SubmenuSwipeAction.DISABLED
 
@@ -60,56 +58,56 @@ fun LibraryAggregateListItem(
         action = swipeAction,
         onSwipeAction = { onSwipeAction?.invoke() },
         enabled = canSwipe,
-        modifier = modifier
+        modifier = modifier,
     ) {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = ListDensity.rowHorizontalPadding,
-                    vertical = ListDensity.rowVerticalPadding
-                )
-                .clickable { onClick() },
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = ListDensity.rowHorizontalPadding,
+                        vertical = ListDensity.rowVerticalPadding,
+                    ).clickable { onClick() },
             shape = RoundedCornerShape(ListDensity.corner),
-            color = MaterialTheme.colorScheme.surface
+            color = MaterialTheme.colorScheme.surface,
         ) {
-        Row(
-            modifier = Modifier.padding(ListDensity.rowInnerPadding),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            ArtworkThumbnail(
-                artworkUri = artworkUri,
-                size = ListDensity.artworkChipRow,
-                cornerRadius = artworkCornerRadius,
-                fallbackIcon = fallbackIcon
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = ListDensity.titleStyle,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+            Row(
+                modifier = Modifier.padding(ListDensity.rowInnerPadding),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ArtworkThumbnail(
+                    artworkUri = artworkUri,
+                    size = ListDensity.artworkChipRow,
+                    cornerRadius = artworkCornerRadius,
+                    fallbackIcon = fallbackIcon,
                 )
-                Text(
-                    text = subtitle,
-                    style = ListDensity.subtitleStyle,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = ListDensity.titleStyle,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = subtitle,
+                        style = ListDensity.subtitleStyle,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                PlayShuffleIconPair(
+                    onPlay = onPlay,
+                    onShuffle = onShuffle,
+                    playDescription = playDescription,
+                    shuffleDescription = shuffleDescription,
                 )
             }
-
-            PlayShuffleIconPair(
-                onPlay = onPlay,
-                onShuffle = onShuffle,
-                playDescription = playDescription,
-                shuffleDescription = shuffleDescription
-            )
         }
     }
-}
 }

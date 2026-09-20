@@ -13,13 +13,15 @@ class DeviceAwakeRule : ExternalResource() {
         val uiAutomation = instrumentation.uiAutomation
 
         fun executeShellCommand(command: String) {
-            ParcelFileDescriptor.AutoCloseInputStream(
-                uiAutomation.executeShellCommand(command)
-            ).use { it.readBytes() }
+            ParcelFileDescriptor
+                .AutoCloseInputStream(
+                    uiAutomation.executeShellCommand(command),
+                ).use { it.readBytes() }
         }
 
-        val keyguard = instrumentation.targetContext
-            .getSystemService(KeyguardManager::class.java)
+        val keyguard =
+            instrumentation.targetContext
+                .getSystemService(KeyguardManager::class.java)
         val deadline = SystemClock.elapsedRealtime() + UNLOCK_TIMEOUT_MS
         while (keyguard.isKeyguardLocked && SystemClock.elapsedRealtime() < deadline) {
             executeShellCommand("input keyevent KEYCODE_WAKEUP")

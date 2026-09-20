@@ -31,7 +31,7 @@ internal fun queueRowKey(item: PlayableItem): String = item.queueEntryId
 
 internal fun focusedQueueIndex(
     items: List<PlayableItem>,
-    currentQueueEntryId: String?
+    currentQueueEntryId: String?,
 ): Int {
     if (currentQueueEntryId == null) return -1
     return items.indexOfFirst { it.queueEntryId == currentQueueEntryId }
@@ -51,19 +51,20 @@ fun DismissibleQueueItemRow(
     showIndex: Boolean = false,
     removeIcon: ImageVector = Icons.Default.Delete,
     removeContentDescription: String = "Quitar de la cola",
-    onReorder: ((Int, Int) -> Unit)? = null
+    onReorder: ((Int, Int) -> Unit)? = null,
 ) {
     val currentOnRemove by rememberUpdatedState(onRemove)
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.StartToEnd) {
-                currentOnRemove()
-                true
-            } else {
-                false
-            }
-        }
-    )
+    val dismissState =
+        rememberSwipeToDismissBoxState(
+            confirmValueChange = { value ->
+                if (value == SwipeToDismissBoxValue.StartToEnd) {
+                    currentOnRemove()
+                    true
+                } else {
+                    false
+                }
+            },
+        )
 
     SwipeToDismissBox(
         state = dismissState,
@@ -73,36 +74,38 @@ fun DismissibleQueueItemRow(
         backgroundContent = {
             if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            MaterialTheme.colorScheme.errorContainer,
-                            shape = RoundedCornerShape(ListDensity.corner)
-                        )
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.CenterStart
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .background(
+                                MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(ListDensity.corner),
+                            ).padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.CenterStart,
                 ) {
                     Icon(
                         imageVector = removeIcon,
                         contentDescription = removeContentDescription,
-                        tint = MaterialTheme.colorScheme.onErrorContainer
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }
             }
-        }
+        },
     ) {
-        val backgroundColor = when {
-            isCurrentPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-            compact -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            else -> MaterialTheme.colorScheme.surface
-        }
+        val backgroundColor =
+            when {
+                isCurrentPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                compact -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                else -> MaterialTheme.colorScheme.surface
+            }
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    color = backgroundColor,
-                    shape = RoundedCornerShape(ListDensity.corner)
-                )
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        color = backgroundColor,
+                        shape = RoundedCornerShape(ListDensity.corner),
+                    ),
         ) {
             QueueItemRow(
                 item = item,
@@ -116,7 +119,7 @@ fun DismissibleQueueItemRow(
                 trailingDuration = trailingDuration,
                 compact = compact,
                 reorderCount = queueSize,
-                onReorder = onReorder
+                onReorder = onReorder,
             )
         }
     }
@@ -138,25 +141,25 @@ fun QueueLazyList(
     removeContentDescription: String = "Quitar",
     trailingDuration: ((PlayableItem) -> String?)? = null,
     onReorder: ((Int, Int) -> Unit)? = null,
-    onRemoveEntry: ((String) -> Unit)? = null
+    onRemoveEntry: ((String) -> Unit)? = null,
 ) {
     if (items.isEmpty()) {
         EmptyListHint(
             text = emptyTitle,
             subtitle = emptySubtitle,
             icon = Icons.AutoMirrored.Filled.QueueMusic,
-            modifier = modifier.fillMaxSize()
+            modifier = modifier.fillMaxSize(),
         )
         return
     }
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxSize()
+        modifier = modifier.fillMaxSize(),
     ) {
         itemsIndexed(
             items = items,
             key = { _, item -> queueRowKey(item) },
-            contentType = { _, _ -> "queue_row" }
+            contentType = { _, _ -> "queue_row" },
         ) { index, item ->
             val currentItems by rememberUpdatedState(items)
             val currentOnRemove by rememberUpdatedState(onRemove)
@@ -183,7 +186,7 @@ fun QueueLazyList(
                 removeIcon = removeIcon,
                 removeContentDescription = removeContentDescription,
                 trailingDuration = trailingDuration?.invoke(item),
-                onReorder = onReorder
+                onReorder = onReorder,
             )
         }
     }

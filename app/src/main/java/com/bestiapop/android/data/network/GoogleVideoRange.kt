@@ -11,7 +11,7 @@ internal object GoogleVideoRange {
     fun remainingLength(
         host: String?,
         contentLengthParam: String?,
-        position: Long
+        position: Long,
     ): Long? {
         if (host?.endsWith(".googlevideo.com") != true) return null
         val contentLength = contentLengthParam?.toLongOrNull()?.takeIf { it > 0L } ?: return null
@@ -22,7 +22,7 @@ internal object GoogleVideoRange {
     fun httpRangeHeader(
         host: String?,
         contentLengthParam: String?,
-        startByte: Long
+        startByte: Long,
     ): String? {
         val remaining = remainingLength(host, contentLengthParam, startByte) ?: return null
         val lastByte = startByte + remaining - 1L
@@ -33,16 +33,17 @@ internal object GoogleVideoRange {
         host: String?,
         contentLengthParam: String?,
         startByte: Long,
-        chunkSize: Long = DEFAULT_CHUNK_BYTES
+        chunkSize: Long = DEFAULT_CHUNK_BYTES,
     ): String? {
         val remaining = remainingLength(host, contentLengthParam, startByte) ?: return null
         val contentLength = startByte + remaining
         val chunkEnd = (startByte + chunkSize.coerceAtLeast(1L) - 1L).coerceAtMost(contentLength - 1L)
-        val end = if (startByte == 0L && chunkEnd == contentLength - 1L && contentLength > 1L) {
-            contentLength - 2L
-        } else {
-            chunkEnd
-        }
+        val end =
+            if (startByte == 0L && chunkEnd == contentLength - 1L && contentLength > 1L) {
+                contentLength - 2L
+            } else {
+                chunkEnd
+            }
         return "bytes=$startByte-$end"
     }
 }

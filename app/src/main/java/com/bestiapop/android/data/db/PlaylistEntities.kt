@@ -15,22 +15,22 @@ data class PlaylistEntity(
     val name: String,
     val description: String? = null,
     val coverUri: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 @Entity(
     tableName = "playlist_song_cross_ref",
     indices = [
         Index(value = ["playlistId"]),
-        Index(value = ["songId"])
-    ]
+        Index(value = ["songId"]),
+    ],
 )
 data class PlaylistSongCrossRef(
     val playlistId: Long,
     val songId: Long,
     val position: Int = 0,
     @PrimaryKey(autoGenerate = true)
-    val id: Long = 0
+    val id: Long = 0,
 )
 
 /**
@@ -41,8 +41,8 @@ data class PlaylistSongCrossRef(
     tableName = "playlist_pending_tracks",
     indices = [
         Index(value = ["playlistId"]),
-        Index(value = ["playlistId", "artist", "title"])
-    ]
+        Index(value = ["playlistId", "artist", "title"]),
+    ],
 )
 data class PlaylistPendingTrackEntity(
     @PrimaryKey(autoGenerate = true)
@@ -54,7 +54,7 @@ data class PlaylistPendingTrackEntity(
     val trackNumber: Int = 0,
     val recordingMbid: String? = null,
     val artworkUri: String? = null,
-    val position: Int = 0
+    val position: Int = 0,
 )
 
 data class PlaylistWithSongs(
@@ -63,9 +63,9 @@ data class PlaylistWithSongs(
         entity = Song::class,
         parentColumn = "playlistId",
         entityColumn = "id",
-        associateBy = Junction(PlaylistSongCrossRef::class, parentColumn = "playlistId", entityColumn = "songId")
+        associateBy = Junction(PlaylistSongCrossRef::class, parentColumn = "playlistId", entityColumn = "songId"),
     )
-    val songs: List<Song>
+    val songs: List<Song>,
 )
 
 data class PlaylistSummary(
@@ -74,6 +74,5 @@ data class PlaylistSummary(
     val description: String? = null,
     val coverUri: String? = null,
     val songCount: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
 )
-

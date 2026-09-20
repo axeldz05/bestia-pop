@@ -24,14 +24,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private val Context.activeDownloadsDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "active_downloads"
+    name = "active_downloads",
 )
 
 /**
  * Pure JSON codec for [ActiveDownload] snapshots. Used by [ActiveDownloadsStore] and unit tests.
  */
 object ActiveDownloadCodec {
-
     fun encode(list: List<ActiveDownload>): String {
         val arr = JSONArray()
         for (item in forPersistence(list)) {
@@ -62,24 +61,36 @@ object ActiveDownloadCodec {
         list.map { download ->
             when (download.state) {
                 CandidateDownloadState.DOWNLOADING,
-                CandidateDownloadState.QUEUED ->
+                CandidateDownloadState.QUEUED,
+                -> {
                     download.asError(DownloadMessages.interrupted, interrupted = true)
-                CandidateDownloadState.SUCCESS -> download.copy(
-                    progressMessage = null,
-                    progressPercent = 100,
-                    interrupted = false
-                )
-                CandidateDownloadState.ERROR -> download.asError(
-                    message = download.errorMessage,
-                    interrupted = download.interrupted ||
-                        isInterruptedMessage(download.errorMessage)
-                )
+                }
+
+                CandidateDownloadState.SUCCESS -> {
+                    download.copy(
+                        progressMessage = null,
+                        progressPercent = 100,
+                        interrupted = false,
+                    )
+                }
+
+                CandidateDownloadState.ERROR -> {
+                    download.asError(
+                        message = download.errorMessage,
+                        interrupted =
+                            download.interrupted ||
+                                isInterruptedMessage(download.errorMessage),
+                    )
+                }
+
                 // IDLE means an unresolved conflict: keep a status line, or the row came back blank.
-                CandidateDownloadState.IDLE -> download.copy(
-                    progressMessage = download.progressMessage ?: DownloadMessages.conflictPending,
-                    progressPercent = 0,
-                    interrupted = false
-                )
+                CandidateDownloadState.IDLE -> {
+                    download.copy(
+                        progressMessage = download.progressMessage ?: DownloadMessages.conflictPending,
+                        progressPercent = 0,
+                        interrupted = false,
+                    )
+                }
             }
         }
 
@@ -112,7 +123,7 @@ object ActiveDownloadCodec {
             download.lookupIdentity?.let { identity ->
                 put(
                     "lookupIdentity",
-                    JSONObject().also { TrackIdentityJson.putInto(it, identity) }
+                    JSONObject().also { TrackIdentityJson.putInto(it, identity) },
                 )
             }
             put(
@@ -126,12 +137,12 @@ object ActiveDownloadCodec {
                                     "identity",
                                     JSONObject().also {
                                         TrackIdentityJson.putInto(it, target.identity)
-                                    }
+                                    },
                                 )
-                            }
+                            },
                         )
                     }
-                }
+                },
             )
             val candidates = JSONArray()
             for (track in download.candidates) {
@@ -143,71 +154,91 @@ object ActiveDownloadCodec {
     private fun decodeOne(obj: JSONObject): ActiveDownload? {
         return try {
             val candidatesArr = obj.getJSONArray("candidates")
-            val candidates = buildList {
-                for (i in 0 until candidatesArr.length()) {
-                    add(CatalogTrackJson.decode(candidatesArr.getJSONObject(i)))
+            val candidates =
+                buildList {
+                    for (i in 0 until candidatesArr.length()) {
+                        add(CatalogTrackJson.decode(candidatesArr.getJSONObject(i)))
+                    }
                 }
-            }
             if (candidates.isEmpty()) return null
-            val source = runCatching {
-                ActiveDownloadSource.valueOf(obj.getString("source"))
-            }.getOrDefault(ActiveDownloadSource.CATALOG)
-            val state = runCatching {
-                CandidateDownloadState.valueOf(obj.getString("state"))
-            }.getOrDefault(CandidateDownloadState.ERROR)
-            val targetPlaylistId = if (obj.has("targetPlaylistId") && !obj.isNull("targetPlaylistId")) {
-                obj.optLong("targetPlaylistId").takeIf { it > 0L }
-            } else {
-                null
-            }
-            val resultSongId = if (obj.has("resultSongId") && !obj.isNull("resultSongId")) {
-                obj.optLong("resultSongId").takeIf { it > 0L }
-            } else {
-                null
-            }
-            val index = obj.optInt("currentCandidateIndex", 0)
-                .coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
+            val source =
+                runCatching {
+                    ActiveDownloadSource.valueOf(obj.getString("source"))
+                }.getOrDefault(ActiveDownloadSource.CATALOG)
+            val state =
+                runCatching {
+                    CandidateDownloadState.valueOf(obj.getString("state"))
+                }.getOrDefault(CandidateDownloadState.ERROR)
+            val targetPlaylistId =
+                if (obj.has("targetPlaylistId") && !obj.isNull("targetPlaylistId")) {
+                    obj.optLong("targetPlaylistId").takeIf { it > 0L }
+                } else {
+                    null
+                }
+            val resultSongId =
+                if (obj.has("resultSongId") && !obj.isNull("resultSongId")) {
+                    obj.optLong("resultSongId").takeIf { it > 0L }
+                } else {
+                    null
+                }
+            val index =
+                obj
+                    .optInt("currentCandidateIndex", 0)
+                    .coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
             val fallbackTitle = obj.optString("displayTitle", "")
             val fallbackArtist = obj.optString("displayArtist", "")
             val fallbackArt = obj.optNullableString("artworkUrl")
-            val patched = candidates.mapIndexed { i, track ->
-                if (i != index) track
-                else track.withIdentity {
-                    copy(
-                        title = title.ifBlank { fallbackTitle },
-                        artist = artist.ifBlank { fallbackArtist },
-                        artworkUri = artworkUri?.takeIf { it.isNotBlank() } ?: fallbackArt
-                    )
+            val patched =
+                candidates.mapIndexed { i, track ->
+                    if (i != index) {
+                        track
+                    } else {
+                        track.withIdentity {
+                            copy(
+                                title = title.ifBlank { fallbackTitle },
+                                artist = artist.ifBlank { fallbackArtist },
+                                artworkUri = artworkUri?.takeIf { it.isNotBlank() } ?: fallbackArt,
+                            )
+                        }
+                    }
                 }
-            }
             val currentTitle = patched.getOrNull(index)?.title.orEmpty()
             val titleOverride = fallbackTitle.takeIf { it.isNotBlank() && it != currentTitle }
             val errorMessage = obj.optNullableString("errorMessage")
-            val lookupIdentity = obj.optJSONObject("lookupIdentity")
-                ?.let(TrackIdentityJson::decode)
-            val decodedPlaylistTargets = obj.optJSONArray("playlistTargets")?.let { array ->
-                buildList {
-                    for (i in 0 until array.length()) {
-                        val target = array.optJSONObject(i) ?: continue
-                        val playlistId = target.optLong("playlistId").takeIf { it > 0L }
-                            ?: continue
-                        val identity = target.optJSONObject("identity")
-                            ?.let(TrackIdentityJson::decode)
-                            ?: continue
-                        add(DownloadPlaylistDestination(playlistId, identity))
-                    }
-                }
-            }.orEmpty()
+            val lookupIdentity =
+                obj
+                    .optJSONObject("lookupIdentity")
+                    ?.let(TrackIdentityJson::decode)
+            val decodedPlaylistTargets =
+                obj
+                    .optJSONArray("playlistTargets")
+                    ?.let { array ->
+                        buildList {
+                            for (i in 0 until array.length()) {
+                                val target = array.optJSONObject(i) ?: continue
+                                val playlistId =
+                                    target.optLong("playlistId").takeIf { it > 0L }
+                                        ?: continue
+                                val identity =
+                                    target
+                                        .optJSONObject("identity")
+                                        ?.let(TrackIdentityJson::decode)
+                                        ?: continue
+                                add(DownloadPlaylistDestination(playlistId, identity))
+                            }
+                        }
+                    }.orEmpty()
             val fallbackIdentity = lookupIdentity ?: patched.getOrNull(index)?.identity
-            val playlistTargets = if (fallbackIdentity == null) {
-                decodedPlaylistTargets
-            } else {
-                resolveDownloadPlaylistDestinations(
-                    decodedPlaylistTargets,
-                    targetPlaylistId,
-                    fallbackIdentity
-                )
-            }
+            val playlistTargets =
+                if (fallbackIdentity == null) {
+                    decodedPlaylistTargets
+                } else {
+                    resolveDownloadPlaylistDestinations(
+                        decodedPlaylistTargets,
+                        targetPlaylistId,
+                        fallbackIdentity,
+                    )
+                }
             ActiveDownload(
                 id = obj.getString("id"),
                 source = source,
@@ -221,36 +252,39 @@ object ActiveDownloadCodec {
                 playlistTargets = playlistTargets,
                 resultSongId = resultSongId,
                 lookupIdentity = lookupIdentity,
-                interrupted = obj.optBoolean(
-                    "interrupted",
-                    isInterruptedMessage(errorMessage)
-                ),
+                interrupted =
+                    obj.optBoolean(
+                        "interrupted",
+                        isInterruptedMessage(errorMessage),
+                    ),
                 downloadStarted = obj.optBoolean("downloadStarted", false),
                 storageCommitted = obj.optBoolean("storageCommitted", false),
-                overwriteTargetSongId = obj.optLong("overwriteTargetSongId")
-                    .takeIf { it > 0L },
+                overwriteTargetSongId =
+                    obj
+                        .optLong("overwriteTargetSongId")
+                        .takeIf { it > 0L },
                 batchId = obj.optNullableString("batchId"),
-                titleOverride = titleOverride
+                titleOverride = titleOverride,
             )
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun isInterruptedMessage(message: String?): Boolean =
-        message?.startsWith("Interrumpida") == true
+    private fun isInterruptedMessage(message: String?): Boolean = message?.startsWith("Interrumpida") == true
 }
 
-
-class ActiveDownloadsStore(private val context: Context) {
-
+class ActiveDownloadsStore(
+    private val context: Context,
+) {
     private object Keys {
         val QUEUE_JSON = stringPreferencesKey("queue_json")
     }
 
-    val queueFlow: Flow<List<ActiveDownload>> = context.activeDownloadsDataStore.data.map { prefs ->
-        ActiveDownloadCodec.decode(prefs[Keys.QUEUE_JSON].orEmpty())
-    }
+    val queueFlow: Flow<List<ActiveDownload>> =
+        context.activeDownloadsDataStore.data.map { prefs ->
+            ActiveDownloadCodec.decode(prefs[Keys.QUEUE_JSON].orEmpty())
+        }
 
     suspend fun load(): List<ActiveDownload> = queueFlow.first()
 

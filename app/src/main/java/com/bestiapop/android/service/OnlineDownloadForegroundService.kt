@@ -31,34 +31,43 @@ class OnlineDownloadForegroundService : Service() {
         super.onCreate()
         OnlineDownloadServiceLauncher.markRunning(
             OnlineDownloadBackend.FOREGROUND_SERVICE,
-            true
+            true,
         )
         acquireWakeLock()
         val helper = DownloadNotificationHelper(this)
         promote(helper.buildStarting(ongoing = true))
-        notificationCollector = serviceScope.collectDownloadNotifications(
-            downloads = app.processDownloads.downloads,
-            lane = DownloadLane.EXPLICIT,
-            helper = helper,
-            publish = ::promote
-        )
+        notificationCollector =
+            serviceScope.collectDownloadNotifications(
+                downloads = app.processDownloads.downloads,
+                lane = DownloadLane.EXPLICIT,
+                helper = helper,
+                publish = ::promote,
+            )
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         latestStartId = startId
         runner?.cancel()
-        runner = serviceScope.launch {
-            settleOnlineDownloadLifetime(
-                runtime = app.processDownloadRuntime,
-                backend = OnlineDownloadBackend.FOREGROUND_SERVICE,
-                autoResume = app.shouldAutoResumeDownloads
-            )
-            stopDownloadService(startId)
-        }
+        runner =
+            serviceScope.launch {
+                settleOnlineDownloadLifetime(
+                    runtime = app.processDownloadRuntime,
+                    backend = OnlineDownloadBackend.FOREGROUND_SERVICE,
+                    autoResume = app.shouldAutoResumeDownloads,
+                )
+                stopDownloadService(startId)
+            }
         return START_REDELIVER_INTENT
     }
 
-    override fun onTimeout(startId: Int, fgsType: Int) {
+    override fun onTimeout(
+        startId: Int,
+        fgsType: Int,
+    ) {
         app.processDownloadRuntime.interruptNow(DownloadLane.EXPLICIT)
         forceStopDownloadService(startId)
     }
@@ -66,7 +75,7 @@ class OnlineDownloadForegroundService : Service() {
     override fun onDestroy() {
         OnlineDownloadServiceLauncher.markRunning(
             OnlineDownloadBackend.FOREGROUND_SERVICE,
-            false
+            false,
         )
         notificationCollector?.cancel()
         serviceScope.cancel()
@@ -80,28 +89,31 @@ class OnlineDownloadForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun promote(notification: android.app.Notification) {
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        } else {
-            0
-        }
+        val type =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            } else {
+                0
+            }
         ServiceCompat.startForeground(
             this,
             DownloadNotificationHelper.NOTIFICATION_ID,
             notification,
-            type
+            type,
         )
     }
 
     private fun acquireWakeLock() {
         val power = getSystemService(PowerManager::class.java)
-        wakeLock = power.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "$packageName:online-downloads"
-        ).apply {
-            setReferenceCounted(false)
-            acquire(MAX_WAKE_LOCK_MS)
-        }
+        wakeLock =
+            power
+                .newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "$packageName:online-downloads",
+                ).apply {
+                    setReferenceCounted(false)
+                    acquire(MAX_WAKE_LOCK_MS)
+                }
     }
 
     private fun stopDownloadService(startId: Int = latestStartId) {
@@ -112,7 +124,7 @@ class OnlineDownloadForegroundService : Service() {
     private fun forceStopDownloadService(startId: Int) {
         OnlineDownloadServiceLauncher.markRunning(
             OnlineDownloadBackend.FOREGROUND_SERVICE,
-            false
+            false,
         )
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf(startId)

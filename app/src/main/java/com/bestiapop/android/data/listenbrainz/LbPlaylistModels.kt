@@ -10,12 +10,12 @@ data class LbPlaylistSummary(
     val title: String,
     val description: String?,
     val trackCount: Int,
-    val coverUrl: String? = null
+    val coverUrl: String? = null,
 )
 
 data class LbPlaylistTrack(
     val identity: TrackIdentity,
-    val recordingMbid: String? = null
+    val recordingMbid: String? = null,
 ) : TrackMeta by identity {
     companion object {
         /** L2: flat LB playlist construction (identity is Level 1). */
@@ -23,22 +23,22 @@ data class LbPlaylistTrack(
             title: String,
             artist: String,
             album: String = "",
-            recordingMbid: String? = null
+            recordingMbid: String? = null,
         ) = LbPlaylistTrack(
             identity = TrackIdentity(title = title, artist = artist, album = album),
-            recordingMbid = recordingMbid
+            recordingMbid = recordingMbid,
         )
     }
 }
 
 data class LbPlaylistDetail(
     val summary: LbPlaylistSummary,
-    val tracks: List<LbPlaylistTrack>
+    val tracks: List<LbPlaylistTrack>,
 )
 
 data class MatchedLbPlaylist(
     val detail: LbPlaylistDetail,
-    val matches: List<MatchedRemoteTrack>
+    val matches: List<MatchedRemoteTrack>,
 ) {
     val matchedCount: Int get() = matches.matchedCount()
     val totalCount: Int get() = matches.size
@@ -49,6 +49,12 @@ data class MatchedLbPlaylist(
 }
 
 sealed class LbApiResult<out T> {
-    data class Success<T>(val data: T) : LbApiResult<T>()
-    data class Failure(val message: String, val isNetworkError: Boolean = false) : LbApiResult<Nothing>()
+    data class Success<T>(
+        val data: T,
+    ) : LbApiResult<T>()
+
+    data class Failure(
+        val message: String,
+        val isNetworkError: Boolean = false,
+    ) : LbApiResult<Nothing>()
 }

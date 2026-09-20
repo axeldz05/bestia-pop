@@ -16,13 +16,10 @@ import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.QueueSnapshot
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.radio.RadioSuggestResult
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
@@ -33,35 +30,38 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackRuntimeContinuityTest {
-
     @Test
     fun discoverOrigin_survivesUiDetachAndNewUiAttachment() {
         val fixture = fixture()
         try {
-            val origin = DiscoverPlaybackOrigin.ListenBrainz(
-                mbid = "playlist-mbid",
-                title = "Daily Jams"
-            )
+            val origin =
+                DiscoverPlaybackOrigin.ListenBrainz(
+                    mbid = "playlist-mbid",
+                    title = "Daily Jams",
+                )
             fixture.runtime.attachUi()
             fixture.runtime.playPlayableCollection(
                 items = listOf(PlayableItem.Local(song(1, "Discover local"))),
                 rotate = false,
-                origin = origin
+                origin = origin,
             )
 
             fixture.runtime.detachUi()
@@ -82,10 +82,18 @@ class PlaybackRuntimeContinuityTest {
             fixture.runtime.attachUi()
             fixture.runtime.playPlayableCollection(
                 items = listOf(PlayableItem.Local(slim)),
-                rotate = false
+                rotate = false,
             )
-            assertEquals("[00:01.00]hello", fixture.runtime.currentSong.value?.lyrics)
-            assertEquals("Local", fixture.runtime.currentSong.value?.title)
+            assertEquals(
+                "[00:01.00]hello",
+                fixture.runtime.currentSong.value
+                    ?.lyrics,
+            )
+            assertEquals(
+                "Local",
+                fixture.runtime.currentSong.value
+                    ?.title,
+            )
         } finally {
             fixture.close()
         }
@@ -96,27 +104,28 @@ class PlaybackRuntimeContinuityTest {
         val fixture = fixture()
         try {
             fixture.runtime.playPlayableCollection(
-                items = listOf(
-                    PlayableItem.Local(song(1, "Discover A")),
-                    PlayableItem.Local(song(2, "Discover B"))
-                ),
+                items =
+                    listOf(
+                        PlayableItem.Local(song(1, "Discover A")),
+                        PlayableItem.Local(song(2, "Discover B")),
+                    ),
                 rotate = false,
                 startShuffled = true,
-                origin = DiscoverPlaybackOrigin.CfRecommendations
+                origin = DiscoverPlaybackOrigin.CfRecommendations,
             )
             assertEquals(
                 DiscoverPlaybackOrigin.CfRecommendations,
-                fixture.runtime.discoverPlaybackOrigin.value
+                fixture.runtime.discoverPlaybackOrigin.value,
             )
 
             fixture.runtime.playPlayableCollection(
                 items = listOf(PlayableItem.Local(song(3, "Manual local"))),
-                rotate = false
+                rotate = false,
             )
 
             assertEquals(
                 DiscoverPlaybackOrigin.None,
-                fixture.runtime.discoverPlaybackOrigin.value
+                fixture.runtime.discoverPlaybackOrigin.value,
             )
         } finally {
             fixture.close()
@@ -126,18 +135,20 @@ class PlaybackRuntimeContinuityTest {
     @Test
     fun playPlayableCollection_withAttachedController_touchesLastPlayedForInitialLocalSong() {
         val touched = mutableListOf<Long>()
-        val fixture = fixture(
-            attachController = true,
-            touchItemLastPlayed = { item, _ -> (item as? PlayableItem.Local)?.song?.id?.let { touched.add(it) } }
-        )
+        val fixture =
+            fixture(
+                attachController = true,
+                touchItemLastPlayed = { item, _ -> (item as? PlayableItem.Local)?.song?.id?.let { touched.add(it) } },
+            )
         try {
             fixture.runtime.attachUi()
             fixture.runtime.playPlayableCollection(
-                items = listOf(
-                    PlayableItem.Local(song(42, "Library Song")),
-                    PlayableItem.Local(song(43, "Next Song"))
-                ),
-                rotate = false
+                items =
+                    listOf(
+                        PlayableItem.Local(song(42, "Library Song")),
+                        PlayableItem.Local(song(43, "Next Song")),
+                    ),
+                rotate = false,
             )
             assertEquals(listOf(42L), touched)
         } finally {
@@ -148,18 +159,20 @@ class PlaybackRuntimeContinuityTest {
     @Test
     fun skipToQueueIndex_touchesLastPlayedForTargetLocalSong() {
         val touched = mutableListOf<Long>()
-        val fixture = fixture(
-            attachController = true,
-            touchItemLastPlayed = { item, _ -> (item as? PlayableItem.Local)?.song?.id?.let { touched.add(it) } }
-        )
+        val fixture =
+            fixture(
+                attachController = true,
+                touchItemLastPlayed = { item, _ -> (item as? PlayableItem.Local)?.song?.id?.let { touched.add(it) } },
+            )
         try {
             fixture.runtime.attachUi()
             fixture.runtime.playPlayableCollection(
-                items = listOf(
-                    PlayableItem.Local(song(10, "Song 10")),
-                    PlayableItem.Local(song(20, "Song 20"))
-                ),
-                rotate = false
+                items =
+                    listOf(
+                        PlayableItem.Local(song(10, "Song 10")),
+                        PlayableItem.Local(song(20, "Song 20")),
+                    ),
+                rotate = false,
             )
             assertEquals(listOf(10L), touched)
 
@@ -188,7 +201,11 @@ class PlaybackRuntimeContinuityTest {
             fixture.controller.transitionTo(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
 
             assertTrue("process runtime must resolve N+3 after UI detach", "q3" in stream.resolvedQueries)
-            assertNotNull(fixture.runtime.queue.value[3].let { it as PlayableItem.Remote }.resolved)
+            assertNotNull(
+                fixture.runtime.queue.value[3]
+                    .let { it as PlayableItem.Remote }
+                    .resolved,
+            )
         } finally {
             fixture.close()
         }
@@ -201,7 +218,7 @@ class PlaybackRuntimeContinuityTest {
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(remote("recover-query", "Recover me")),
-                rotate = false
+                rotate = false,
             )
             fixture.runtime.attachUi()
             fixture.runtime.detachUi()
@@ -210,10 +227,10 @@ class PlaybackRuntimeContinuityTest {
 
             assertEquals(1, stream.invalidateCount.get())
             assertTrue(
-                stream.resolvedQueries.count { it == "recover-query" } >= 2
+                stream.resolvedQueries.count { it == "recover-query" } >= 2,
             )
             assertNotNull(
-                (fixture.runtime.currentItem.value as PlayableItem.Remote).resolved
+                (fixture.runtime.currentItem.value as PlayableItem.Remote).resolved,
             )
         } finally {
             fixture.close()
@@ -221,168 +238,185 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun detachUi_pausesTickerAndPersistsOnPauseStateTransition() = runBlocking {
-        val persistence = FakePersistence()
-        val tracker = FakeListenTracker()
-        val fixture = fixture(persistence = persistence, tracker = tracker, startTicker = true)
-        try {
-            val song = song(1, "Local")
-            fixture.runtime.attachUi()
-            fixture.runtime.playPlayableCollection(listOf(PlayableItem.Local(song)), rotate = false)
-            assertTrue("ticker must be active when UI is attached and playing", fixture.runtime.tickerActiveForTest)
+    fun detachUi_pausesTickerAndPersistsOnPauseStateTransition() =
+        runBlocking {
+            val persistence = FakePersistence()
+            val tracker = FakeListenTracker()
+            val fixture = fixture(persistence = persistence, tracker = tracker, startTicker = true)
+            try {
+                val song = song(1, "Local")
+                fixture.runtime.attachUi()
+                fixture.runtime.playPlayableCollection(listOf(PlayableItem.Local(song)), rotate = false)
+                assertTrue("ticker must be active when UI is attached and playing", fixture.runtime.tickerActiveForTest)
 
-            fixture.runtime.detachUi()
-            assertFalse("ticker must pause when UI is detached", fixture.runtime.tickerActiveForTest)
+                fixture.runtime.detachUi()
+                assertFalse("ticker must pause when UI is detached", fixture.runtime.tickerActiveForTest)
 
-            fixture.clock.set(20_000L)
-            fixture.controller.positionMs = 42_000L
-            fixture.controller.pause()
+                fixture.clock.set(20_000L)
+                fixture.controller.positionMs = 42_000L
+                fixture.controller.pause()
 
-            withTimeout(2_000L) {
-                while (persistence.lastQueue?.positionMs != 42_000L) delay(10L)
-            }
-            assertEquals(42_000L, fixture.runtime.playbackPositionMs.value)
-            assertEquals(song.id, tracker.lastChangedSongId)
-        } finally {
-            fixture.close()
-        }
-    }
-
-    @Test
-    fun detachUi_keepsSaveWhileListeningAtThreshold() = runBlocking {
-        val saver = FakeSaveDownloads()
-        val listenSettings = MutableStateFlow(
-            ListenBrainzSettings(
-                saveWhileListening = true,
-                saveWhileListeningPercent = 25
-            )
-        )
-        val fixture = fixture(
-            listenSettings = listenSettings,
-            saveDownloads = saver
-        )
-        try {
-            val remote = remote("save-query", "Save me", durationMs = 100_000L)
-            fixture.runtime.attachUi()
-            fixture.runtime.playPlayableCollection(listOf(remote), rotate = false)
-            fixture.runtime.detachUi()
-
-            fixture.clock.set(30_000L)
-            fixture.controller.positionMs = 30_000L
-            fixture.controller.durationMs = 100_000L
-            fixture.controller.playing = true
-            fixture.controller.wantsPlay = true
-            fixture.runtime.tickForTest()
-
-            withTimeout(2_000L) {
-                while (saver.saveCount.get() == 0) delay(10L)
-            }
-            assertEquals(1, saver.saveCount.get())
-        } finally {
-            fixture.close()
-        }
-    }
-
-    @Test
-    fun autosaveInFlight_isNeutralAndAllowsRetryAfterOwnerReleasesClaim() = runBlocking {
-        val results = ArrayDeque(
-            listOf(
-                SaveWhileListeningDownloadResult.InFlight("manual-owner"),
-                SaveWhileListeningDownloadResult.Saved(
-                    Song(
-                        id = 99L,
-                        uriString = "/saved/claimed.m4a",
-                        title = "Already downloading",
-                        artist = "Artist"
-                    )
-                )
-            )
-        )
-        val saver = FakeSaveDownloads { results.removeFirst() }
-        val listenSettings = MutableStateFlow(
-            ListenBrainzSettings(
-                saveWhileListening = true,
-                saveWhileListeningPercent = 25
-            )
-        )
-        val fixture = fixture(
-            listenSettings = listenSettings,
-            saveDownloads = saver
-        )
-        val events = CopyOnWriteArrayList<String>()
-        val eventsJob = launch(start = CoroutineStart.UNDISPATCHED) {
-            fixture.runtime.events.collect(events::add)
-        }
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(remote("claimed", "Already downloading", durationMs = 100_000L)),
-                rotate = false
-            )
-            fixture.controller.positionMs = 30_000L
-            fixture.controller.durationMs = 100_000L
-            fixture.controller.playing = true
-            fixture.controller.wantsPlay = true
-            fixture.clock.set(30_000L)
-
-            fixture.runtime.tickForTest()
-            yield()
-            assertEquals(1, saver.saveCount.get())
-            assertTrue(events.none { it.startsWith("No se pudo guardar") })
-
-            withTimeout(2_000L) {
-                while (
-                    saver.saveCount.get() < 2 ||
-                    events.none { it.contains("guardada en la biblioteca") }
-                ) {
-                    delay(10L)
-                    fixture.runtime.tickForTest()
-                    yield()
+                withTimeout(2_000L) {
+                    while (persistence.lastQueue?.positionMs != 42_000L) delay(10L)
                 }
+                assertEquals(42_000L, fixture.runtime.playbackPositionMs.value)
+                assertEquals(song.id, tracker.lastChangedSongId)
+            } finally {
+                fixture.close()
             }
-            assertEquals(2, saver.saveCount.get())
-            assertTrue(events.none { it.startsWith("No se pudo guardar") })
-        } finally {
-            eventsJob.cancel()
-            fixture.close()
         }
-    }
+
+    @Test
+    fun detachUi_keepsSaveWhileListeningAtThreshold() =
+        runBlocking {
+            val saver = FakeSaveDownloads()
+            val listenSettings =
+                MutableStateFlow(
+                    ListenBrainzSettings(
+                        saveWhileListening = true,
+                        saveWhileListeningPercent = 25,
+                    ),
+                )
+            val fixture =
+                fixture(
+                    listenSettings = listenSettings,
+                    saveDownloads = saver,
+                )
+            try {
+                val remote = remote("save-query", "Save me", durationMs = 100_000L)
+                fixture.runtime.attachUi()
+                fixture.runtime.playPlayableCollection(listOf(remote), rotate = false)
+                fixture.runtime.detachUi()
+
+                fixture.clock.set(30_000L)
+                fixture.controller.positionMs = 30_000L
+                fixture.controller.durationMs = 100_000L
+                fixture.controller.playing = true
+                fixture.controller.wantsPlay = true
+                fixture.runtime.tickForTest()
+
+                withTimeout(2_000L) {
+                    while (saver.saveCount.get() == 0) delay(10L)
+                }
+                assertEquals(1, saver.saveCount.get())
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun autosaveInFlight_isNeutralAndAllowsRetryAfterOwnerReleasesClaim() =
+        runBlocking {
+            val results =
+                ArrayDeque(
+                    listOf(
+                        SaveWhileListeningDownloadResult.InFlight("manual-owner"),
+                        SaveWhileListeningDownloadResult.Saved(
+                            Song(
+                                id = 99L,
+                                uriString = "/saved/claimed.m4a",
+                                title = "Already downloading",
+                                artist = "Artist",
+                            ),
+                        ),
+                    ),
+                )
+            val saver = FakeSaveDownloads { results.removeFirst() }
+            val listenSettings =
+                MutableStateFlow(
+                    ListenBrainzSettings(
+                        saveWhileListening = true,
+                        saveWhileListeningPercent = 25,
+                    ),
+                )
+            val fixture =
+                fixture(
+                    listenSettings = listenSettings,
+                    saveDownloads = saver,
+                )
+            val events = CopyOnWriteArrayList<String>()
+            val eventsJob =
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    fixture.runtime.events.collect(events::add)
+                }
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(remote("claimed", "Already downloading", durationMs = 100_000L)),
+                    rotate = false,
+                )
+                fixture.controller.positionMs = 30_000L
+                fixture.controller.durationMs = 100_000L
+                fixture.controller.playing = true
+                fixture.controller.wantsPlay = true
+                fixture.clock.set(30_000L)
+
+                fixture.runtime.tickForTest()
+                yield()
+                assertEquals(1, saver.saveCount.get())
+                assertTrue(events.none { it.startsWith("No se pudo guardar") })
+
+                withTimeout(2_000L) {
+                    while (
+                        saver.saveCount.get() < 2 ||
+                        events.none { it.contains("guardada en la biblioteca") }
+                    ) {
+                        delay(10L)
+                        fixture.runtime.tickForTest()
+                        yield()
+                    }
+                }
+                assertEquals(2, saver.saveCount.get())
+                assertTrue(events.none { it.startsWith("No se pudo guardar") })
+            } finally {
+                eventsJob.cancel()
+                fixture.close()
+            }
+        }
 
     @Test
     fun detachUi_keepsRadioRefillPolicyRunning() {
         val radioCalls = AtomicInteger(0)
-        val suggester = PlaybackRuntimeRadioSuggester {
-            when (radioCalls.incrementAndGet()) {
-                1 -> RadioSuggestResult(
-                    items = listOf(
-                        PlayableItem.Local(song(2, "Initial A")),
-                        PlayableItem.Local(song(3, "Initial B"))
-                    ),
-                    usedOnlineDiscovery = false,
-                    onlineDiscoveryFailed = false
-                )
-                else -> RadioSuggestResult(
-                    items = listOf(
-                        PlayableItem.Local(song(4, "Refill A")),
-                        PlayableItem.Local(song(5, "Refill B"))
-                    ),
-                    usedOnlineDiscovery = false,
-                    onlineDiscoveryFailed = false
-                )
+        val suggester =
+            PlaybackRuntimeRadioSuggester {
+                when (radioCalls.incrementAndGet()) {
+                    1 -> {
+                        RadioSuggestResult(
+                            items =
+                                listOf(
+                                    PlayableItem.Local(song(2, "Initial A")),
+                                    PlayableItem.Local(song(3, "Initial B")),
+                                ),
+                            usedOnlineDiscovery = false,
+                            onlineDiscoveryFailed = false,
+                        )
+                    }
+
+                    else -> {
+                        RadioSuggestResult(
+                            items =
+                                listOf(
+                                    PlayableItem.Local(song(4, "Refill A")),
+                                    PlayableItem.Local(song(5, "Refill B")),
+                                ),
+                            usedOnlineDiscovery = false,
+                            onlineDiscoveryFailed = false,
+                        )
+                    }
+                }
             }
-        }
         val fixture = fixture(radioSuggester = suggester)
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Seed"))),
                 rotate = false,
-                origin = DiscoverPlaybackOrigin.ListenBrainz("radio-origin", "Discover")
+                origin = DiscoverPlaybackOrigin.ListenBrainz("radio-origin", "Discover"),
             )
             fixture.controller.state = Player.STATE_READY
             fixture.runtime.startRadio(mode = RadioMode.KNOWN)
             assertEquals(1, radioCalls.get())
             assertEquals(
                 DiscoverPlaybackOrigin.None,
-                fixture.runtime.discoverPlaybackOrigin.value
+                fixture.runtime.discoverPlaybackOrigin.value,
             )
 
             fixture.runtime.attachUi()
@@ -397,129 +431,147 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun stopRadio_lateStartCompletionDoesNotMutateQueue() = runBlocking {
-        val started = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                started.complete(Unit)
-                withContext(NonCancellable) { release.await() }
-                RadioSuggestResult(
-                    items = listOf(PlayableItem.Local(song(9, "Late start"))),
-                    usedOnlineDiscovery = false,
-                    onlineDiscoveryFailed = false
+    fun stopRadio_lateStartCompletionDoesNotMutateQueue() =
+        runBlocking {
+            val started = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val fixture =
+                fixture(
+                    radioSuggester =
+                        PlaybackRuntimeRadioSuggester {
+                            started.complete(Unit)
+                            withContext(NonCancellable) { release.await() }
+                            RadioSuggestResult(
+                                items = listOf(PlayableItem.Local(song(9, "Late start"))),
+                                usedOnlineDiscovery = false,
+                                onlineDiscoveryFailed = false,
+                            )
+                        },
                 )
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(PlayableItem.Local(song(1, "Seed"))),
+                    rotate = false,
+                )
+                fixture.controller.state = Player.STATE_READY
+                val originalQueue = fixture.runtime.queue.value
+
+                fixture.runtime.startRadio(mode = RadioMode.KNOWN)
+                started.await()
+                fixture.runtime.stopRadio()
+                release.complete(Unit)
+                yield()
+
+                assertEquals(originalQueue, fixture.runtime.queue.value)
+                assertFalse(fixture.runtime.radioActive.value)
+                assertFalse(fixture.runtime.radioLoading.value)
+            } finally {
+                release.complete(Unit)
+                fixture.close()
             }
-        )
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(PlayableItem.Local(song(1, "Seed"))),
-                rotate = false
-            )
-            fixture.controller.state = Player.STATE_READY
-            val originalQueue = fixture.runtime.queue.value
-
-            fixture.runtime.startRadio(mode = RadioMode.KNOWN)
-            started.await()
-            fixture.runtime.stopRadio()
-            release.complete(Unit)
-            yield()
-
-            assertEquals(originalQueue, fixture.runtime.queue.value)
-            assertFalse(fixture.runtime.radioActive.value)
-            assertFalse(fixture.runtime.radioLoading.value)
-        } finally {
-            release.complete(Unit)
-            fixture.close()
         }
-    }
 
     @Test
-    fun stopRadio_lateRefillCompletionDoesNotMutateQueue() = runBlocking {
-        val refillStarted = CompletableDeferred<Unit>()
-        val releaseRefill = CompletableDeferred<Unit>()
-        val calls = AtomicInteger()
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                if (calls.incrementAndGet() == 1) {
-                    RadioSuggestResult(
-                        items = listOf(
-                            PlayableItem.Local(song(2, "Initial A")),
-                            PlayableItem.Local(song(3, "Initial B"))
-                        ),
-                        usedOnlineDiscovery = false,
-                        onlineDiscoveryFailed = false
-                    )
-                } else {
-                    refillStarted.complete(Unit)
-                    withContext(NonCancellable) { releaseRefill.await() }
-                    RadioSuggestResult(
-                        items = listOf(PlayableItem.Local(song(4, "Late refill"))),
-                        usedOnlineDiscovery = false,
-                        onlineDiscoveryFailed = false
-                    )
-                }
+    fun stopRadio_lateRefillCompletionDoesNotMutateQueue() =
+        runBlocking {
+            val refillStarted = CompletableDeferred<Unit>()
+            val releaseRefill = CompletableDeferred<Unit>()
+            val calls = AtomicInteger()
+            val fixture =
+                fixture(
+                    radioSuggester =
+                        PlaybackRuntimeRadioSuggester {
+                            if (calls.incrementAndGet() == 1) {
+                                RadioSuggestResult(
+                                    items =
+                                        listOf(
+                                            PlayableItem.Local(song(2, "Initial A")),
+                                            PlayableItem.Local(song(3, "Initial B")),
+                                        ),
+                                    usedOnlineDiscovery = false,
+                                    onlineDiscoveryFailed = false,
+                                )
+                            } else {
+                                refillStarted.complete(Unit)
+                                withContext(NonCancellable) { releaseRefill.await() }
+                                RadioSuggestResult(
+                                    items = listOf(PlayableItem.Local(song(4, "Late refill"))),
+                                    usedOnlineDiscovery = false,
+                                    onlineDiscoveryFailed = false,
+                                )
+                            }
+                        },
+                )
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(PlayableItem.Local(song(1, "Seed"))),
+                    rotate = false,
+                )
+                fixture.controller.state = Player.STATE_READY
+                fixture.runtime.startRadio(mode = RadioMode.KNOWN)
+                fixture.controller.transitionTo(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+                refillStarted.await()
+                val queueBeforeStop = fixture.runtime.queue.value
+
+                fixture.runtime.stopRadio()
+                releaseRefill.complete(Unit)
+                yield()
+
+                assertEquals(queueBeforeStop, fixture.runtime.queue.value)
+                assertFalse(fixture.runtime.radioActive.value)
+            } finally {
+                releaseRefill.complete(Unit)
+                fixture.close()
             }
-        )
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(PlayableItem.Local(song(1, "Seed"))),
-                rotate = false
-            )
-            fixture.controller.state = Player.STATE_READY
-            fixture.runtime.startRadio(mode = RadioMode.KNOWN)
-            fixture.controller.transitionTo(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
-            refillStarted.await()
-            val queueBeforeStop = fixture.runtime.queue.value
-
-            fixture.runtime.stopRadio()
-            releaseRefill.complete(Unit)
-            yield()
-
-            assertEquals(queueBeforeStop, fixture.runtime.queue.value)
-            assertFalse(fixture.runtime.radioActive.value)
-        } finally {
-            releaseRefill.complete(Unit)
-            fixture.close()
         }
-    }
 
     @Test
     fun startRadioDuringPlayback_keepsCurrentAndReplacesUpcoming() {
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                RadioSuggestResult(
-                    items = listOf(
-                        PlayableItem.Local(song(10, "Radio A")),
-                        PlayableItem.Local(song(11, "Radio B"))
-                    ),
-                    usedOnlineDiscovery = false,
-                    onlineDiscoveryFailed = false
-                )
-            }
-        )
+        val fixture =
+            fixture(
+                radioSuggester =
+                    PlaybackRuntimeRadioSuggester {
+                        RadioSuggestResult(
+                            items =
+                                listOf(
+                                    PlayableItem.Local(song(10, "Radio A")),
+                                    PlayableItem.Local(song(11, "Radio B")),
+                                ),
+                            usedOnlineDiscovery = false,
+                            onlineDiscoveryFailed = false,
+                        )
+                    },
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(
                     PlayableItem.Local(song(1, "Current")),
                     PlayableItem.Local(song(2, "Old upcoming A")),
-                    PlayableItem.Local(song(3, "Old upcoming B"))
+                    PlayableItem.Local(song(3, "Old upcoming B")),
                 ),
-                rotate = false
+                rotate = false,
             )
             fixture.controller.state = Player.STATE_READY
-            val currentQueueEntryId = fixture.runtime.currentItem.value?.queueEntryId
+            val currentQueueEntryId =
+                fixture.runtime.currentItem.value
+                    ?.queueEntryId
 
             fixture.runtime.startRadio(mode = RadioMode.KNOWN)
 
-            assertEquals(currentQueueEntryId, fixture.runtime.currentItem.value?.queueEntryId)
             assertEquals(
-                listOf("Current", "Radio A", "Radio B"),
-                fixture.runtime.queue.value.map { it.title }
+                currentQueueEntryId,
+                fixture.runtime.currentItem.value
+                    ?.queueEntryId,
             )
             assertEquals(
-                fixture.runtime.queue.value.map { it.queueEntryId },
-                fixture.controller.items().map { it.queueEntryId }
+                listOf("Current", "Radio A", "Radio B"),
+                fixture.runtime.queue.value
+                    .map { it.title },
+            )
+            assertEquals(
+                fixture.runtime.queue.value
+                    .map { it.queueEntryId },
+                fixture.controller.items().map { it.queueEntryId },
             )
         } finally {
             fixture.close()
@@ -528,26 +580,28 @@ class PlaybackRuntimeContinuityTest {
 
     @Test
     fun radioModes_publishObservableStatusLabels() {
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                RadioSuggestResult(
-                    items = listOf(PlayableItem.Local(song(20, "Suggested ${it.mode}"))),
-                    usedOnlineDiscovery = it.mode != RadioMode.KNOWN,
-                    onlineDiscoveryFailed = false
-                )
-            }
-        )
+        val fixture =
+            fixture(
+                radioSuggester =
+                    PlaybackRuntimeRadioSuggester {
+                        RadioSuggestResult(
+                            items = listOf(PlayableItem.Local(song(20, "Suggested ${it.mode}"))),
+                            usedOnlineDiscovery = it.mode != RadioMode.KNOWN,
+                            onlineDiscoveryFailed = false,
+                        )
+                    },
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Seed"))),
-                rotate = false
+                rotate = false,
             )
             fixture.controller.state = Player.STATE_READY
 
             listOf(
                 RadioMode.KNOWN to "Radio · Solo conocidos",
                 RadioMode.NEW to "Radio · Solo nuevos",
-                RadioMode.BOTH to "Radio · Ambos"
+                RadioMode.BOTH to "Radio · Ambos",
             ).forEach { (mode, label) ->
                 fixture.runtime.startRadio(mode = mode)
                 assertEquals(mode, fixture.runtime.radioMode.value)
@@ -561,69 +615,76 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun emptyNewRadio_retriesWithInjectedClockAndEmitsVisibleEvent() = runTest {
-        val calls = AtomicInteger()
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                calls.incrementAndGet()
-                RadioSuggestResult(emptyList(), false, true)
-            },
-            dispatcher = dispatcher,
-            clockMs = { testScheduler.currentTime }
-        )
-        val events = CopyOnWriteArrayList<String>()
-        val eventsJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            fixture.runtime.events.collect(events::add)
-        }
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(PlayableItem.Local(song(1, "Seed"))),
-                rotate = false
-            )
-            fixture.controller.state = Player.STATE_READY
-            fixture.runtime.startRadio(mode = RadioMode.NEW)
+    fun emptyNewRadio_retriesWithInjectedClockAndEmitsVisibleEvent() =
+        runTest {
+            val calls = AtomicInteger()
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val fixture =
+                fixture(
+                    radioSuggester =
+                        PlaybackRuntimeRadioSuggester {
+                            calls.incrementAndGet()
+                            RadioSuggestResult(emptyList(), false, true)
+                        },
+                    dispatcher = dispatcher,
+                    clockMs = { testScheduler.currentTime },
+                )
+            val events = CopyOnWriteArrayList<String>()
+            val eventsJob =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    fixture.runtime.events.collect(events::add)
+                }
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(PlayableItem.Local(song(1, "Seed"))),
+                    rotate = false,
+                )
+                fixture.controller.state = Player.STATE_READY
+                fixture.runtime.startRadio(mode = RadioMode.NEW)
 
-            advanceUntilIdle()
+                advanceUntilIdle()
 
-            assertTrue(calls.get() > 1)
-            assertTrue(testScheduler.currentTime >= 45_000L)
-            assertTrue(events.contains("Radio online no disponible"))
-            assertFalse(fixture.runtime.radioActive.value)
-        } finally {
-            eventsJob.cancel()
-            fixture.close()
+                assertTrue(calls.get() > 1)
+                assertTrue(testScheduler.currentTime >= 45_000L)
+                assertTrue(events.contains("Radio online no disponible"))
+                assertFalse(fixture.runtime.radioActive.value)
+            } finally {
+                eventsJob.cancel()
+                fixture.close()
+            }
         }
-    }
 
     @Test
     fun radioRefill_assignsUniqueQueueEntryIdsToEveryAddedSlot() {
         val calls = AtomicInteger()
         val duplicate = PlayableItem.Local(song(4, "Repeated refill"))
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                if (calls.incrementAndGet() == 1) {
-                    RadioSuggestResult(
-                        items = listOf(
-                            PlayableItem.Local(song(2, "Initial A")),
-                            PlayableItem.Local(song(3, "Initial B"))
-                        ),
-                        usedOnlineDiscovery = false,
-                        onlineDiscoveryFailed = false
-                    )
-                } else {
-                    RadioSuggestResult(
-                        items = listOf(duplicate, duplicate),
-                        usedOnlineDiscovery = false,
-                        onlineDiscoveryFailed = false
-                    )
-                }
-            }
-        )
+        val fixture =
+            fixture(
+                radioSuggester =
+                    PlaybackRuntimeRadioSuggester {
+                        if (calls.incrementAndGet() == 1) {
+                            RadioSuggestResult(
+                                items =
+                                    listOf(
+                                        PlayableItem.Local(song(2, "Initial A")),
+                                        PlayableItem.Local(song(3, "Initial B")),
+                                    ),
+                                usedOnlineDiscovery = false,
+                                onlineDiscoveryFailed = false,
+                            )
+                        } else {
+                            RadioSuggestResult(
+                                items = listOf(duplicate, duplicate),
+                                usedOnlineDiscovery = false,
+                                onlineDiscoveryFailed = false,
+                            )
+                        }
+                    },
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Seed"))),
-                rotate = false
+                rotate = false,
             )
             fixture.controller.state = Player.STATE_READY
             fixture.runtime.startRadio(mode = RadioMode.KNOWN)
@@ -641,32 +702,41 @@ class PlaybackRuntimeContinuityTest {
     @Test
     fun radioRefillDuringShuffle_keepsTimelineAndNextLinear() {
         val radioCalls = AtomicInteger(0)
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                when (radioCalls.incrementAndGet()) {
-                    1 -> RadioSuggestResult(
-                        items = listOf(
-                            PlayableItem.Local(song(2, "Initial A")),
-                            PlayableItem.Local(song(3, "Initial B"))
-                        ),
-                        usedOnlineDiscovery = false,
-                        onlineDiscoveryFailed = false
-                    )
-                    else -> RadioSuggestResult(
-                        items = listOf(
-                            PlayableItem.Local(song(4, "Refill A")),
-                            PlayableItem.Local(song(5, "Refill B"))
-                        ),
-                        usedOnlineDiscovery = false,
-                        onlineDiscoveryFailed = false
-                    )
-                }
-            }
-        )
+        val fixture =
+            fixture(
+                radioSuggester =
+                    PlaybackRuntimeRadioSuggester {
+                        when (radioCalls.incrementAndGet()) {
+                            1 -> {
+                                RadioSuggestResult(
+                                    items =
+                                        listOf(
+                                            PlayableItem.Local(song(2, "Initial A")),
+                                            PlayableItem.Local(song(3, "Initial B")),
+                                        ),
+                                    usedOnlineDiscovery = false,
+                                    onlineDiscoveryFailed = false,
+                                )
+                            }
+
+                            else -> {
+                                RadioSuggestResult(
+                                    items =
+                                        listOf(
+                                            PlayableItem.Local(song(4, "Refill A")),
+                                            PlayableItem.Local(song(5, "Refill B")),
+                                        ),
+                                    usedOnlineDiscovery = false,
+                                    onlineDiscoveryFailed = false,
+                                )
+                            }
+                        }
+                    },
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Seed"))),
-                rotate = false
+                rotate = false,
             )
             fixture.controller.state = Player.STATE_READY
             fixture.runtime.startRadio(mode = RadioMode.KNOWN)
@@ -680,7 +750,11 @@ class PlaybackRuntimeContinuityTest {
             assertPhysicalQueueAndNextAreLinear(fixture)
             val expectedNext = fixture.runtime.queue.value[2]
             fixture.runtime.skipToNext()
-            assertEquals(expectedNext.queueEntryId, fixture.runtime.currentItem.value?.queueEntryId)
+            assertEquals(
+                expectedNext.queueEntryId,
+                fixture.runtime.currentItem.value
+                    ?.queueEntryId,
+            )
         } finally {
             fixture.close()
         }
@@ -689,38 +763,53 @@ class PlaybackRuntimeContinuityTest {
     @Test
     fun confirmedNewRadio_clearsPreviousEmptyRefillCooldown() {
         val radioCalls = AtomicInteger(0)
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                when (radioCalls.incrementAndGet()) {
-                    1 -> RadioSuggestResult(
-                        items = listOf(
-                            PlayableItem.Local(song(2, "Initial A")),
-                            PlayableItem.Local(song(3, "Initial B"))
-                        ),
-                        usedOnlineDiscovery = false,
-                        onlineDiscoveryFailed = false
-                    )
-                    2 -> RadioSuggestResult(emptyList(), false, false)
-                    3 -> RadioSuggestResult(
-                        items = listOf(
-                            PlayableItem.Local(song(4, "Restart A")),
-                            PlayableItem.Local(song(5, "Restart B"))
-                        ),
-                        usedOnlineDiscovery = false,
-                        onlineDiscoveryFailed = false
-                    )
-                    else -> RadioSuggestResult(
-                        items = listOf(PlayableItem.Local(song(6, "Fresh refill"))),
-                        usedOnlineDiscovery = false,
-                        onlineDiscoveryFailed = false
-                    )
-                }
-            }
-        )
+        val fixture =
+            fixture(
+                radioSuggester =
+                    PlaybackRuntimeRadioSuggester {
+                        when (radioCalls.incrementAndGet()) {
+                            1 -> {
+                                RadioSuggestResult(
+                                    items =
+                                        listOf(
+                                            PlayableItem.Local(song(2, "Initial A")),
+                                            PlayableItem.Local(song(3, "Initial B")),
+                                        ),
+                                    usedOnlineDiscovery = false,
+                                    onlineDiscoveryFailed = false,
+                                )
+                            }
+
+                            2 -> {
+                                RadioSuggestResult(emptyList(), false, false)
+                            }
+
+                            3 -> {
+                                RadioSuggestResult(
+                                    items =
+                                        listOf(
+                                            PlayableItem.Local(song(4, "Restart A")),
+                                            PlayableItem.Local(song(5, "Restart B")),
+                                        ),
+                                    usedOnlineDiscovery = false,
+                                    onlineDiscoveryFailed = false,
+                                )
+                            }
+
+                            else -> {
+                                RadioSuggestResult(
+                                    items = listOf(PlayableItem.Local(song(6, "Fresh refill"))),
+                                    usedOnlineDiscovery = false,
+                                    onlineDiscoveryFailed = false,
+                                )
+                            }
+                        }
+                    },
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Seed"))),
-                rotate = false
+                rotate = false,
             )
             fixture.controller.state = Player.STATE_READY
             fixture.runtime.startRadio(mode = RadioMode.KNOWN)
@@ -732,7 +821,10 @@ class PlaybackRuntimeContinuityTest {
             fixture.controller.transitionTo(2, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
 
             assertEquals(4, radioCalls.get())
-            assertTrue(fixture.runtime.queue.value.any { it.title == "Fresh refill" })
+            assertTrue(
+                fixture.runtime.queue.value
+                    .any { it.title == "Fresh refill" },
+            )
         } finally {
             fixture.close()
         }
@@ -741,21 +833,23 @@ class PlaybackRuntimeContinuityTest {
     @Test
     fun detachUi_keepsRadioAutoStartOnNaturalEnd() {
         val radioCalls = AtomicInteger(0)
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                radioCalls.incrementAndGet()
-                RadioSuggestResult(
-                    items = listOf(PlayableItem.Local(song(8, "Auto radio"))),
-                    usedOnlineDiscovery = false,
-                    onlineDiscoveryFailed = false
-                )
-            }
-        )
+        val fixture =
+            fixture(
+                radioSuggester =
+                    PlaybackRuntimeRadioSuggester {
+                        radioCalls.incrementAndGet()
+                        RadioSuggestResult(
+                            items = listOf(PlayableItem.Local(song(8, "Auto radio"))),
+                            usedOnlineDiscovery = false,
+                            onlineDiscoveryFailed = false,
+                        )
+                    },
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Seed"))),
                 rotate = false,
-                origin = DiscoverPlaybackOrigin.CfRecommendations
+                origin = DiscoverPlaybackOrigin.CfRecommendations,
             )
             fixture.runtime.attachUi()
             fixture.runtime.detachUi()
@@ -764,10 +858,14 @@ class PlaybackRuntimeContinuityTest {
 
             assertTrue(radioCalls.get() >= 1)
             assertTrue(fixture.runtime.radioActive.value)
-            assertEquals("Auto radio", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Auto radio",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(
                 DiscoverPlaybackOrigin.None,
-                fixture.runtime.discoverPlaybackOrigin.value
+                fixture.runtime.discoverPlaybackOrigin.value,
             )
         } finally {
             fixture.close()
@@ -778,35 +876,53 @@ class PlaybackRuntimeContinuityTest {
     fun autoStartRadioOnQueueEnd_updatesCurrentItemAndDisplayQueueWithoutBeingClobberedByTimeline() {
         val radioCalls = AtomicInteger(0)
         val radioSongs = (1..35).map { PlayableItem.Local(song(100L + it, "Radio Track $it")) }
-        val fixture = fixture(
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                radioCalls.incrementAndGet()
-                RadioSuggestResult(
-                    items = radioSongs,
-                    usedOnlineDiscovery = false,
-                    onlineDiscoveryFailed = false
-                )
-            }
-        )
+        val fixture =
+            fixture(
+                radioSuggester =
+                    PlaybackRuntimeRadioSuggester {
+                        radioCalls.incrementAndGet()
+                        RadioSuggestResult(
+                            items = radioSongs,
+                            usedOnlineDiscovery = false,
+                            onlineDiscoveryFailed = false,
+                        )
+                    },
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Seed Song"))),
-                rotate = false
+                rotate = false,
             )
             assertEquals(RepeatMode.OFF, fixture.runtime.repeatMode.value)
-            assertEquals("Seed Song", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Seed Song",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(1, fixture.runtime.displayQueue.value.size)
 
             fixture.controller.endNaturally()
 
             assertTrue("Radio must be triggered", radioCalls.get() >= 1)
             assertTrue("Radio must be active", fixture.runtime.radioActive.value)
-            assertEquals("Radio Track 1", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Radio Track 1",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(35, fixture.runtime.displayQueue.value.size)
-            assertEquals("Radio Track 1", fixture.runtime.displayQueue.value[0].title)
+            assertEquals(
+                "Radio Track 1",
+                fixture.runtime.displayQueue.value[0]
+                    .title,
+            )
 
             fixture.controller.triggerTimelineChanged()
-            assertEquals("Radio Track 1", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Radio Track 1",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(35, fixture.runtime.displayQueue.value.size)
         } finally {
             fixture.close()
@@ -814,88 +930,97 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun failedControllerFuture_isClearedAndRetriedWithBackoff() = runBlocking {
-        val backoffAttempts = mutableListOf<Int>()
-        val fixture = fixture(
-            attachController = false,
-            controllerReconnectBackoffMs = {
-                backoffAttempts += it
-                0L
-            }
-        )
-        val connected = FakeController()
-        val connector = SequencedConnector(
-            listOf(
-                Result.failure(IllegalStateException("first connect failed")),
-                Result.success(connected)
-            )
-        )
-        try {
-            fixture.runtime.attachUi()
-            fixture.runtime.connectForTest(connector)
+    fun failedControllerFuture_isClearedAndRetriedWithBackoff() =
+        runBlocking {
+            val backoffAttempts = mutableListOf<Int>()
+            val fixture =
+                fixture(
+                    attachController = false,
+                    controllerReconnectBackoffMs = {
+                        backoffAttempts += it
+                        0L
+                    },
+                )
+            val connected = FakeController()
+            val connector =
+                SequencedConnector(
+                    listOf(
+                        Result.failure(IllegalStateException("first connect failed")),
+                        Result.success(connected),
+                    ),
+                )
+            try {
+                fixture.runtime.attachUi()
+                fixture.runtime.connectForTest(connector)
 
-            withTimeout(2_000L) {
-                while (!fixture.runtime.controllerConnectedForTest) delay(10L)
+                withTimeout(2_000L) {
+                    while (!fixture.runtime.controllerConnectedForTest) delay(10L)
+                }
+                assertEquals(2, connector.attemptCount.get())
+                assertEquals(listOf(1), backoffAttempts)
+                assertTrue(connected.listenerAttached)
+            } finally {
+                fixture.close()
             }
-            assertEquals(2, connector.attemptCount.get())
-            assertEquals(listOf(1), backoffAttempts)
-            assertTrue(connected.listenerAttached)
-        } finally {
-            fixture.close()
         }
-    }
 
     @Test
-    fun disconnectedController_releasesAndReconnectsThroughRealRuntimeListener() = runBlocking {
-        val fixture = fixture(
-            attachController = false,
-            controllerReconnectBackoffMs = { 0L }
-        )
-        val first = FakeController()
-        val second = FakeController()
-        val connector = SequencedConnector(
-            listOf(Result.success(first), Result.success(second))
-        )
-        try {
-            fixture.runtime.attachUi()
-            fixture.runtime.connectForTest(connector)
-            assertTrue(first.listenerAttached)
+    fun disconnectedController_releasesAndReconnectsThroughRealRuntimeListener() =
+        runBlocking {
+            val fixture =
+                fixture(
+                    attachController = false,
+                    controllerReconnectBackoffMs = { 0L },
+                )
+            val first = FakeController()
+            val second = FakeController()
+            val connector =
+                SequencedConnector(
+                    listOf(Result.success(first), Result.success(second)),
+                )
+            try {
+                fixture.runtime.attachUi()
+                fixture.runtime.connectForTest(connector)
+                assertTrue(first.listenerAttached)
 
-            first.disconnect()
+                first.disconnect()
 
-            withTimeout(2_000L) {
-                while (connector.attemptCount.get() < 2 || !second.listenerAttached) delay(10L)
+                withTimeout(2_000L) {
+                    while (connector.attemptCount.get() < 2 || !second.listenerAttached) delay(10L)
+                }
+                assertEquals(1, first.releaseCount.get())
+                assertTrue(fixture.runtime.controllerConnectedForTest)
+            } finally {
+                fixture.close()
             }
-            assertEquals(1, first.releaseCount.get())
-            assertTrue(fixture.runtime.controllerConnectedForTest)
-        } finally {
-            fixture.close()
         }
-    }
 
     @Test
     fun disconnectedController_restoresRuntimeIntentSlotAndSampledPositionWithoutReadingIt() =
         runBlocking {
             val firstItem = PlayableItem.Local(song(1, "First"))
             val currentItem = PlayableItem.Local(song(2, "Current"))
-            val first = FakeController().apply {
-                seedTimeline(
-                    items = listOf(firstItem, currentItem),
-                    currentIndex = 1,
-                    positionMs = 12_000L,
-                    playWhenReady = true,
-                    playbackState = Player.STATE_READY,
-                    isPlaying = true
-                )
-            }
+            val first =
+                FakeController().apply {
+                    seedTimeline(
+                        items = listOf(firstItem, currentItem),
+                        currentIndex = 1,
+                        positionMs = 12_000L,
+                        playWhenReady = true,
+                        playbackState = Player.STATE_READY,
+                        isPlaying = true,
+                    )
+                }
             val second = FakeController()
-            val fixture = fixture(
-                attachController = false,
-                controllerReconnectBackoffMs = { 0L }
-            )
-            val connector = SequencedConnector(
-                listOf(Result.success(first), Result.success(second))
-            )
+            val fixture =
+                fixture(
+                    attachController = false,
+                    controllerReconnectBackoffMs = { 0L },
+                )
+            val connector =
+                SequencedConnector(
+                    listOf(Result.success(first), Result.success(second)),
+                )
             try {
                 fixture.runtime.attachUi()
                 fixture.runtime.connectForTest(connector)
@@ -909,7 +1034,7 @@ class PlaybackRuntimeContinuityTest {
                 }
                 assertEquals(
                     currentItem.queueEntryId,
-                    second.items()[second.currentMediaItemIndex].queueEntryId
+                    second.items()[second.currentMediaItemIndex].queueEntryId,
                 )
                 assertEquals(27_500L, second.currentPosition)
                 assertTrue(second.wantsPlay)
@@ -920,133 +1045,148 @@ class PlaybackRuntimeContinuityTest {
         }
 
     @Test
-    fun pausedSeek_debouncesAndPersistsLatestSnapshot() = runBlocking {
-        val persistence = FakePersistence()
-        val fixture = fixture(persistence = persistence)
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(PlayableItem.Local(song(1, "Seekable"))),
-                rotate = false
-            )
-            fixture.runtime.togglePlayPause()
+    fun pausedSeek_debouncesAndPersistsLatestSnapshot() =
+        runBlocking {
+            val persistence = FakePersistence()
+            val fixture = fixture(persistence = persistence)
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(PlayableItem.Local(song(1, "Seekable"))),
+                    rotate = false,
+                )
+                fixture.runtime.togglePlayPause()
 
-            fixture.runtime.seekTo(10_000L)
-            fixture.runtime.seekTo(22_000L)
-            fixture.runtime.seekTo(33_333L)
+                fixture.runtime.seekTo(10_000L)
+                fixture.runtime.seekTo(22_000L)
+                fixture.runtime.seekTo(33_333L)
 
-            withTimeout(2_000L) {
-                while (persistence.lastQueue?.positionMs != 33_333L) delay(10L)
+                withTimeout(2_000L) {
+                    while (persistence.lastQueue?.positionMs != 33_333L) delay(10L)
+                }
+                assertEquals(33_333L, fixture.runtime.playbackPositionMs.value)
+            } finally {
+                fixture.close()
             }
-            assertEquals(33_333L, fixture.runtime.playbackPositionMs.value)
-        } finally {
-            fixture.close()
         }
-    }
 
     @Test
-    fun staleResolveCompletion_cannotPauseOrSkipReplacementCollection() = runBlocking {
-        val delayed = NonCancellableDelayedFailureStreamAccess("old")
-        val fixture = fixture(streamAccess = delayed)
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(remote("old", "Old remote")),
-                rotate = false
-            )
-            delayed.started.await()
+    fun staleResolveCompletion_cannotPauseOrSkipReplacementCollection() =
+        runBlocking {
+            val delayed = NonCancellableDelayedFailureStreamAccess("old")
+            val fixture = fixture(streamAccess = delayed)
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(remote("old", "Old remote")),
+                    rotate = false,
+                )
+                delayed.started.await()
 
-            fixture.runtime.playPlayableCollection(
-                listOf(PlayableItem.Local(song(9, "Replacement"))),
-                rotate = false
-            )
-            delayed.allowCompletion.complete(Unit)
-            yield()
+                fixture.runtime.playPlayableCollection(
+                    listOf(PlayableItem.Local(song(9, "Replacement"))),
+                    rotate = false,
+                )
+                delayed.allowCompletion.complete(Unit)
+                yield()
 
-            assertEquals("Replacement", fixture.runtime.currentItem.value?.title)
-            assertEquals(0, fixture.controller.currentMediaItemIndex)
-            assertTrue(fixture.controller.wantsPlay)
-            assertEquals(listOf("Replacement"), fixture.controller.items().map { it.title })
-        } finally {
-            fixture.close()
+                assertEquals(
+                    "Replacement",
+                    fixture.runtime.currentItem.value
+                        ?.title,
+                )
+                assertEquals(0, fixture.controller.currentMediaItemIndex)
+                assertTrue(fixture.controller.wantsPlay)
+                assertEquals(listOf("Replacement"), fixture.controller.items().map { it.title })
+            } finally {
+                fixture.close()
+            }
         }
-    }
 
     @Test
-    fun stalePrefetchAndRecoveryCompletions_cannotMutateReplacementCollection() = runBlocking {
-        val delayedPrefetch = NonCancellableDelayedSuccessStreamAccess("prefetch-old")
-        val prefetchFixture = fixture(streamAccess = delayedPrefetch)
-        try {
-            prefetchFixture.runtime.playPlayableCollection(
-                listOf(
-                    PlayableItem.Local(song(1, "Current local")),
-                    remote("prefetch-old", "Old prefetched remote")
-                ),
-                rotate = false
-            )
-            delayedPrefetch.started.await()
+    fun stalePrefetchAndRecoveryCompletions_cannotMutateReplacementCollection() =
+        runBlocking {
+            val delayedPrefetch = NonCancellableDelayedSuccessStreamAccess("prefetch-old")
+            val prefetchFixture = fixture(streamAccess = delayedPrefetch)
+            try {
+                prefetchFixture.runtime.playPlayableCollection(
+                    listOf(
+                        PlayableItem.Local(song(1, "Current local")),
+                        remote("prefetch-old", "Old prefetched remote"),
+                    ),
+                    rotate = false,
+                )
+                delayedPrefetch.started.await()
 
-            prefetchFixture.runtime.playPlayableCollection(
-                listOf(PlayableItem.Local(song(2, "After prefetch"))),
-                rotate = false
-            )
-            delayedPrefetch.allowCompletion.complete(Unit)
-            yield()
+                prefetchFixture.runtime.playPlayableCollection(
+                    listOf(PlayableItem.Local(song(2, "After prefetch"))),
+                    rotate = false,
+                )
+                delayedPrefetch.allowCompletion.complete(Unit)
+                yield()
 
-            assertEquals(
-                listOf("After prefetch"),
-                prefetchFixture.runtime.queue.value.map { it.title }
-            )
-        } finally {
-            prefetchFixture.close()
+                assertEquals(
+                    listOf("After prefetch"),
+                    prefetchFixture.runtime.queue.value
+                        .map { it.title },
+                )
+            } finally {
+                prefetchFixture.close()
+            }
+
+            val delayedRecovery = NonCancellableDelayedSuccessStreamAccess("recovery-old")
+            val recoveryFixture = fixture(streamAccess = delayedRecovery)
+            try {
+                recoveryFixture.runtime.playPlayableCollection(
+                    listOf(
+                        remote("recovery-old", "Old recovery").copy(
+                            resolved =
+                                ResolvedStream(
+                                    audioUrl = "https://cdn.example/stale",
+                                    userAgent = "fake-UA",
+                                    videoId = "stale-video",
+                                    resolvedAtEpochMs = 10_000L,
+                                ),
+                        ),
+                    ),
+                    rotate = false,
+                )
+                recoveryFixture.controller.failCurrentItem()
+                delayedRecovery.started.await()
+
+                recoveryFixture.runtime.playPlayableCollection(
+                    listOf(PlayableItem.Local(song(3, "After recovery"))),
+                    rotate = false,
+                )
+                delayedRecovery.allowCompletion.complete(Unit)
+                yield()
+
+                assertEquals(
+                    listOf("After recovery"),
+                    recoveryFixture.runtime.queue.value
+                        .map { it.title },
+                )
+                assertTrue(recoveryFixture.controller.wantsPlay)
+            } finally {
+                recoveryFixture.close()
+            }
         }
-
-        val delayedRecovery = NonCancellableDelayedSuccessStreamAccess("recovery-old")
-        val recoveryFixture = fixture(streamAccess = delayedRecovery)
-        try {
-            recoveryFixture.runtime.playPlayableCollection(
-                listOf(
-                    remote("recovery-old", "Old recovery").copy(
-                        resolved = ResolvedStream(
-                            audioUrl = "https://cdn.example/stale",
-                            userAgent = "fake-UA",
-                            videoId = "stale-video",
-                            resolvedAtEpochMs = 10_000L
-                        )
-                    )
-                ),
-                rotate = false
-            )
-            recoveryFixture.controller.failCurrentItem()
-            delayedRecovery.started.await()
-
-            recoveryFixture.runtime.playPlayableCollection(
-                listOf(PlayableItem.Local(song(3, "After recovery"))),
-                rotate = false
-            )
-            delayedRecovery.allowCompletion.complete(Unit)
-            yield()
-
-            assertEquals(
-                listOf("After recovery"),
-                recoveryFixture.runtime.queue.value.map { it.title }
-            )
-            assertTrue(recoveryFixture.controller.wantsPlay)
-        } finally {
-            recoveryFixture.close()
-        }
-    }
 
     @Test
     fun normalStart_fallbackTriesBeyondFiveRemotesAndFindsLocal() {
         val stream = SelectiveStreamAccess(successfulQueries = emptySet())
         val fixture = fixture(streamAccess = stream)
         try {
-            val items = (0 until 6).map { remote("bad-$it", "Bad $it") } +
-                PlayableItem.Local(song(50, "Playable local"))
+            val items =
+                (0 until 6).map { remote("bad-$it", "Bad $it") } +
+                    PlayableItem.Local(song(50, "Playable local"))
 
             fixture.runtime.playPlayableCollection(items, rotate = false)
 
             assertEquals((0 until 6).map { "bad-$it" }, stream.resolvedQueries.take(6))
-            assertEquals("Playable local", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Playable local",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(6, fixture.controller.currentMediaItemIndex)
             assertTrue(fixture.controller.wantsPlay)
         } finally {
@@ -1060,34 +1200,40 @@ class PlaybackRuntimeContinuityTest {
         val settings = MutableStateFlow(PlaybackSettings(streamSkipGraceSeconds = 0))
         val fixture = fixture(streamAccess = stream, playbackSettings = settings)
         try {
-            val items = listOf(remote("initial", "Initial")) +
-                (0 until 6).map { remote("bad-$it", "Bad $it") } +
-                PlayableItem.Local(song(80, "Recovery local"))
+            val items =
+                listOf(remote("initial", "Initial")) +
+                    (0 until 6).map { remote("bad-$it", "Bad $it") } +
+                    PlayableItem.Local(song(80, "Recovery local"))
             fixture.runtime.playPlayableCollection(items, rotate = false)
 
             fixture.controller.failCurrentItem()
 
-            assertEquals("Recovery local", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Recovery local",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(7, fixture.controller.currentMediaItemIndex)
             assertTrue(fixture.controller.wantsPlay)
         } finally {
             fixture.close()
         }
 
-        val allBroken = fixture(
-            playbackSettings = MutableStateFlow(PlaybackSettings(streamSkipGraceSeconds = 0))
-        )
+        val allBroken =
+            fixture(
+                playbackSettings = MutableStateFlow(PlaybackSettings(streamSkipGraceSeconds = 0)),
+            )
         try {
             allBroken.runtime.playPlayableCollection(
                 (0 until 7).map { PlayableItem.Local(song(it.toLong() + 1, "Broken $it")) },
-                rotate = false
+                rotate = false,
             )
             repeat(7) { allBroken.controller.failCurrentItem() }
 
             assertFalse(allBroken.controller.wantsPlay)
             assertEquals(
                 6,
-                allBroken.controller.operations.count { it == "seekToIndex" }
+                allBroken.controller.operations.count { it == "seekToIndex" },
             )
         } finally {
             allBroken.close()
@@ -1097,32 +1243,45 @@ class PlaybackRuntimeContinuityTest {
     @Test
     fun remoteRecovery_reusesOriginalDeadlineAcrossFailedRefreshRounds() {
         val stream = FakeStreamAccess()
-        val fixture = fixture(
-            streamAccess = stream,
-            playbackSettings = MutableStateFlow(PlaybackSettings(streamSkipGraceSeconds = 3)),
-            controller = FakeController(prepareBecomesReady = false)
-        )
+        val fixture =
+            fixture(
+                streamAccess = stream,
+                playbackSettings = MutableStateFlow(PlaybackSettings(streamSkipGraceSeconds = 3)),
+                controller = FakeController(prepareBecomesReady = false),
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(
                     remote("deadline", "Deadline remote"),
-                    PlayableItem.Local(song(90, "Fallback local"))
+                    PlayableItem.Local(song(90, "Fallback local")),
                 ),
-                rotate = false
+                rotate = false,
             )
 
             fixture.controller.failCurrentItem()
-            assertEquals("Deadline remote", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Deadline remote",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
 
             fixture.clock.set(12_999L)
             fixture.controller.failCurrentItem()
-            assertEquals("Deadline remote", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Deadline remote",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
 
             fixture.clock.set(13_000L)
             fixture.controller.failCurrentItem()
 
             assertEquals(2, stream.invalidateCount.get())
-            assertEquals("Fallback local", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Fallback local",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(1, fixture.controller.currentMediaItemIndex)
             assertTrue(fixture.controller.wantsPlay)
         } finally {
@@ -1133,15 +1292,16 @@ class PlaybackRuntimeContinuityTest {
     @Test
     fun expiredRemoteRecovery_pausesWithoutGrantingAnotherWindowUntilProgress() {
         val stream = FakeStreamAccess()
-        val fixture = fixture(
-            streamAccess = stream,
-            playbackSettings = MutableStateFlow(PlaybackSettings(streamSkipGraceSeconds = 3)),
-            controller = FakeController(prepareBecomesReady = false)
-        )
+        val fixture =
+            fixture(
+                streamAccess = stream,
+                playbackSettings = MutableStateFlow(PlaybackSettings(streamSkipGraceSeconds = 3)),
+                controller = FakeController(prepareBecomesReady = false),
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(remote("only-deadline", "Only remote")),
-                rotate = false
+                rotate = false,
             )
             fixture.controller.failCurrentItem()
 
@@ -1158,7 +1318,7 @@ class PlaybackRuntimeContinuityTest {
             assertEquals(
                 "an expired slot must not receive a fresh resolve window without playback progress",
                 1,
-                stream.invalidateCount.get()
+                stream.invalidateCount.get(),
             )
         } finally {
             fixture.close()
@@ -1168,17 +1328,18 @@ class PlaybackRuntimeContinuityTest {
     @Test
     fun remoteRecovery_realPlaybackProgressStartsANewWindow() {
         val stream = FakeStreamAccess()
-        val fixture = fixture(
-            streamAccess = stream,
-            playbackSettings = MutableStateFlow(PlaybackSettings(streamSkipGraceSeconds = 3))
-        )
+        val fixture =
+            fixture(
+                streamAccess = stream,
+                playbackSettings = MutableStateFlow(PlaybackSettings(streamSkipGraceSeconds = 3)),
+            )
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(
                     remote("progress", "Progress remote"),
-                    PlayableItem.Local(song(91, "Should not fallback"))
+                    PlayableItem.Local(song(91, "Should not fallback")),
                 ),
-                rotate = false
+                rotate = false,
             )
             fixture.controller.failCurrentItem()
             assertTrue(fixture.controller.playing)
@@ -1187,7 +1348,11 @@ class PlaybackRuntimeContinuityTest {
             fixture.controller.failCurrentItem()
 
             assertEquals(2, stream.invalidateCount.get())
-            assertEquals("Progress remote", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Progress remote",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(0, fixture.controller.currentMediaItemIndex)
         } finally {
             fixture.close()
@@ -1195,53 +1360,57 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun autosaveAndRadio_waitForFirstRealListenBrainzSettings() = runBlocking {
-        val listenSettings = MutableStateFlow(ListenBrainzSettings())
-        val listenReady = MutableStateFlow(false)
-        val saver = FakeSaveDownloads()
-        val radioCalls = AtomicInteger(0)
-        val fixture = fixture(
-            listenSettings = listenSettings,
-            listenSettingsReady = listenReady,
-            saveDownloads = saver,
-            radioSuggester = PlaybackRuntimeRadioSuggester {
-                radioCalls.incrementAndGet()
-                RadioSuggestResult(
-                    listOf(PlayableItem.Local(song(2, "Suggested"))),
-                    usedOnlineDiscovery = false,
-                    onlineDiscoveryFailed = false
+    fun autosaveAndRadio_waitForFirstRealListenBrainzSettings() =
+        runBlocking {
+            val listenSettings = MutableStateFlow(ListenBrainzSettings())
+            val listenReady = MutableStateFlow(false)
+            val saver = FakeSaveDownloads()
+            val radioCalls = AtomicInteger(0)
+            val fixture =
+                fixture(
+                    listenSettings = listenSettings,
+                    listenSettingsReady = listenReady,
+                    saveDownloads = saver,
+                    radioSuggester =
+                        PlaybackRuntimeRadioSuggester {
+                            radioCalls.incrementAndGet()
+                            RadioSuggestResult(
+                                listOf(PlayableItem.Local(song(2, "Suggested"))),
+                                usedOnlineDiscovery = false,
+                                onlineDiscoveryFailed = false,
+                            )
+                        },
                 )
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(remote("listen-ready", "Listen ready", durationMs = 100_000L)),
+                    rotate = false,
+                )
+                fixture.controller.positionMs = 30_000L
+                fixture.controller.durationMs = 100_000L
+                fixture.clock.set(30_000L)
+                fixture.runtime.tickForTest()
+                fixture.runtime.startRadio(mode = RadioMode.KNOWN)
+
+                assertEquals(0, saver.saveCount.get())
+                assertEquals(0, radioCalls.get())
+
+                listenSettings.value =
+                    ListenBrainzSettings(
+                        saveWhileListening = true,
+                        saveWhileListeningPercent = 25,
+                    )
+                listenReady.value = true
+
+                withTimeout(2_000L) {
+                    while (saver.saveCount.get() == 0 || radioCalls.get() == 0) delay(10L)
+                }
+                assertEquals(1, saver.saveCount.get())
+                assertEquals(1, radioCalls.get())
+            } finally {
+                fixture.close()
             }
-        )
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(remote("listen-ready", "Listen ready", durationMs = 100_000L)),
-                rotate = false
-            )
-            fixture.controller.positionMs = 30_000L
-            fixture.controller.durationMs = 100_000L
-            fixture.clock.set(30_000L)
-            fixture.runtime.tickForTest()
-            fixture.runtime.startRadio(mode = RadioMode.KNOWN)
-
-            assertEquals(0, saver.saveCount.get())
-            assertEquals(0, radioCalls.get())
-
-            listenSettings.value = ListenBrainzSettings(
-                saveWhileListening = true,
-                saveWhileListeningPercent = 25
-            )
-            listenReady.value = true
-
-            withTimeout(2_000L) {
-                while (saver.saveCount.get() == 0 || radioCalls.get() == 0) delay(10L)
-            }
-            assertEquals(1, saver.saveCount.get())
-            assertEquals(1, radioCalls.get())
-        } finally {
-            fixture.close()
         }
-    }
 
     @Test
     fun externalRepeatShuffleAndTimelineChanges_areReconciledFromCallbacks() {
@@ -1251,9 +1420,9 @@ class PlaybackRuntimeContinuityTest {
                 listOf(
                     PlayableItem.Local(song(1, "One")),
                     PlayableItem.Local(song(2, "Two")),
-                    PlayableItem.Local(song(3, "Three"))
+                    PlayableItem.Local(song(3, "Three")),
                 ),
-                rotate = false
+                rotate = false,
             )
             val original = fixture.runtime.queue.value
 
@@ -1268,19 +1437,25 @@ class PlaybackRuntimeContinuityTest {
             assertFalse(fixture.runtime.isShuffle.value)
             assertEquals(
                 original.map { it.queueEntryId },
-                fixture.runtime.queue.value.map { it.queueEntryId }
+                fixture.runtime.queue.value
+                    .map { it.queueEntryId },
             )
 
             fixture.controller.externalSetTimeline(
                 items = listOf(original[2], original[0]),
                 currentIndex = 1,
-                positionMs = 4_444L
+                positionMs = 4_444L,
             )
             assertEquals(
                 listOf(original[2].queueEntryId, original[0].queueEntryId),
-                fixture.runtime.queue.value.map { it.queueEntryId }
+                fixture.runtime.queue.value
+                    .map { it.queueEntryId },
             )
-            assertEquals(original[0].queueEntryId, fixture.runtime.currentItem.value?.queueEntryId)
+            assertEquals(
+                original[0].queueEntryId,
+                fixture.runtime.currentItem.value
+                    ?.queueEntryId,
+            )
             assertEquals(4_444L, fixture.runtime.playbackPositionMs.value)
         } finally {
             fixture.close()
@@ -1295,15 +1470,15 @@ class PlaybackRuntimeContinuityTest {
                 listOf(
                     PlayableItem.Local(song(1, "One")),
                     PlayableItem.Local(song(2, "Two")),
-                    PlayableItem.Local(song(3, "Three"))
+                    PlayableItem.Local(song(3, "Three")),
                 ),
-                rotate = false
+                rotate = false,
             )
             fixture.runtime.toggleShuffle()
 
             val syncsBeforeAppend = fixture.controller.shuffleOrderSyncCount
             fixture.runtime.addPlayableBatch(
-                listOf(PlayableItem.Local(song(4, "Appended")))
+                listOf(PlayableItem.Local(song(4, "Appended"))),
             )
             assertTrue(fixture.controller.shuffleOrderSyncCount > syncsBeforeAppend)
             assertPhysicalQueueAndNextAreLinear(fixture)
@@ -1311,12 +1486,13 @@ class PlaybackRuntimeContinuityTest {
             fixture.runtime.skipToNext()
             assertEquals(
                 nextAfterAppend.queueEntryId,
-                fixture.runtime.currentItem.value?.queueEntryId
+                fixture.runtime.currentItem.value
+                    ?.queueEntryId,
             )
 
             val syncsBeforePlayNext = fixture.controller.shuffleOrderSyncCount
             fixture.runtime.playNextBatch(
-                listOf(PlayableItem.Local(song(5, "Play next")))
+                listOf(PlayableItem.Local(song(5, "Play next"))),
             )
             assertTrue(fixture.controller.shuffleOrderSyncCount > syncsBeforePlayNext)
             assertPhysicalQueueAndNextAreLinear(fixture)
@@ -1325,7 +1501,8 @@ class PlaybackRuntimeContinuityTest {
             fixture.runtime.skipToNext()
             assertEquals(
                 insertedNext.queueEntryId,
-                fixture.runtime.currentItem.value?.queueEntryId
+                fixture.runtime.currentItem.value
+                    ?.queueEntryId,
             )
         } finally {
             fixture.close()
@@ -1341,9 +1518,9 @@ class PlaybackRuntimeContinuityTest {
                     PlayableItem.Local(song(1, "One")),
                     PlayableItem.Local(song(2, "Two")),
                     PlayableItem.Local(song(3, "Three")),
-                    PlayableItem.Local(song(4, "Four"))
+                    PlayableItem.Local(song(4, "Four")),
                 ),
-                rotate = false
+                rotate = false,
             )
             fixture.runtime.toggleShuffle()
             val queueBeforeTap = fixture.runtime.displayQueue.value
@@ -1355,13 +1532,18 @@ class PlaybackRuntimeContinuityTest {
             assertTrue(fixture.runtime.isShuffle.value)
             assertEquals(
                 queueBeforeTap.map { it.queueEntryId },
-                fixture.runtime.displayQueue.value.map { it.queueEntryId }
+                fixture.runtime.displayQueue.value
+                    .map { it.queueEntryId },
             )
-            assertEquals(selected.queueEntryId, fixture.runtime.currentItem.value?.queueEntryId)
+            assertEquals(
+                selected.queueEntryId,
+                fixture.runtime.currentItem.value
+                    ?.queueEntryId,
+            )
             assertEquals(selectedIndex, fixture.controller.currentMediaItemIndex)
             assertEquals(
                 queueBeforeTap.map { it.queueEntryId },
-                fixture.controller.items().map { it.queueEntryId }
+                fixture.controller.items().map { it.queueEntryId },
             )
         } finally {
             fixture.close()
@@ -1370,9 +1552,10 @@ class PlaybackRuntimeContinuityTest {
 
     @Test
     fun playCollection_whileShuffledAndKeepShuffleOnManualPlay_permutesNewListStartingWithSelected() {
-        val settings = MutableStateFlow(
-            PlaybackSettings(clearShuffleOnManualPlay = false)
-        )
+        val settings =
+            MutableStateFlow(
+                PlaybackSettings(clearShuffleOnManualPlay = false),
+            )
         val fixture = fixture(playbackSettings = settings)
         try {
             // First collection: Album 1
@@ -1401,7 +1584,9 @@ class PlaybackRuntimeContinuityTest {
             // Toggling shuffle off restores pristine album 2 order
             fixture.runtime.toggleShuffle()
             assertFalse(fixture.runtime.isShuffle.value)
-            val restoredIds = fixture.runtime.queue.value.map { (it as PlayableItem.Local).song.id }
+            val restoredIds =
+                fixture.runtime.queue.value
+                    .map { (it as PlayableItem.Local).song.id }
             assertEquals(album2.map { it.song.id }, restoredIds)
             assertEquals(12L, (fixture.runtime.currentItem.value as? PlayableItem.Local)?.song?.id)
         } finally {
@@ -1411,9 +1596,10 @@ class PlaybackRuntimeContinuityTest {
 
     @Test
     fun playCollection_whileShuffledAndClearShuffleOnManualPlay_turnsOffShuffleAndPlaysInOrder() {
-        val settings = MutableStateFlow(
-            PlaybackSettings(clearShuffleOnManualPlay = true)
-        )
+        val settings =
+            MutableStateFlow(
+                PlaybackSettings(clearShuffleOnManualPlay = true),
+            )
         val fixture = fixture(playbackSettings = settings)
         try {
             // Start with shuffle active
@@ -1427,7 +1613,9 @@ class PlaybackRuntimeContinuityTest {
             fixture.runtime.playPlayableCollection(album2, startIndex = 0, rotate = false)
 
             assertFalse("Shuffle must be turned off", fixture.runtime.isShuffle.value)
-            val queueIds = fixture.runtime.queue.value.map { (it as PlayableItem.Local).song.id }
+            val queueIds =
+                fixture.runtime.queue.value
+                    .map { (it as PlayableItem.Local).song.id }
             assertEquals(album2.map { it.song.id }, queueIds)
         } finally {
             fixture.close()
@@ -1436,9 +1624,10 @@ class PlaybackRuntimeContinuityTest {
 
     @Test
     fun skipToNext_withClearShuffleOnSkip_disablesShuffleWithoutReorderingQueue() {
-        val settings = MutableStateFlow(
-            PlaybackSettings(clearShuffleOnSkip = true)
-        )
+        val settings =
+            MutableStateFlow(
+                PlaybackSettings(clearShuffleOnSkip = true),
+            )
         val fixture = fixture(playbackSettings = settings)
         try {
             val album = (1..5).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
@@ -1446,12 +1635,16 @@ class PlaybackRuntimeContinuityTest {
             fixture.runtime.toggleShuffle()
             assertTrue(fixture.runtime.isShuffle.value)
 
-            val queueBeforeSkip = fixture.runtime.queue.value.map { it.queueEntryId }
+            val queueBeforeSkip =
+                fixture.runtime.queue.value
+                    .map { it.queueEntryId }
 
             fixture.runtime.skipToNext()
 
             assertFalse("Shuffle must be disabled after skip", fixture.runtime.isShuffle.value)
-            val queueAfterSkip = fixture.runtime.queue.value.map { it.queueEntryId }
+            val queueAfterSkip =
+                fixture.runtime.queue.value
+                    .map { it.queueEntryId }
             assertEquals("Queue must NOT be reordered", queueBeforeSkip, queueAfterSkip)
         } finally {
             fixture.close()
@@ -1460,24 +1653,33 @@ class PlaybackRuntimeContinuityTest {
 
     @Test
     fun skipToNext_withRepeatModeOneAndKeepRepeatOneOnSkip_advancesToNextTrackAndPreservesRepeatModeOne() {
-        val settings = MutableStateFlow(
-            PlaybackSettings(clearRepeatOneOnSkip = false)
-        )
+        val settings =
+            MutableStateFlow(
+                PlaybackSettings(clearRepeatOneOnSkip = false),
+            )
         val fixture = fixture(playbackSettings = settings)
         try {
             val album = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
             fixture.runtime.playPlayableCollection(album, rotate = false)
             fixture.runtime.setRepeatMode(RepeatMode.ONE)
             assertEquals(RepeatMode.ONE, fixture.runtime.repeatMode.value)
-            assertEquals("Song 1", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Song 1",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
 
             fixture.runtime.skipToNext()
 
-            assertEquals("Song 2", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Song 2",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(
                 "RepeatMode.ONE must be preserved when clearRepeatOneOnSkip is false",
                 RepeatMode.ONE,
-                fixture.runtime.repeatMode.value
+                fixture.runtime.repeatMode.value,
             )
         } finally {
             fixture.close()
@@ -1486,24 +1688,33 @@ class PlaybackRuntimeContinuityTest {
 
     @Test
     fun skipToPrevious_withRepeatModeOneAndKeepRepeatOneOnSkip_advancesToPreviousTrackAndPreservesRepeatModeOne() {
-        val settings = MutableStateFlow(
-            PlaybackSettings(clearRepeatOneOnSkip = false)
-        )
+        val settings =
+            MutableStateFlow(
+                PlaybackSettings(clearRepeatOneOnSkip = false),
+            )
         val fixture = fixture(playbackSettings = settings)
         try {
             val album = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
             fixture.runtime.playPlayableCollection(album, startIndex = 1, rotate = false)
             fixture.runtime.setRepeatMode(RepeatMode.ONE)
             assertEquals(RepeatMode.ONE, fixture.runtime.repeatMode.value)
-            assertEquals("Song 2", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Song 2",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
 
             fixture.runtime.skipToPrevious()
 
-            assertEquals("Song 1", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Song 1",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(
                 "RepeatMode.ONE must be preserved when clearRepeatOneOnSkip is false",
                 RepeatMode.ONE,
-                fixture.runtime.repeatMode.value
+                fixture.runtime.repeatMode.value,
             )
         } finally {
             fixture.close()
@@ -1512,12 +1723,13 @@ class PlaybackRuntimeContinuityTest {
 
     @Test
     fun shuffleCollection_withRepeatModeOneAndClearRepeatOneOnManualPlay_clearsRepeatOneAndStartsShuffled() {
-        val settings = MutableStateFlow(
-            PlaybackSettings(
-                clearRepeatOneOnManualPlay = true,
-                clearShuffleOnManualPlay = true
+        val settings =
+            MutableStateFlow(
+                PlaybackSettings(
+                    clearRepeatOneOnManualPlay = true,
+                    clearShuffleOnManualPlay = true,
+                ),
             )
-        )
         val fixture = fixture(playbackSettings = settings)
         try {
             val album1 = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
@@ -1531,14 +1743,14 @@ class PlaybackRuntimeContinuityTest {
                 startIndex = 0,
                 rotate = false,
                 applyManualModes = false,
-                startShuffled = true
+                startShuffled = true,
             )
 
             assertTrue("Playback must start shuffled", fixture.runtime.isShuffle.value)
             assertEquals(
                 "RepeatMode.ONE must be cleared when clearRepeatOneOnManualPlay is true",
                 RepeatMode.OFF,
-                fixture.runtime.repeatMode.value
+                fixture.runtime.repeatMode.value,
             )
         } finally {
             fixture.close()
@@ -1547,11 +1759,12 @@ class PlaybackRuntimeContinuityTest {
 
     @Test
     fun shuffleCollection_withRepeatModeOneAndKeepRepeatOneOnManualPlay_preservesRepeatOneAndStartsShuffled() {
-        val settings = MutableStateFlow(
-            PlaybackSettings(
-                clearRepeatOneOnManualPlay = false
+        val settings =
+            MutableStateFlow(
+                PlaybackSettings(
+                    clearRepeatOneOnManualPlay = false,
+                ),
             )
-        )
         val fixture = fixture(playbackSettings = settings)
         try {
             val album1 = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
@@ -1565,14 +1778,14 @@ class PlaybackRuntimeContinuityTest {
                 startIndex = 0,
                 rotate = false,
                 applyManualModes = false,
-                startShuffled = true
+                startShuffled = true,
             )
 
             assertTrue("Playback must start shuffled", fixture.runtime.isShuffle.value)
             assertEquals(
                 "RepeatMode.ONE must be preserved when clearRepeatOneOnManualPlay is false",
                 RepeatMode.ONE,
-                fixture.runtime.repeatMode.value
+                fixture.runtime.repeatMode.value,
             )
         } finally {
             fixture.close()
@@ -1581,11 +1794,12 @@ class PlaybackRuntimeContinuityTest {
 
     @Test
     fun playCollection_withRepeatModeAllAndClearRepeatAllOnManualPlay_clearsRepeatAll() {
-        val settings = MutableStateFlow(
-            PlaybackSettings(
-                clearRepeatAllOnManualPlay = true
+        val settings =
+            MutableStateFlow(
+                PlaybackSettings(
+                    clearRepeatAllOnManualPlay = true,
+                ),
             )
-        )
         val fixture = fixture(playbackSettings = settings)
         try {
             val album1 = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
@@ -1599,7 +1813,7 @@ class PlaybackRuntimeContinuityTest {
             assertEquals(
                 "RepeatMode.ALL must be cleared when clearRepeatAllOnManualPlay is true",
                 RepeatMode.OFF,
-                fixture.runtime.repeatMode.value
+                fixture.runtime.repeatMode.value,
             )
         } finally {
             fixture.close()
@@ -1607,126 +1821,150 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun hydration_waitsForFirstRealPlaybackSettingsEmission() = runBlocking {
-        val first = song(1, "First")
-        val second = song(2, "Second")
-        val persisted = QueueSnapshot(
-            currentIndex = 0,
-            positionMs = 9_000L,
-            items = listOf(persistedLocal(first), persistedLocal(second)),
-            shufflePlayOrder = listOf(1, 0)
-        )
-        val persistence = FakePersistence(queueToLoad = persisted)
-        val settings = MutableStateFlow(PlaybackSettings())
-        val settingsReady = MutableStateFlow(false)
-        val fixture = fixture(
-            persistence = persistence,
-            libraryUpdates = MutableStateFlow(listOf(first, second)),
-            playbackSettings = settings,
-            playbackSettingsReady = settingsReady
-        )
-        try {
-            assertEquals(0, persistence.loadQueueCount.get())
-            assertTrue(fixture.runtime.queue.value.isEmpty())
-
-            settings.value = PlaybackSettings(
-                autoplayOnLaunch = false,
-                rememberShuffleOnLaunch = true,
-                lastShuffleEnabled = true
-            )
-            settingsReady.value = true
-
-            withTimeout(2_000L) {
-                while (fixture.runtime.queue.value.size != 2) delay(10L)
-            }
-            assertEquals(1, persistence.loadQueueCount.get())
-            assertTrue(fixture.runtime.isShuffle.value)
-            assertEquals(0, fixture.controller.mediaItemCount)
-        } finally {
-            fixture.close()
-        }
-    }
-
-    @Test
-    fun volumeBoostRestore_waitsForPlaybackSettingsReadiness() = runBlocking {
-        val settings = MutableStateFlow(PlaybackSettings())
-        val settingsReady = MutableStateFlow(false)
-        val fixture = fixture(
-            playbackSettings = settings,
-            playbackSettingsReady = settingsReady
-        )
-        try {
-            val restored = CompletableDeferred<PlaybackSettings>()
-            val waiter = launch {
-                restored.complete(fixture.runtime.awaitPlaybackSettings())
-            }
-            yield()
-
-            assertFalse("default settings must not escape before DataStore is ready", restored.isCompleted)
-
-            val loaded = PlaybackSettings(
-                volumeBoostEnabled = true,
-                volumeBoostAmount = 0.65f
-            )
-            settings.value = loaded
-            settingsReady.value = true
-
-            assertEquals(loaded, withTimeout(2_000L) { restored.await() })
-            waiter.cancel()
-        } finally {
-            fixture.close()
-        }
-    }
-
-    @Test
-    fun metadataOnlySystemResumption_doesNotMutateRuntimeOrResolve() = runBlocking {
-        val local = song(2, "Local")
-        val persistence = FakePersistence(
-            queueToLoad = QueueSnapshot(
-                currentIndex = 0,
-                positionMs = 9_876L,
-                items = listOf(
-                    PersistedQueueItem.Remote(
-                        identity = TrackIdentity(title = "Remote", artist = "Artist"),
-                        youtubeQueryOrId = "remote query"
-                    ),
-                    persistedLocal(local)
+    fun hydration_waitsForFirstRealPlaybackSettingsEmission() =
+        runBlocking {
+            val first = song(1, "First")
+            val second = song(2, "Second")
+            val persisted =
+                QueueSnapshot(
+                    currentIndex = 0,
+                    positionMs = 9_000L,
+                    items = listOf(persistedLocal(first), persistedLocal(second)),
+                    shufflePlayOrder = listOf(1, 0),
                 )
-            )
-        )
-        val streamAccess = FakeStreamAccess()
-        val fixture = fixture(
-            streamAccess = streamAccess,
-            persistence = persistence,
-            libraryUpdates = MutableStateFlow(listOf(local)),
-            attachController = false
-        )
-        try {
-            val snapshot = fixture.runtime.systemResumptionMetadataSnapshot()
+            val persistence = FakePersistence(queueToLoad = persisted)
+            val settings = MutableStateFlow(PlaybackSettings())
+            val settingsReady = MutableStateFlow(false)
+            val fixture =
+                fixture(
+                    persistence = persistence,
+                    libraryUpdates = MutableStateFlow(listOf(first, second)),
+                    playbackSettings = settings,
+                    playbackSettingsReady = settingsReady,
+                )
+            try {
+                assertEquals(0, persistence.loadQueueCount.get())
+                assertTrue(
+                    fixture.runtime.queue.value
+                        .isEmpty(),
+                )
 
-            assertNotNull(snapshot)
-            assertEquals(1, persistence.loadQueueCount.get())
-            assertEquals(0, fixture.controller.mediaItemCount)
-            assertTrue(fixture.runtime.queue.value.isEmpty())
-            assertEquals(null, fixture.runtime.currentItem.value)
-            assertTrue(streamAccess.resolvedQueries.isEmpty())
-        } finally {
-            fixture.close()
+                settings.value =
+                    PlaybackSettings(
+                        autoplayOnLaunch = false,
+                        rememberShuffleOnLaunch = true,
+                        lastShuffleEnabled = true,
+                    )
+                settingsReady.value = true
+
+                withTimeout(2_000L) {
+                    while (fixture.runtime.queue.value.size != 2) delay(10L)
+                }
+                assertEquals(1, persistence.loadQueueCount.get())
+                assertTrue(fixture.runtime.isShuffle.value)
+                assertEquals(0, fixture.controller.mediaItemCount)
+            } finally {
+                fixture.close()
+            }
         }
-    }
+
+    @Test
+    fun volumeBoostRestore_waitsForPlaybackSettingsReadiness() =
+        runBlocking {
+            val settings = MutableStateFlow(PlaybackSettings())
+            val settingsReady = MutableStateFlow(false)
+            val fixture =
+                fixture(
+                    playbackSettings = settings,
+                    playbackSettingsReady = settingsReady,
+                )
+            try {
+                val restored = CompletableDeferred<PlaybackSettings>()
+                val waiter =
+                    launch {
+                        restored.complete(fixture.runtime.awaitPlaybackSettings())
+                    }
+                yield()
+
+                assertFalse("default settings must not escape before DataStore is ready", restored.isCompleted)
+
+                val loaded =
+                    PlaybackSettings(
+                        volumeBoostEnabled = true,
+                        volumeBoostAmount = 0.65f,
+                    )
+                settings.value = loaded
+                settingsReady.value = true
+
+                assertEquals(loaded, withTimeout(2_000L) { restored.await() })
+                waiter.cancel()
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun metadataOnlySystemResumption_doesNotMutateRuntimeOrResolve() =
+        runBlocking {
+            val local = song(2, "Local")
+            val persistence =
+                FakePersistence(
+                    queueToLoad =
+                        QueueSnapshot(
+                            currentIndex = 0,
+                            positionMs = 9_876L,
+                            items =
+                                listOf(
+                                    PersistedQueueItem.Remote(
+                                        identity = TrackIdentity(title = "Remote", artist = "Artist"),
+                                        youtubeQueryOrId = "remote query",
+                                    ),
+                                    persistedLocal(local),
+                                ),
+                        ),
+                )
+            val streamAccess = FakeStreamAccess()
+            val fixture =
+                fixture(
+                    streamAccess = streamAccess,
+                    persistence = persistence,
+                    libraryUpdates = MutableStateFlow(listOf(local)),
+                    attachController = false,
+                )
+            try {
+                val snapshot = fixture.runtime.systemResumptionMetadataSnapshot()
+
+                assertNotNull(snapshot)
+                assertEquals(1, persistence.loadQueueCount.get())
+                assertEquals(0, fixture.controller.mediaItemCount)
+                assertTrue(
+                    fixture.runtime.queue.value
+                        .isEmpty(),
+                )
+                assertEquals(null, fixture.runtime.currentItem.value)
+                assertTrue(streamAccess.resolvedQueries.isEmpty())
+            } finally {
+                fixture.close()
+            }
+        }
 
     @Test
     fun externalCollectionStaging_doesNotInventPlayIntentOrMutateTimeline() {
         val fixture = fixture()
         try {
-            val plan = fixture.runtime.stageExternalPlayableCollection(
-                items = listOf(PlayableItem.Local(song(1, "External"))),
-                startIndex = 0,
-                startPositionMs = 321L
-            )
+            val plan =
+                fixture.runtime.stageExternalPlayableCollection(
+                    items = listOf(PlayableItem.Local(song(1, "External"))),
+                    startIndex = 0,
+                    startPositionMs = 321L,
+                )
 
             assertNotNull(plan)
-            assertEquals("External", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "External",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(321L, fixture.runtime.playbackPositionMs.value)
             assertFalse(fixture.controller.wantsPlay)
             assertEquals(0, fixture.controller.timelineMutationCount)
@@ -1741,14 +1979,14 @@ class PlaybackRuntimeContinuityTest {
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Playing"))),
-                rotate = false
+                rotate = false,
             )
             assertTrue(fixture.controller.wantsPlay)
 
             fixture.runtime.stageExternalPlayableCollection(
                 items = listOf(PlayableItem.Local(song(2, "External"))),
                 startIndex = 0,
-                startPositionMs = 0L
+                startPositionMs = 0L,
             )
             fixture.runtime.togglePlayPause()
 
@@ -1763,25 +2001,33 @@ class PlaybackRuntimeContinuityTest {
         val first = song(1, "First")
         val current = song(2, "Current")
         val third = song(3, "Third")
-        val persistence = FakePersistence(
-            queueToLoad = QueueSnapshot(
-                currentIndex = 1,
-                positionMs = 12_345L,
-                items = listOf(
-                    persistedLocal(first),
-                    persistedLocal(current),
-                    persistedLocal(third)
-                )
+        val persistence =
+            FakePersistence(
+                queueToLoad =
+                    QueueSnapshot(
+                        currentIndex = 1,
+                        positionMs = 12_345L,
+                        items =
+                            listOf(
+                                persistedLocal(first),
+                                persistedLocal(current),
+                                persistedLocal(third),
+                            ),
+                    ),
             )
-        )
-        val fixture = fixture(
-            persistence = persistence,
-            libraryUpdates = MutableStateFlow(listOf(first, current, third))
-        )
+        val fixture =
+            fixture(
+                persistence = persistence,
+                libraryUpdates = MutableStateFlow(listOf(first, current, third)),
+            )
         try {
             fixture.runtime.attachUi()
             assertEquals(0, fixture.controller.timelineMutationCount)
-            assertEquals("Current", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Current",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
 
             fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song(4, "Added"))))
             fixture.runtime.playNextBatch(listOf(PlayableItem.Local(song(5, "Next"))))
@@ -1793,26 +2039,33 @@ class PlaybackRuntimeContinuityTest {
             assertEquals(0, fixture.controller.prepareCount)
             assertEquals(0, fixture.controller.playCallCount)
             assertTrue(fixture.runtime.isShuffle.value)
-            assertEquals("Current", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "Current",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
             assertEquals(12_345L, fixture.runtime.playbackPositionMs.value)
 
             fixture.runtime.togglePlayPause()
 
             assertEquals(1, fixture.controller.setMediaItemsCount)
             assertEquals(
-                fixture.runtime.queue.value.map { it.queueEntryId },
-                fixture.controller.items().map { it.queueEntryId }
+                fixture.runtime.queue.value
+                    .map { it.queueEntryId },
+                fixture.controller.items().map { it.queueEntryId },
             )
             assertEquals(
                 fixture.runtime.queue.value.indexOfFirst {
-                    it.queueEntryId == fixture.runtime.currentItem.value?.queueEntryId
+                    it.queueEntryId ==
+                        fixture.runtime.currentItem.value
+                            ?.queueEntryId
                 },
-                fixture.controller.currentMediaItemIndex
+                fixture.controller.currentMediaItemIndex,
             )
             assertEquals(12_345L, fixture.controller.currentPosition)
             assertTrue(
                 fixture.controller.operations.indexOf("setMediaItems") <
-                    fixture.controller.operations.indexOf("prepare")
+                    fixture.controller.operations.indexOf("prepare"),
             )
         } finally {
             fixture.close()
@@ -1820,62 +2073,67 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun pauseDuringDelayedHydratedResolve_neverResumesAndQueueMaterializesFirst() = runBlocking {
-        val tail = song(2, "Tail")
-        val delayed = DelayedStreamAccess("slow")
-        val persistence = FakePersistence(
-            queueToLoad = QueueSnapshot(
-                currentIndex = 0,
-                positionMs = 7_777L,
-                items = listOf(
-                    PersistedQueueItem.Remote(
-                        identity = TrackIdentity(title = "Slow", artist = "Artist"),
-                        youtubeQueryOrId = "slow"
-                    ),
-                    persistedLocal(tail)
+    fun pauseDuringDelayedHydratedResolve_neverResumesAndQueueMaterializesFirst() =
+        runBlocking {
+            val tail = song(2, "Tail")
+            val delayed = DelayedStreamAccess("slow")
+            val persistence =
+                FakePersistence(
+                    queueToLoad =
+                        QueueSnapshot(
+                            currentIndex = 0,
+                            positionMs = 7_777L,
+                            items =
+                                listOf(
+                                    PersistedQueueItem.Remote(
+                                        identity = TrackIdentity(title = "Slow", artist = "Artist"),
+                                        youtubeQueryOrId = "slow",
+                                    ),
+                                    persistedLocal(tail),
+                                ),
+                        ),
                 )
-            )
-        )
-        val fixture = fixture(
-            streamAccess = delayed,
-            persistence = persistence,
-            libraryUpdates = MutableStateFlow(listOf(tail))
-        )
-        try {
-            assertEquals(0, fixture.controller.mediaItemCount)
-            assertFalse("autoplay off must not resolve the hydrated Remote", delayed.started.isCompleted)
+            val fixture =
+                fixture(
+                    streamAccess = delayed,
+                    persistence = persistence,
+                    libraryUpdates = MutableStateFlow(listOf(tail)),
+                )
+            try {
+                assertEquals(0, fixture.controller.mediaItemCount)
+                assertFalse("autoplay off must not resolve the hydrated Remote", delayed.started.isCompleted)
 
-            fixture.runtime.togglePlayPause()
-            delayed.started.await()
+                fixture.runtime.togglePlayPause()
+                delayed.started.await()
 
-            assertEquals(2, fixture.controller.mediaItemCount)
-            assertEquals(0, fixture.controller.currentMediaItemIndex)
-            assertEquals(7_777L, fixture.controller.currentPosition)
-            assertEquals(0, fixture.controller.prepareCount)
-            assertTrue(fixture.controller.wantsPlay)
+                assertEquals(2, fixture.controller.mediaItemCount)
+                assertEquals(0, fixture.controller.currentMediaItemIndex)
+                assertEquals(7_777L, fixture.controller.currentPosition)
+                assertEquals(0, fixture.controller.prepareCount)
+                assertTrue(fixture.controller.wantsPlay)
 
-            fixture.runtime.togglePlayPause()
-            assertFalse(fixture.controller.wantsPlay)
-            val prepareAfterPause = fixture.controller.prepareCount
-            val mutationsAfterPause = fixture.controller.timelineMutationCount
-            delayed.allowResolution.complete(Unit)
+                fixture.runtime.togglePlayPause()
+                assertFalse(fixture.controller.wantsPlay)
+                val prepareAfterPause = fixture.controller.prepareCount
+                val mutationsAfterPause = fixture.controller.timelineMutationCount
+                delayed.allowResolution.complete(Unit)
 
-            withTimeout(2_000L) {
-                while (fixture.runtime.resolvingRemote.value) delay(10L)
+                withTimeout(2_000L) {
+                    while (fixture.runtime.resolvingRemote.value) delay(10L)
+                }
+                assertFalse(fixture.controller.wantsPlay)
+                assertFalse(fixture.controller.playing)
+                assertEquals(1, fixture.controller.playCallCount)
+                assertEquals(
+                    "pause must cancel in-flight resolve so it cannot prepare/replace",
+                    prepareAfterPause,
+                    fixture.controller.prepareCount,
+                )
+                assertEquals(mutationsAfterPause, fixture.controller.timelineMutationCount)
+            } finally {
+                fixture.close()
             }
-            assertFalse(fixture.controller.wantsPlay)
-            assertFalse(fixture.controller.playing)
-            assertEquals(1, fixture.controller.playCallCount)
-            assertEquals(
-                "pause must cancel in-flight resolve so it cannot prepare/replace",
-                prepareAfterPause,
-                fixture.controller.prepareCount
-            )
-            assertEquals(mutationsAfterPause, fixture.controller.timelineMutationCount)
-        } finally {
-            fixture.close()
         }
-    }
 
     @Test
     fun pauseWhileBuffering_usesPlayWhenReadyAndReadyCallbackCannotResume() {
@@ -1883,7 +2141,7 @@ class PlaybackRuntimeContinuityTest {
         try {
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Buffering"))),
-                rotate = false
+                rotate = false,
             )
             fixture.controller.enterBuffering()
             assertFalse(fixture.controller.playing)
@@ -1902,15 +2160,16 @@ class PlaybackRuntimeContinuityTest {
     @Test
     fun pausedLiveSession_doesNotResolveOrPrefetchUntilPlay() {
         val stream = FakeStreamAccess()
-        val controller = FakeController().apply {
-            seedTimeline(
-                items = listOf(remote("live-0", "Live 0"), remote("live-1", "Live 1")),
-                currentIndex = 0,
-                positionMs = 4_000L,
-                playWhenReady = false,
-                playbackState = Player.STATE_IDLE
-            )
-        }
+        val controller =
+            FakeController().apply {
+                seedTimeline(
+                    items = listOf(remote("live-0", "Live 0"), remote("live-1", "Live 1")),
+                    currentIndex = 0,
+                    positionMs = 4_000L,
+                    playWhenReady = false,
+                    playbackState = Player.STATE_IDLE,
+                )
+            }
         val fixture = fixture(streamAccess = stream, controller = controller)
         try {
             assertTrue(stream.resolvedQueries.isEmpty())
@@ -1925,31 +2184,32 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun persistenceWriter_serializesMainSnapshotsSoOlderWriteCannotWin() = runBlocking {
-        val persistence = BlockingFirstSavePersistence()
-        val fixture = fixture(persistence = persistence)
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(PlayableItem.Local(song(1, "One"))),
-                rotate = false
-            )
-            fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song(2, "Two"))))
-            persistence.firstSaveStarted.await()
-            fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song(3, "Three"))))
-            persistence.allowFirstSave.complete(Unit)
+    fun persistenceWriter_serializesMainSnapshotsSoOlderWriteCannotWin() =
+        runBlocking {
+            val persistence = BlockingFirstSavePersistence()
+            val fixture = fixture(persistence = persistence)
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(PlayableItem.Local(song(1, "One"))),
+                    rotate = false,
+                )
+                fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song(2, "Two"))))
+                persistence.firstSaveStarted.await()
+                fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song(3, "Three"))))
+                persistence.allowFirstSave.complete(Unit)
 
-            withTimeout(2_000L) {
-                while (persistence.savedQueues.size < 2) delay(10L)
+                withTimeout(2_000L) {
+                    while (persistence.savedQueues.size < 2) delay(10L)
+                }
+                assertEquals(listOf("One", "Two"), persistence.savedQueues[0].titles())
+                assertEquals(
+                    listOf("One", "Two", "Three"),
+                    persistence.savedQueues.last().titles(),
+                )
+            } finally {
+                fixture.close()
             }
-            assertEquals(listOf("One", "Two"), persistence.savedQueues[0].titles())
-            assertEquals(
-                listOf("One", "Two", "Three"),
-                persistence.savedQueues.last().titles()
-            )
-        } finally {
-            fixture.close()
         }
-    }
 
     @Test
     fun controllerAndTicker_releaseOnlyAfterUiPlaybackAndPendingQueueAreGone() {
@@ -1969,7 +2229,7 @@ class PlaybackRuntimeContinuityTest {
             active.runtime.attachUi()
             active.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Playing"))),
-                rotate = false
+                rotate = false,
             )
             assertTrue(active.runtime.tickerActiveForTest)
 
@@ -1996,7 +2256,7 @@ class PlaybackRuntimeContinuityTest {
             fixture.runtime.attachUi()
             fixture.runtime.playPlayableCollection(
                 listOf(PlayableItem.Local(song(1, "Test"))),
-                rotate = false
+                rotate = false,
             )
             fixture.runtime.togglePlayPause()
             fixture.runtime.onTaskRemovedNotEngaged()
@@ -2009,85 +2269,101 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun clearQueue_pausesPlaybackAndEmptiesQueueWithoutAutoPlay() = runBlocking {
-        val fixture = fixture(
-            attachController = true,
-            startTicker = true
-        )
-        try {
-            val items = listOf(PlayableItem.Local(song(1, "A")), PlayableItem.Local(song(2, "B")))
-            fixture.runtime.addPlayableBatch(items)
-            fixture.runtime.skipToQueueIndex(0)
-            assertEquals(2, fixture.runtime.queue.value.size)
-            assertEquals("A", fixture.runtime.currentItem.value?.title)
+    fun clearQueue_pausesPlaybackAndEmptiesQueueWithoutAutoPlay() =
+        runBlocking {
+            val fixture =
+                fixture(
+                    attachController = true,
+                    startTicker = true,
+                )
+            try {
+                val items = listOf(PlayableItem.Local(song(1, "A")), PlayableItem.Local(song(2, "B")))
+                fixture.runtime.addPlayableBatch(items)
+                fixture.runtime.skipToQueueIndex(0)
+                assertEquals(2, fixture.runtime.queue.value.size)
+                assertEquals(
+                    "A",
+                    fixture.runtime.currentItem.value
+                        ?.title,
+                )
 
-            fixture.runtime.clearQueue()
+                fixture.runtime.clearQueue()
 
-            assertTrue(fixture.runtime.queue.value.isEmpty())
-            assertEquals(null, fixture.runtime.currentItem.value)
-            assertFalse(fixture.runtime.isPlaying.value)
-            assertFalse(fixture.runtime.radioActive.value)
-        } finally {
-            fixture.close()
+                assertTrue(
+                    fixture.runtime.queue.value
+                        .isEmpty(),
+                )
+                assertEquals(null, fixture.runtime.currentItem.value)
+                assertFalse(fixture.runtime.isPlaying.value)
+                assertFalse(fixture.runtime.radioActive.value)
+            } finally {
+                fixture.close()
+            }
         }
-    }
 
     @Test
-    fun updateAlbumArtworkInQueue_updatesMaterializedTimelineMediaItems() = runBlocking {
-        val controller = FakeController()
-        val fixture = fixture(controller = controller, attachController = true)
-        try {
-            val song1 = song(1, "Song 1").copy(album = "Album A")
-            val song2 = song(2, "Song 2").copy(album = "Album B")
-            fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song1), PlayableItem.Local(song2)))
-            fixture.runtime.skipToQueueIndex(0)
+    fun updateAlbumArtworkInQueue_updatesMaterializedTimelineMediaItems() =
+        runBlocking {
+            val controller = FakeController()
+            val fixture = fixture(controller = controller, attachController = true)
+            try {
+                val song1 = song(1, "Song 1").copy(album = "Album A")
+                val song2 = song(2, "Song 2").copy(album = "Album B")
+                fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song1), PlayableItem.Local(song2)))
+                fixture.runtime.skipToQueueIndex(0)
 
-            val newArtUri = "content://media/art/123"
-            fixture.runtime.updateAlbumArtworkInQueue("Album A", newArtUri)
+                val newArtUri = "content://media/art/123"
+                fixture.runtime.updateAlbumArtworkInQueue("Album A", newArtUri)
 
-            val updatedQueueItem = fixture.runtime.queue.value[0] as PlayableItem.Local
-            assertEquals(newArtUri, updatedQueueItem.resolvedArtworkUri)
-            val updatedTimelineItem = controller.items()[0] as PlayableItem.Local
-            assertEquals(newArtUri, updatedTimelineItem.resolvedArtworkUri)
-            assertTrue(controller.operations.contains("replaceMediaItem"))
-        } finally {
-            fixture.close()
+                val updatedQueueItem = fixture.runtime.queue.value[0] as PlayableItem.Local
+                assertEquals(newArtUri, updatedQueueItem.resolvedArtworkUri)
+                val updatedTimelineItem = controller.items()[0] as PlayableItem.Local
+                assertEquals(newArtUri, updatedTimelineItem.resolvedArtworkUri)
+                assertTrue(controller.operations.contains("replaceMediaItem"))
+            } finally {
+                fixture.close()
+            }
         }
-    }
 
     @Test
-    fun skipToQueueIndex_offline_skipsUnresolvedRemoteWithoutResolving() = runBlocking {
-        var resolveCalled = false
-        val streamAccess = object : PlaybackRuntimeStreamAccess {
-            override fun needsResolve(item: PlayableItem.Remote): Boolean = true
-            override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? {
-                resolveCalled = true
-                return null
-            }
-            override suspend fun invalidate(item: PlayableItem.Remote) = Unit
-        }
-        val fixture = fixture(
-            streamAccess = streamAccess,
-            isOnline = { false },
-            attachController = true
-        )
-        try {
-            val events = mutableListOf<String>()
-            val eventJob = fixture.scope.launch {
-                fixture.runtime.events.collect { events.add(it) }
-            }
+    fun skipToQueueIndex_offline_skipsUnresolvedRemoteWithoutResolving() =
+        runBlocking {
+            var resolveCalled = false
+            val streamAccess =
+                object : PlaybackRuntimeStreamAccess {
+                    override fun needsResolve(item: PlayableItem.Remote): Boolean = true
 
-            val remoteItem = remote("yt123", "Remote 1")
-            fixture.runtime.addPlayableBatch(listOf(remoteItem))
-            fixture.runtime.skipToQueueIndex(0)
+                    override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? {
+                        resolveCalled = true
+                        return null
+                    }
 
-            assertFalse("Online resolver should not be called when offline", resolveCalled)
-            assertEquals(listOf("Sin conexión a internet"), events)
-            eventJob.cancel()
-        } finally {
-            fixture.close()
+                    override suspend fun invalidate(item: PlayableItem.Remote) = Unit
+                }
+            val fixture =
+                fixture(
+                    streamAccess = streamAccess,
+                    isOnline = { false },
+                    attachController = true,
+                )
+            try {
+                val events = mutableListOf<String>()
+                val eventJob =
+                    fixture.scope.launch {
+                        fixture.runtime.events.collect { events.add(it) }
+                    }
+
+                val remoteItem = remote("yt123", "Remote 1")
+                fixture.runtime.addPlayableBatch(listOf(remoteItem))
+                fixture.runtime.skipToQueueIndex(0)
+
+                assertFalse("Online resolver should not be called when offline", resolveCalled)
+                assertEquals(listOf("Sin conexión a internet"), events)
+                eventJob.cancel()
+            } finally {
+                fixture.close()
+            }
         }
-    }
 
     private fun fixture(
         streamAccess: PlaybackRuntimeStreamAccess = FakeStreamAccess(),
@@ -2102,9 +2378,10 @@ class PlaybackRuntimeContinuityTest {
             MutableStateFlow(ListenBrainzSettings()),
         listenSettingsReady: MutableStateFlow<Boolean> = MutableStateFlow(true),
         saveDownloads: PlaybackRuntimeSaveDownloads = FakeSaveDownloads(),
-        radioSuggester: PlaybackRuntimeRadioSuggester = PlaybackRuntimeRadioSuggester {
-            RadioSuggestResult(emptyList(), false, false)
-        },
+        radioSuggester: PlaybackRuntimeRadioSuggester =
+            PlaybackRuntimeRadioSuggester {
+                RadioSuggestResult(emptyList(), false, false)
+            },
         controller: FakeController = FakeController(),
         attachController: Boolean = true,
         controllerReconnectBackoffMs: (Int) -> Long = { 0L },
@@ -2114,33 +2391,34 @@ class PlaybackRuntimeContinuityTest {
         loadSongById: suspend (Long) -> Song? = { null },
         touchItemLastPlayed: suspend (PlayableItem, Long) -> Unit = { _, _ -> },
         ioDispatcher: CoroutineDispatcher = dispatcher,
-        isOnline: () -> Boolean = { true }
+        isOnline: () -> Boolean = { true },
     ): Fixture {
         val scope = CoroutineScope(SupervisorJob() + dispatcher)
         val clock = AtomicLong(10_000L)
-        val runtime = PlaybackRuntime(
-            PlaybackRuntimeDependencies(
-                scope = scope,
-                libraryUpdates = libraryUpdates,
-                playbackSettings = playbackSettings,
-                playbackSettingsReady = playbackSettingsReady,
-                listenSettings = listenSettings,
-                listenSettingsReady = listenSettingsReady,
-                persistence = persistence,
-                listenTracker = tracker,
-                streamAccess = streamAccess,
-                saveDownloads = saveDownloads,
-                radioSuggester = radioSuggester,
-                isOnline = isOnline,
-                clockMs = clockMs ?: clock::get,
-                elapsedRealtimeMs = clock::get,
-                controllerReconnectBackoffMs = controllerReconnectBackoffMs,
-                startTicker = startTicker,
-                loadSongById = loadSongById,
-                touchItemLastPlayed = touchItemLastPlayed,
-                ioDispatcher = ioDispatcher
+        val runtime =
+            PlaybackRuntime(
+                PlaybackRuntimeDependencies(
+                    scope = scope,
+                    libraryUpdates = libraryUpdates,
+                    playbackSettings = playbackSettings,
+                    playbackSettingsReady = playbackSettingsReady,
+                    listenSettings = listenSettings,
+                    listenSettingsReady = listenSettingsReady,
+                    persistence = persistence,
+                    listenTracker = tracker,
+                    streamAccess = streamAccess,
+                    saveDownloads = saveDownloads,
+                    radioSuggester = radioSuggester,
+                    isOnline = isOnline,
+                    clockMs = clockMs ?: clock::get,
+                    elapsedRealtimeMs = clock::get,
+                    controllerReconnectBackoffMs = controllerReconnectBackoffMs,
+                    startTicker = startTicker,
+                    loadSongById = loadSongById,
+                    touchItemLastPlayed = touchItemLastPlayed,
+                    ioDispatcher = ioDispatcher,
+                ),
             )
-        )
         if (attachController) runtime.attachControllerForTest(controller)
         return Fixture(runtime, controller, scope, clock)
     }
@@ -2149,7 +2427,7 @@ class PlaybackRuntimeContinuityTest {
         val runtime: PlaybackRuntime,
         val controller: FakeController,
         val scope: CoroutineScope,
-        val clock: AtomicLong
+        val clock: AtomicLong,
     ) {
         fun close() = scope.cancel()
     }
@@ -2157,18 +2435,21 @@ class PlaybackRuntimeContinuityTest {
     private fun assertPhysicalQueueAndNextAreLinear(fixture: Fixture) {
         assertTrue(fixture.runtime.isShuffle.value)
         assertEquals(
-            fixture.runtime.queue.value.map { it.queueEntryId },
-            fixture.controller.items().map { it.queueEntryId }
+            fixture.runtime.queue.value
+                .map { it.queueEntryId },
+            fixture.controller.items().map { it.queueEntryId },
         )
         val currentIndex = fixture.controller.currentMediaItemIndex
         assertEquals(
-            fixture.runtime.queue.value.getOrNull(currentIndex + 1)?.queueEntryId,
-            fixture.controller.nextQueueEntryId()
+            fixture.runtime.queue.value
+                .getOrNull(currentIndex + 1)
+                ?.queueEntryId,
+            fixture.controller.nextQueueEntryId(),
         )
     }
 
     private class FakeController(
-        private val prepareBecomesReady: Boolean = true
+        private val prepareBecomesReady: Boolean = true,
     ) : PlaybackControllerFacade {
         private var listener: PlaybackControllerFacade.Listener? = null
         private val timeline = mutableListOf<PlayableItem>()
@@ -2234,7 +2515,7 @@ class PlaybackRuntimeContinuityTest {
         override fun setMediaItems(
             items: List<PlayableItem>,
             startIndex: Int,
-            startPositionMs: Long
+            startPositionMs: Long,
         ) {
             checkValid()
             operations += "setMediaItems"
@@ -2250,7 +2531,10 @@ class PlaybackRuntimeContinuityTest {
             listener?.onTimelineChanged()
         }
 
-        override fun replaceMediaItem(index: Int, item: PlayableItem) {
+        override fun replaceMediaItem(
+            index: Int,
+            item: PlayableItem,
+        ) {
             checkValid()
             operations += "replaceMediaItem"
             timelineMutationCount++
@@ -2267,15 +2551,19 @@ class PlaybackRuntimeContinuityTest {
             listener?.onTimelineChanged()
         }
 
-        override fun addMediaItems(index: Int, items: List<PlayableItem>) {
+        override fun addMediaItems(
+            index: Int,
+            items: List<PlayableItem>,
+        ) {
             checkValid()
             operations += "addMediaItemsAt"
             timelineMutationCount++
             val currentQueueEntryId = timeline.getOrNull(this.index)?.queueEntryId
             timeline.addAll(index, items)
-            this.index = currentQueueEntryId?.let { queueEntryId ->
-                timeline.indexOfFirst { it.queueEntryId == queueEntryId }
-            }?.takeIf { it >= 0 } ?: this.index
+            this.index = currentQueueEntryId
+                ?.let { queueEntryId ->
+                    timeline.indexOfFirst { it.queueEntryId == queueEntryId }
+                }?.takeIf { it >= 0 } ?: this.index
             regenerateShuffleOrderAfterTimelineMutation()
             listener?.onTimelineChanged()
         }
@@ -2286,37 +2574,46 @@ class PlaybackRuntimeContinuityTest {
             timelineMutationCount++
             val currentQueueEntryId = timeline.getOrNull(this.index)?.queueEntryId
             timeline.removeAt(index)
-            this.index = currentQueueEntryId?.let { queueEntryId ->
-                timeline.indexOfFirst { it.queueEntryId == queueEntryId }
-            }?.takeIf { it >= 0 }
+            this.index = currentQueueEntryId
+                ?.let { queueEntryId ->
+                    timeline.indexOfFirst { it.queueEntryId == queueEntryId }
+                }?.takeIf { it >= 0 }
                 ?: this.index.coerceAtMost(timeline.lastIndex.coerceAtLeast(0))
             regenerateShuffleOrderAfterTimelineMutation()
             listener?.onTimelineChanged()
         }
 
-        override fun removeMediaItems(fromIndex: Int, toIndex: Int) {
+        override fun removeMediaItems(
+            fromIndex: Int,
+            toIndex: Int,
+        ) {
             checkValid()
             operations += "removeMediaItems"
             timelineMutationCount++
             val currentQueueEntryId = timeline.getOrNull(index)?.queueEntryId
             repeat(toIndex - fromIndex) { timeline.removeAt(fromIndex) }
-            index = currentQueueEntryId?.let { queueEntryId ->
-                timeline.indexOfFirst { it.queueEntryId == queueEntryId }
-            }?.takeIf { it >= 0 }
+            index = currentQueueEntryId
+                ?.let { queueEntryId ->
+                    timeline.indexOfFirst { it.queueEntryId == queueEntryId }
+                }?.takeIf { it >= 0 }
                 ?: index.coerceAtMost(timeline.lastIndex.coerceAtLeast(0))
             regenerateShuffleOrderAfterTimelineMutation()
             listener?.onTimelineChanged()
         }
 
-        override fun moveMediaItem(fromIndex: Int, toIndex: Int) {
+        override fun moveMediaItem(
+            fromIndex: Int,
+            toIndex: Int,
+        ) {
             checkValid()
             operations += "moveMediaItem"
             timelineMutationCount++
             val currentQueueEntryId = timeline.getOrNull(index)?.queueEntryId
             timeline.add(toIndex, timeline.removeAt(fromIndex))
-            index = currentQueueEntryId?.let { queueEntryId ->
-                timeline.indexOfFirst { it.queueEntryId == queueEntryId }
-            }?.takeIf { it >= 0 } ?: index
+            index = currentQueueEntryId
+                ?.let { queueEntryId ->
+                    timeline.indexOfFirst { it.queueEntryId == queueEntryId }
+                }?.takeIf { it >= 0 } ?: index
             regenerateShuffleOrderAfterTimelineMutation()
             listener?.onTimelineChanged()
         }
@@ -2350,7 +2647,10 @@ class PlaybackRuntimeContinuityTest {
             listener?.onPositionDiscontinuity(positionMs)
         }
 
-        override fun seekTo(index: Int, positionMs: Long) {
+        override fun seekTo(
+            index: Int,
+            positionMs: Long,
+        ) {
             checkValid()
             operations += "seekToIndex"
             this.index = index
@@ -2358,7 +2658,7 @@ class PlaybackRuntimeContinuityTest {
             listener?.onPositionDiscontinuity(positionMs)
             listener?.onMediaItemTransition(
                 timeline.getOrNull(index),
-                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK
+                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK,
             )
         }
 
@@ -2377,13 +2677,18 @@ class PlaybackRuntimeContinuityTest {
         }
 
         override fun hasNextMediaItem(): Boolean = checked { nextMediaItemIndex() != null }
+
         override fun hasPreviousMediaItem(): Boolean = checked { previousMediaItemIndex() != null }
+
         override fun release() {
             releaseCount.incrementAndGet()
             listener = null
         }
 
-        fun transitionTo(nextIndex: Int, reason: Int) {
+        fun transitionTo(
+            nextIndex: Int,
+            reason: Int,
+        ) {
             checkValid()
             index = nextIndex
             positionMs = 0L
@@ -2417,7 +2722,7 @@ class PlaybackRuntimeContinuityTest {
             positionMs: Long,
             playWhenReady: Boolean,
             playbackState: Int,
-            isPlaying: Boolean = false
+            isPlaying: Boolean = false,
         ) {
             checkValid()
             timeline.clear()
@@ -2438,7 +2743,7 @@ class PlaybackRuntimeContinuityTest {
         fun externalSetTimeline(
             items: List<PlayableItem>,
             currentIndex: Int,
-            positionMs: Long
+            positionMs: Long,
         ) {
             checkValid()
             timeline.clear()
@@ -2471,8 +2776,7 @@ class PlaybackRuntimeContinuityTest {
             updatePlaying(wantsPlay)
         }
 
-        fun nextQueueEntryId(): String? =
-            nextMediaItemIndex()?.let { timeline.getOrNull(it)?.queueEntryId }
+        fun nextQueueEntryId(): String? = nextMediaItemIndex()?.let { timeline.getOrNull(it)?.queueEntryId }
 
         private fun nextMediaItemIndex(): Int? = adjacentMediaItemIndex(offset = 1)
 
@@ -2522,19 +2826,19 @@ class PlaybackRuntimeContinuityTest {
         val resolvedQueries = mutableListOf<String>()
         val invalidateCount = AtomicInteger(0)
 
-        override fun needsResolve(item: PlayableItem.Remote): Boolean =
-            item.resolved?.audioUrl.isNullOrBlank()
+        override fun needsResolve(item: PlayableItem.Remote): Boolean = item.resolved?.audioUrl.isNullOrBlank()
 
         override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote {
             val query = item.youtubeQueryOrId.orEmpty()
             resolvedQueries += query
             return item.copy(
-                resolved = ResolvedStream(
-                    audioUrl = "https://cdn.example/$query",
-                    userAgent = "fake-UA",
-                    videoId = "video-$query",
-                    resolvedAtEpochMs = 10_000L
-                )
+                resolved =
+                    ResolvedStream(
+                        audioUrl = "https://cdn.example/$query",
+                        userAgent = "fake-UA",
+                        videoId = "video-$query",
+                        resolvedAtEpochMs = 10_000L,
+                    ),
             )
         }
 
@@ -2544,13 +2848,12 @@ class PlaybackRuntimeContinuityTest {
     }
 
     private class DelayedStreamAccess(
-        private val delayedQuery: String
+        private val delayedQuery: String,
     ) : PlaybackRuntimeStreamAccess {
         val started = CompletableDeferred<Unit>()
         val allowResolution = CompletableDeferred<Unit>()
 
-        override fun needsResolve(item: PlayableItem.Remote): Boolean =
-            item.resolved?.audioUrl.isNullOrBlank()
+        override fun needsResolve(item: PlayableItem.Remote): Boolean = item.resolved?.audioUrl.isNullOrBlank()
 
         override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote {
             val query = item.youtubeQueryOrId.orEmpty()
@@ -2565,7 +2868,7 @@ class PlaybackRuntimeContinuityTest {
     }
 
     private class NonCancellableDelayedFailureStreamAccess(
-        private val delayedQuery: String
+        private val delayedQuery: String,
     ) : PlaybackRuntimeStreamAccess {
         val started = CompletableDeferred<Unit>()
         val allowCompletion = CompletableDeferred<Unit>()
@@ -2584,13 +2887,12 @@ class PlaybackRuntimeContinuityTest {
     }
 
     private class NonCancellableDelayedSuccessStreamAccess(
-        private val delayedQuery: String
+        private val delayedQuery: String,
     ) : PlaybackRuntimeStreamAccess {
         val started = CompletableDeferred<Unit>()
         val allowCompletion = CompletableDeferred<Unit>()
 
-        override fun needsResolve(item: PlayableItem.Remote): Boolean =
-            item.resolved?.audioUrl.isNullOrBlank()
+        override fun needsResolve(item: PlayableItem.Remote): Boolean = item.resolved?.audioUrl.isNullOrBlank()
 
         override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote {
             if (item.youtubeQueryOrId == delayedQuery) {
@@ -2604,12 +2906,11 @@ class PlaybackRuntimeContinuityTest {
     }
 
     private class SelectiveStreamAccess(
-        private val successfulQueries: Set<String>
+        private val successfulQueries: Set<String>,
     ) : PlaybackRuntimeStreamAccess {
         val resolvedQueries = mutableListOf<String>()
 
-        override fun needsResolve(item: PlayableItem.Remote): Boolean =
-            item.resolved?.audioUrl.isNullOrBlank()
+        override fun needsResolve(item: PlayableItem.Remote): Boolean = item.resolved?.audioUrl.isNullOrBlank()
 
         override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? {
             val query = item.youtubeQueryOrId.orEmpty()
@@ -2622,12 +2923,15 @@ class PlaybackRuntimeContinuityTest {
 
     private class FakePersistence(
         private val lastPlayedToLoad: LastPlayedSnapshot? = null,
-        private val queueToLoad: QueueSnapshot? = null
+        private val queueToLoad: QueueSnapshot? = null,
     ) : PlaybackRuntimePersistence {
         val loadQueueCount = AtomicInteger(0)
+
         @Volatile
         var lastQueue: QueueSnapshot? = null
+
         override suspend fun loadLastPlayed(): LastPlayedSnapshot? = lastPlayedToLoad
+
         override suspend fun loadQueue(): QueueSnapshot? {
             loadQueueCount.incrementAndGet()
             return queueToLoad
@@ -2636,7 +2940,7 @@ class PlaybackRuntimeContinuityTest {
         override suspend fun saveSession(
             lastPlayed: LastPlayedSnapshot?,
             queue: QueueSnapshot?,
-            clearQueue: Boolean
+            clearQueue: Boolean,
         ) {
             lastQueue = queue
         }
@@ -2651,7 +2955,7 @@ class PlaybackRuntimeContinuityTest {
         override suspend fun saveSession(
             lastPlayed: LastPlayedSnapshot?,
             queue: QueueSnapshot?,
-            clearQueue: Boolean
+            clearQueue: Boolean,
         ) {
             if (callCount.incrementAndGet() == 1) {
                 firstSaveStarted.complete(Unit)
@@ -2662,7 +2966,7 @@ class PlaybackRuntimeContinuityTest {
     }
 
     private class SequencedConnector(
-        results: List<Result<PlaybackControllerFacade>>
+        results: List<Result<PlaybackControllerFacade>>,
     ) : PlaybackControllerConnector {
         private val remaining = ArrayDeque(results)
         val attemptCount = AtomicInteger(0)
@@ -2672,31 +2976,43 @@ class PlaybackRuntimeContinuityTest {
             return ImmediateConnection(
                 checkNotNull(remaining.removeFirstOrNull()) {
                     "No fake controller result left"
-                }
+                },
             )
         }
     }
 
     private class ImmediateConnection(
-        private val result: Result<PlaybackControllerFacade>
+        private val result: Result<PlaybackControllerFacade>,
     ) : PlaybackControllerConnection {
         override fun addListener(listener: () -> Unit) = listener()
+
         override fun get(): PlaybackControllerFacade = result.getOrThrow()
+
         override fun cancel() = Unit
     }
 
     private class FakeListenTracker : PlaybackRuntimeListenTracker {
         val tickCount = AtomicInteger(0)
+
         @Volatile
         var lastChangedSongId: Long? = null
 
-        override fun onTrackChanged(song: Song?, hint: PlaybackChangeHint) {
+        override fun onTrackChanged(
+            song: Song?,
+            hint: PlaybackChangeHint,
+        ) {
             lastChangedSongId = song?.id
         }
 
-        override fun onDurationKnown(songId: Long, durationMs: Long) = Unit
+        override fun onDurationKnown(
+            songId: Long,
+            durationMs: Long,
+        ) = Unit
 
-        override fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long) {
+        override fun onPlaybackTick(
+            isPlaying: Boolean,
+            elapsedRealtimeMs: Long,
+        ) {
             tickCount.incrementAndGet()
         }
 
@@ -2710,17 +3026,15 @@ class PlaybackRuntimeContinuityTest {
                     id = 99L,
                     uriString = "/saved/${remote.title}.m4a",
                     title = remote.title,
-                    artist = remote.artist
-                )
+                    artist = remote.artist,
+                ),
             )
-        }
+        },
     ) : PlaybackRuntimeSaveDownloads {
         override val downloads = MutableStateFlow<List<ActiveDownload>>(emptyList())
         val saveCount = AtomicInteger(0)
 
-        override suspend fun save(
-            remote: PlayableItem.Remote
-        ): SaveWhileListeningDownloadResult {
+        override suspend fun save(remote: PlayableItem.Remote): SaveWhileListeningDownloadResult {
             saveCount.incrementAndGet()
             return resultFor(remote)
         }
@@ -2728,59 +3042,69 @@ class PlaybackRuntimeContinuityTest {
         override fun dismiss(id: String) = Unit
     }
 
-    private fun QueueSnapshot.titles(): List<String> = items.map { item ->
-        when (item) {
-            is PersistedQueueItem.Local -> item.title
-            is PersistedQueueItem.Remote -> item.identity.title
+    private fun QueueSnapshot.titles(): List<String> =
+        items.map { item ->
+            when (item) {
+                is PersistedQueueItem.Local -> item.title
+                is PersistedQueueItem.Remote -> item.identity.title
+            }
         }
-    }
 
     companion object {
         private fun persistedLocal(song: Song): PersistedQueueItem.Local =
             PersistedQueueItem.Local(
                 songId = song.id,
                 uriString = song.uriString,
-                identity = TrackIdentity(
-                    title = song.title,
-                    artist = song.artist,
-                    album = song.album,
-                    artworkUri = song.artworkUri,
-                    durationMs = song.durationMs,
-                    trackNumber = song.trackNumber
-                )
+                identity =
+                    TrackIdentity(
+                        title = song.title,
+                        artist = song.artist,
+                        album = song.album,
+                        artworkUri = song.artworkUri,
+                        durationMs = song.durationMs,
+                        trackNumber = song.trackNumber,
+                    ),
             )
 
         private fun resolvedRemote(
             item: PlayableItem.Remote,
-            query: String
-        ): PlayableItem.Remote = item.copy(
-            resolved = ResolvedStream(
-                audioUrl = "https://cdn.example/$query",
-                userAgent = "fake-UA",
-                videoId = "video-$query",
-                resolvedAtEpochMs = 10_000L
+            query: String,
+        ): PlayableItem.Remote =
+            item.copy(
+                resolved =
+                    ResolvedStream(
+                        audioUrl = "https://cdn.example/$query",
+                        userAgent = "fake-UA",
+                        videoId = "video-$query",
+                        resolvedAtEpochMs = 10_000L,
+                    ),
             )
-        )
 
         private fun remote(
             query: String,
             title: String,
-            durationMs: Long = 180_000L
-        ): PlayableItem.Remote = PlayableItem.remoteFrom(
-            identity = TrackIdentity(
+            durationMs: Long = 180_000L,
+        ): PlayableItem.Remote =
+            PlayableItem.remoteFrom(
+                identity =
+                    TrackIdentity(
+                        title = title,
+                        artist = "Artist",
+                        durationMs = durationMs,
+                    ),
+                youtubeQueryOrId = query,
+            )
+
+        private fun song(
+            id: Long,
+            title: String,
+        ): Song =
+            Song(
+                id = id,
+                uriString = "/music/$id.mp3",
                 title = title,
                 artist = "Artist",
-                durationMs = durationMs
-            ),
-            youtubeQueryOrId = query
-        )
-
-        private fun song(id: Long, title: String): Song = Song(
-            id = id,
-            uriString = "/music/$id.mp3",
-            title = title,
-            artist = "Artist",
-            durationMs = 180_000L
-        )
+                durationMs = 180_000L,
+            )
     }
 }

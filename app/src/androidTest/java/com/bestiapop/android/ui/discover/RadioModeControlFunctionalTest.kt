@@ -39,7 +39,7 @@ class RadioModeControlFunctionalTest {
                     onStop = {
                         stopCalls++
                         active = false
-                    }
+                    },
                 )
             }
         }
@@ -53,7 +53,7 @@ class RadioModeControlFunctionalTest {
         composeRule.waitForIdle()
         assertEquals(
             listOf(RadioMode.KNOWN, RadioMode.NEW, RadioMode.BOTH),
-            selectedModes
+            selectedModes,
         )
         assertEquals(1, stopCalls)
 

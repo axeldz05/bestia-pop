@@ -12,58 +12,73 @@ data class BrowseLocalLibrarySnapshot(
     val songs: List<Song>,
     val albums: List<Album>,
     val artists: List<Artist>,
-    val playlists: List<Playlist>
+    val playlists: List<Playlist>,
 )
 
 class BrowseLocalLibraryUseCase(
-    private val library: GetLibrarySongsUseCase = GetLibrarySongsUseCase()
+    private val library: GetLibrarySongsUseCase = GetLibrarySongsUseCase(),
 ) {
     fun snapshot(
         songs: List<Song>,
         overrides: List<AlbumOverride>,
-        playlists: List<Playlist>
+        playlists: List<Playlist>,
     ): BrowseLocalLibrarySnapshot {
-        val orderedSongs = library.execute(
-            songs = songs,
-            query = "",
-            sortOption = SortOption.TITLE,
-            sortDirection = SortDirection.ASC
-        )
+        val orderedSongs =
+            library.execute(
+                songs = songs,
+                query = "",
+                sortOption = SortOption.TITLE,
+                sortDirection = SortDirection.ASC,
+            )
         val overrideMap = overrides.associateBy(AlbumOverride::albumKey)
         return BrowseLocalLibrarySnapshot(
             songs = orderedSongs,
-            albums = library.extractAlbums(
-                songs = orderedSongs,
-                overrides = overrideMap,
-                sortOption = SortOption.TITLE,
-                sortDirection = SortDirection.ASC
-            ),
-            artists = library.extractArtists(
-                songs = orderedSongs,
-                sortOption = SortOption.TITLE,
-                sortDirection = SortDirection.ASC
-            ),
-            playlists = playlists.sortedWith(
-                compareBy<Playlist> { it.name.lowercase() }.thenBy(Playlist::id)
-            )
+            albums =
+                library.extractAlbums(
+                    songs = orderedSongs,
+                    overrides = overrideMap,
+                    sortOption = SortOption.TITLE,
+                    sortDirection = SortDirection.ASC,
+                ),
+            artists =
+                library.extractArtists(
+                    songs = orderedSongs,
+                    sortOption = SortOption.TITLE,
+                    sortDirection = SortDirection.ASC,
+                ),
+            playlists =
+                playlists.sortedWith(
+                    compareBy<Playlist> { it.name.lowercase() }.thenBy(Playlist::id),
+                ),
         )
     }
 
-    fun songsForAlbum(snapshot: BrowseLocalLibrarySnapshot, albumKey: String): List<Song> =
-        library.songsForAlbum(snapshot.songs, albumKey)
+    fun songsForAlbum(
+        snapshot: BrowseLocalLibrarySnapshot,
+        albumKey: String,
+    ): List<Song> = library.songsForAlbum(snapshot.songs, albumKey)
 
-    fun songsForArtist(snapshot: BrowseLocalLibrarySnapshot, artistName: String): List<Song> =
-        library.songsForArtist(snapshot.songs, artistName)
+    fun songsForArtist(
+        snapshot: BrowseLocalLibrarySnapshot,
+        artistName: String,
+    ): List<Song> = library.songsForArtist(snapshot.songs, artistName)
 
-    fun search(snapshot: BrowseLocalLibrarySnapshot, query: String): List<Song> =
+    fun search(
+        snapshot: BrowseLocalLibrarySnapshot,
+        query: String,
+    ): List<Song> =
         library.execute(
             songs = snapshot.songs,
             query = query,
             sortOption = SortOption.TITLE,
-            sortDirection = SortDirection.ASC
+            sortDirection = SortDirection.ASC,
         )
 
-    fun <T> page(items: List<T>, page: Int, pageSize: Int): List<T> {
+    fun <T> page(
+        items: List<T>,
+        page: Int,
+        pageSize: Int,
+    ): List<T> {
         if (page < 0 || pageSize <= 0) return emptyList()
         val safePageSize = pageSize.coerceAtMost(MAX_PAGE_SIZE)
         val from = page.toLong() * safePageSize

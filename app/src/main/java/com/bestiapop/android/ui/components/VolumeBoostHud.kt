@@ -45,19 +45,20 @@ fun VolumeBoostHud(
     volumeLevel: Float,
     visible: Boolean,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(WindowInsets.statusBars.asPaddingValues()),
-        contentAlignment = Alignment.TopCenter
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(WindowInsets.statusBars.asPaddingValues()),
+        contentAlignment = Alignment.TopCenter,
     ) {
         AnimatedVisibility(
             visible = visible,
             enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-            modifier = Modifier.padding(top = 12.dp)
+            modifier = Modifier.padding(top = 12.dp),
         ) {
             val percentage = (volumeLevel.coerceIn(1f, 2f) * 100f).roundToInt()
             val boostFraction = ((volumeLevel - 1f) / 1f).coerceIn(0f, 1f)
@@ -67,49 +68,51 @@ fun VolumeBoostHud(
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.95f),
                 shadowElevation = 8.dp,
-                modifier = Modifier
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f),
-                        shape = RoundedCornerShape(24.dp)
-                    )
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onDismiss
-                    )
+                modifier =
+                    Modifier
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(24.dp),
+                        ).clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDismiss,
+                        ),
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                         contentDescription = "Volume Boost",
                         tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(22.dp),
                     )
 
                     Column {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Text(
                                 text = "Boost",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 11.sp
-                                ),
-                                color = MaterialTheme.colorScheme.tertiary
+                                style =
+                                    MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 11.sp,
+                                    ),
+                                color = MaterialTheme.colorScheme.tertiary,
                             )
                             Text(
                                 text = if (isMax) "$percentage% (MÁX)" else "$percentage%",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface
+                                style =
+                                    MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                    ),
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
 
@@ -117,13 +120,14 @@ fun VolumeBoostHud(
 
                         LinearProgressIndicator(
                             progress = { boostFraction },
-                            modifier = Modifier
-                                .width(100.dp)
-                                .height(5.dp)
-                                .clip(RoundedCornerShape(3.dp)),
+                            modifier =
+                                Modifier
+                                    .width(100.dp)
+                                    .height(5.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
                             color = MaterialTheme.colorScheme.tertiary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            strokeCap = StrokeCap.Round
+                            strokeCap = StrokeCap.Round,
                         )
                     }
                 }

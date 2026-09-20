@@ -29,28 +29,36 @@ internal class PlaybackAnalyticsCoordinator(
     private val getLastSeekTimestamp: () -> Long,
     private val clearRemoteRecoveryAfterProgress: () -> Unit,
     private val clearRejectedQueueEntries: () -> Unit,
-    private val maybeSaveWhileListening: (PlayableItem.Remote, SaveWhileListeningEvent, Long, Long) -> Unit
+    private val maybeSaveWhileListening: (PlayableItem.Remote, SaveWhileListeningEvent, Long, Long) -> Unit,
 ) {
     private var lastTouchedItemKey: String? = null
     private var lyricsHydrateJob: Job? = null
 
-    fun creditItemPlayback(item: PlayableItem?, completed: Boolean = false) {
-        val playedMs = if (completed && item != null && item.durationMs > 0L) {
-            item.durationMs
-        } else {
-            getPlaybackPositionMs()
-        }
+    fun creditItemPlayback(
+        item: PlayableItem?,
+        completed: Boolean = false,
+    ) {
+        val playedMs =
+            if (completed && item != null && item.durationMs > 0L) {
+                item.durationMs
+            } else {
+                getPlaybackPositionMs()
+            }
         if (playedMs > 0L) {
             dependencies.listenTracker.creditPlaybackTime(playedMs)
         }
     }
 
-    fun touchLastPlayed(item: PlayableItem?, force: Boolean = false) {
+    fun touchLastPlayed(
+        item: PlayableItem?,
+        force: Boolean = false,
+    ) {
         if (item == null) return
-        val itemKey = when (item) {
-            is PlayableItem.Local -> "local:${item.song.id}"
-            is PlayableItem.Remote -> "remote:${item.mediaId}"
-        }
+        val itemKey =
+            when (item) {
+                is PlayableItem.Local -> "local:${item.song.id}"
+                is PlayableItem.Remote -> "remote:${item.mediaId}"
+            }
         if (!force && itemKey == lastTouchedItemKey) return
         lastTouchedItemKey = itemKey
         val now = System.currentTimeMillis()
@@ -66,16 +74,20 @@ internal class PlaybackAnalyticsCoordinator(
 
     fun hydrateCurrentSongLyrics(songId: Long) {
         lyricsHydrateJob?.cancel()
-        lyricsHydrateJob = scope.launch(dependencies.ioDispatcher) {
-            val full = dependencies.loadSongById(songId) ?: return@launch
-            if (full.lyrics.isNullOrEmpty()) return@launch
-            withContext(scope.coroutineContext) {
-                applyLyricsToCurrent(songId, full.lyrics)
+        lyricsHydrateJob =
+            scope.launch(dependencies.ioDispatcher) {
+                val full = dependencies.loadSongById(songId) ?: return@launch
+                if (full.lyrics.isNullOrEmpty()) return@launch
+                withContext(scope.coroutineContext) {
+                    applyLyricsToCurrent(songId, full.lyrics)
+                }
             }
-        }
     }
 
-    fun updateCurrentSongLyrics(songId: Long, lyrics: String?) {
+    fun updateCurrentSongLyrics(
+        songId: Long,
+        lyrics: String?,
+    ) {
         applyLyricsToCurrent(songId, lyrics)
     }
 
@@ -87,7 +99,10 @@ internal class PlaybackAnalyticsCoordinator(
         }
     }
 
-    fun applyLyricsToCurrent(songId: Long, lyrics: String?) {
+    fun applyLyricsToCurrent(
+        songId: Long,
+        lyrics: String?,
+    ) {
         val current = getCurrentSong()
         if (current?.id == songId) {
             setCurrentSong(current.copy(lyrics = lyrics))
@@ -131,7 +146,7 @@ internal class PlaybackAnalyticsCoordinator(
                             setCurrentItem(
                                 updated,
                                 false,
-                                PlaybackChangeHint.METADATA_UPDATE
+                                PlaybackChangeHint.METADATA_UPDATE,
                             )
                         }
                     }
@@ -142,7 +157,7 @@ internal class PlaybackAnalyticsCoordinator(
                     remote,
                     SaveWhileListeningEvent.PROGRESS,
                     getPlaybackPositionMs(),
-                    remote.durationMs.takeIf { it > 0L } ?: duration
+                    remote.durationMs.takeIf { it > 0L } ?: duration,
                 )
             }
         } else if (!player.isPlaying && player.mediaItemCount > 0) {
@@ -150,7 +165,7 @@ internal class PlaybackAnalyticsCoordinator(
         }
         dependencies.listenTracker.onPlaybackTick(
             player.isPlaying,
-            dependencies.elapsedRealtimeMs()
+            dependencies.elapsedRealtimeMs(),
         )
     }
 }

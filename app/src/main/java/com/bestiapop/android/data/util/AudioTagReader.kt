@@ -17,18 +17,19 @@ internal data class RawAudioTags(
     val trackNumber: Int = 0,
     val durationMs: Long = 0L,
     val lyrics: String? = null,
-    val artworkBytes: ByteArray? = null
+    val artworkBytes: ByteArray? = null,
 ) {
     val hasIdentity: Boolean
         get() = !artist.isNullOrBlank() || !album.isNullOrBlank() || !title.isNullOrBlank()
 
     val isComplete: Boolean
-        get() = !title.isNullOrBlank() &&
-            !artist.isNullOrBlank() &&
-            !album.isNullOrBlank() &&
-            durationMs > 0L &&
-            artworkBytes != null &&
-            artworkBytes.isNotEmpty()
+        get() =
+            !title.isNullOrBlank() &&
+                !artist.isNullOrBlank() &&
+                !album.isNullOrBlank() &&
+                durationMs > 0L &&
+                artworkBytes != null &&
+                artworkBytes.isNotEmpty()
 }
 
 /**
@@ -36,7 +37,6 @@ internal data class RawAudioTags(
  * Android [android.media.MediaMetadataRetriever] often returns null for ID3v2.4 / UTF-8.
  */
 object AudioTagReader {
-
     fun isSupportedExtension(file: File): Boolean = AudioTagWriter.isSupportedExtension(file)
 
     internal fun read(file: File): RawAudioTags? {
@@ -54,13 +54,14 @@ object AudioTagReader {
                 album = tag.tagValue(FieldKey.ALBUM),
                 genre = tag.tagValue(FieldKey.GENRE),
                 year = parseTagYear(tag.tagValue(FieldKey.YEAR)),
-                trackNumber = parseCdTrackNumber(
-                    tag.tagValue(FieldKey.TRACK),
-                    tag.tagValue(FieldKey.DISC_NO)
-                ),
+                trackNumber =
+                    parseCdTrackNumber(
+                        tag.tagValue(FieldKey.TRACK),
+                        tag.tagValue(FieldKey.DISC_NO),
+                    ),
                 durationMs = durationMs,
                 lyrics = tag.tagValue(FieldKey.LYRICS),
-                artworkBytes = tag.artworkBytes()
+                artworkBytes = tag.artworkBytes(),
             )
         } catch (_: Exception) {
             null
@@ -70,7 +71,10 @@ object AudioTagReader {
     fun readArtworkBytes(file: File): ByteArray? = read(file)?.artworkBytes
 }
 
-internal fun coalesceRawTags(primary: RawAudioTags?, fallback: RawAudioTags?): RawAudioTags {
+internal fun coalesceRawTags(
+    primary: RawAudioTags?,
+    fallback: RawAudioTags?,
+): RawAudioTags {
     if (primary == null) return fallback ?: RawAudioTags()
     if (fallback == null) return primary
     return RawAudioTags(
@@ -82,14 +86,19 @@ internal fun coalesceRawTags(primary: RawAudioTags?, fallback: RawAudioTags?): R
         trackNumber = if (primary.trackNumber > 0) primary.trackNumber else fallback.trackNumber,
         durationMs = if (primary.durationMs > 0L) primary.durationMs else fallback.durationMs,
         lyrics = primary.lyrics.orBlankToNull() ?: fallback.lyrics,
-        artworkBytes = primary.artworkBytes?.takeIf { it.isNotEmpty() } ?: fallback.artworkBytes
+        artworkBytes = primary.artworkBytes?.takeIf { it.isNotEmpty() } ?: fallback.artworkBytes,
     )
 }
 
 internal fun parseTagYear(raw: String?): Int {
     val s = raw?.trim().orEmpty()
     if (s.isEmpty()) return 0
-    val four = Regex("""\b((?:19|20)\d{2})\b""").find(s)?.groupValues?.get(1)?.toIntOrNull()
+    val four =
+        Regex("""\b((?:19|20)\d{2})\b""")
+            .find(s)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
     return four ?: 0
 }
 

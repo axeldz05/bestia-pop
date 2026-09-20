@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AudioPersistRefTest {
-
     private val safPretext =
         "content://com.android.externalstorage.documents/tree/primary%3AMusic%2FBestiaPop/document/primary%3AMusic%2FBestiaPop%2F01_pretext.mp3"
     private val absPretext = "/storage/emulated/0/Music/BestiaPop/01_pretext.mp3"
@@ -19,10 +18,11 @@ class AudioPersistRefTest {
 
     @Test
     fun canonicalize_absWithCacheFolder_fixesFolderPath() {
-        val ref = AudioPersistRef.canonicalize(
-            absPretext,
-            "/data/user/0/com.bestiapop.android/cache"
-        )
+        val ref =
+            AudioPersistRef.canonicalize(
+                absPretext,
+                "/data/user/0/com.bestiapop.android/cache",
+            )
         assertEquals(absPretext, ref.uriString)
         assertEquals(absParent, ref.folderPath)
     }

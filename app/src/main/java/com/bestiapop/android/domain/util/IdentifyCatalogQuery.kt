@@ -7,8 +7,10 @@ import com.bestiapop.android.data.model.IdentifySearchFilters
  * (`artist:"…" album:"…" [free text] [year]`).
  */
 object IdentifyCatalogQuery {
-
-    fun build(freeText: String?, filters: IdentifySearchFilters = IdentifySearchFilters()): String {
+    fun build(
+        freeText: String?,
+        filters: IdentifySearchFilters = IdentifySearchFilters(),
+    ): String {
         val f = filters.normalized()
         val parts = ArrayList<String>(4)
         if (f.artist.isNotEmpty()) parts.add("artist:\"${escapeQuotes(f.artist)}\"")

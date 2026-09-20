@@ -15,10 +15,10 @@ import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -49,19 +49,20 @@ class LibraryPermissionFunctionalTest {
     private var originalInitialScanCompleted = true
 
     @Before
-    fun prepareUnscannedLibraryWithPermission() = runBlocking {
-        originalInitialScanCompleted = preferences.isInitialScanCompleted()
-        withContext(Dispatchers.IO) {
-            database.clearAllTables()
-            preferences.setInitialScanCompleted(false)
+    fun prepareUnscannedLibraryWithPermission() =
+        runBlocking {
+            originalInitialScanCompleted = preferences.isInitialScanCompleted()
+            withContext(Dispatchers.IO) {
+                database.clearAllTables()
+                preferences.setInitialScanCompleted(false)
+            }
+            listOf(
+                Manifest.permission.READ_MEDIA_AUDIO,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ).forEach { permission ->
+                grantPermission(permission)
+            }
         }
-        listOf(
-            Manifest.permission.READ_MEDIA_AUDIO,
-            Manifest.permission.POST_NOTIFICATIONS
-        ).forEach { permission ->
-            grantPermission(permission)
-        }
-    }
 
     private fun grantPermission(permission: String) {
         runCatching {
@@ -69,33 +70,37 @@ class LibraryPermissionFunctionalTest {
         }
         runCatching {
             instrumentation.uiAutomation.executeShellCommand("pm grant ${context.packageName} $permission").use { pfd ->
-                android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).readBytes()
+                android.os.ParcelFileDescriptor
+                    .AutoCloseInputStream(pfd)
+                    .readBytes()
             }
         }
     }
 
     @After
-    fun restoreLibraryState() = runBlocking {
-        withContext(Dispatchers.IO) {
-            database.clearAllTables()
-            preferences.setInitialScanCompleted(originalInitialScanCompleted)
+    fun restoreLibraryState() =
+        runBlocking {
+            withContext(Dispatchers.IO) {
+                database.clearAllTables()
+                preferences.setInitialScanCompleted(originalInitialScanCompleted)
+            }
         }
-    }
 
     @Test
     fun grantedAudioPermission_firstLaunchCompletesInitialImportOnce() {
         assertEquals(
             PackageManager.PERMISSION_GRANTED,
-            context.checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO)
+            context.checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO),
         )
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
-            val completed = runBlocking {
-                withTimeout(240_000L) {
-                    preferences.initialScanCompletedFlow.first { it }
+            val completed =
+                runBlocking {
+                    withTimeout(240_000L) {
+                        preferences.initialScanCompletedFlow.first { it }
+                    }
                 }
-            }
             assertTrue(completed)
         }
     }

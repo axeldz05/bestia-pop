@@ -19,23 +19,22 @@ class CfRecommendationsRadio(
         token: String?,
         count: Int,
         offset: Int,
-        artistType: String
+        artistType: String,
     ) -> LbApiResult<CfRecommendationsPayload>,
     private val fetchRecordingMetadata: suspend (
         mbids: List<String>,
-        token: String?
+        token: String?,
     ) -> LbApiResult<Map<String, LbRecordingMetadata>>,
     private val clockMs: () -> Long = { System.currentTimeMillis() },
     private val cacheTtlMs: Long = CACHE_TTL_MS,
     private val fetchCount: Int = FETCH_COUNT,
-    private val artistType: String = FetchAndMatchCfRecommendationsUseCase.ARTIST_TYPE_SIMILAR
+    private val artistType: String = FetchAndMatchCfRecommendationsUseCase.ARTIST_TYPE_SIMILAR,
 ) {
-
     constructor(
         clockMs: () -> Long = { System.currentTimeMillis() },
         cacheTtlMs: Long = CACHE_TTL_MS,
         fetchCount: Int = FETCH_COUNT,
-        artistType: String = FetchAndMatchCfRecommendationsUseCase.ARTIST_TYPE_SIMILAR
+        artistType: String = FetchAndMatchCfRecommendationsUseCase.ARTIST_TYPE_SIMILAR,
     ) : this(
         fetchCf = { username, token, count, offset, type ->
             ListenBrainzClient.fetchCfRecordingRecommendations(
@@ -43,7 +42,7 @@ class CfRecommendationsRadio(
                 token = token,
                 count = count,
                 offset = offset,
-                artistType = type
+                artistType = type,
             )
         },
         fetchRecordingMetadata = { mbids, token ->
@@ -52,7 +51,7 @@ class CfRecommendationsRadio(
         clockMs = clockMs,
         cacheTtlMs = cacheTtlMs,
         fetchCount = fetchCount,
-        artistType = artistType
+        artistType = artistType,
     )
 
     private val mutex = Mutex()
@@ -60,17 +59,18 @@ class CfRecommendationsRadio(
     private var cachedAtMs: Long = 0L
     private var cachedPlayables: List<PlayableItem> = emptyList()
 
-    private val matcher = FetchAndMatchCfRecommendationsUseCase(
-        fetchCf = fetchCf,
-        fetchRecordingMetadata = fetchRecordingMetadata
-    )
+    private val matcher =
+        FetchAndMatchCfRecommendationsUseCase(
+            fetchCf = fetchCf,
+            fetchRecordingMetadata = fetchRecordingMetadata,
+        )
 
     suspend fun suggest(
         library: List<Song>,
         excludeKeys: Set<String>,
         limit: Int,
         username: String,
-        token: String
+        token: String,
     ): List<PlayableItem> {
         if (limit <= 0 || username.isBlank() || token.isBlank()) return emptyList()
 
@@ -83,26 +83,29 @@ class CfRecommendationsRadio(
     private suspend fun resolvePool(
         username: String,
         token: String,
-        library: List<Song>
+        library: List<Song>,
     ): List<PlayableItem> {
         mutex.withLock {
-            val fresh = cachedUsername == username &&
-                clockMs() - cachedAtMs < cacheTtlMs &&
-                cachedPlayables.isNotEmpty()
+            val fresh =
+                cachedUsername == username &&
+                    clockMs() - cachedAtMs < cacheTtlMs &&
+                    cachedPlayables.isNotEmpty()
             if (fresh) return cachedPlayables
         }
 
-        val matchedResult = matcher.execute(
-            username = username,
-            token = token,
-            library = library,
-            count = fetchCount,
-            artistType = artistType
-        )
-        val playables = when (matchedResult) {
-            is LbApiResult.Success -> matchedResult.data.toPlayableItems()
-            is LbApiResult.Failure -> emptyList()
-        }
+        val matchedResult =
+            matcher.execute(
+                username = username,
+                token = token,
+                library = library,
+                count = fetchCount,
+                artistType = artistType,
+            )
+        val playables =
+            when (matchedResult) {
+                is LbApiResult.Success -> matchedResult.data.toPlayableItems()
+                is LbApiResult.Failure -> emptyList()
+            }
 
         mutex.withLock {
             cachedUsername = username

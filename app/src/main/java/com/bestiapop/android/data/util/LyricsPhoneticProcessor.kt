@@ -5,7 +5,6 @@ import com.bestiapop.android.data.preferences.JapanesePhoneticMode
 import java.util.Locale
 
 object LyricsPhoneticProcessor {
-
     /** Retorna true si la línea contiene caracteres de alfabetos no latinos (japonés, cirílico, coreano, etc.). */
     fun hasNonLatinScript(text: String): Boolean {
         if (text.isBlank()) return false
@@ -49,7 +48,7 @@ object LyricsPhoneticProcessor {
     fun formatPhoneticLine(
         original: String,
         romanizedCandidate: String?,
-        japaneseMode: JapanesePhoneticMode
+        japaneseMode: JapanesePhoneticMode,
     ): String? {
         if (!hasNonLatinScript(original)) return null
 
@@ -106,11 +105,12 @@ object LyricsPhoneticProcessor {
     private fun transliterateOffline(text: String): String? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         return try {
-            val transliterator = cachedTransliterator ?: synchronized(transliteratorLock) {
-                cachedTransliterator ?: android.icu.text.Transliterator.getInstance("Any-Latin; Latin-ASCII").also {
-                    cachedTransliterator = it
+            val transliterator =
+                cachedTransliterator ?: synchronized(transliteratorLock) {
+                    cachedTransliterator ?: android.icu.text.Transliterator.getInstance("Any-Latin; Latin-ASCII").also {
+                        cachedTransliterator = it
+                    }
                 }
-            }
             synchronized(transliteratorLock) {
                 transliterator.transliterate(text)
             }
@@ -119,37 +119,118 @@ object LyricsPhoneticProcessor {
         }
     }
 
-    private val ROMAJI_TABLE: List<Pair<String, String>> = listOf(
-        "kya" to "きゃ", "kyu" to "きゅ", "kyo" to "きょ",
-        "sha" to "しゃ", "shu" to "しゅ", "sho" to "しょ",
-        "cha" to "ちゃ", "chu" to "ちゅ", "cho" to "ちょ",
-        "nya" to "にゃ", "nyu" to "にゅ", "nyo" to "にょ",
-        "hya" to "ひゃ", "hyu" to "ひゅ", "hyo" to "ひょ",
-        "mya" to "みゃ", "myu" to "みゅ", "myo" to "みょ",
-        "rya" to "りゃ", "ryu" to "りゅ", "ryo" to "りょ",
-        "gya" to "ぎゃ", "gyu" to "ぎゅ", "gyo" to "ぎょ",
-        "ja" to "じゃ", "ju" to "じゅ", "jo" to "じょ",
-        "bya" to "びゃ", "byu" to "びゅ", "byo" to "びょ",
-        "pya" to "ぴゃ", "pyu" to "ぴゅ", "pyo" to "ぴょ",
-        "shi" to "し", "chi" to "ち", "tsu" to "つ",
-        "dji" to "ぢ", "dzu" to "づ", "fu" to "ふ",
-        "ka" to "か", "ki" to "き", "ku" to "く", "ke" to "け", "ko" to "こ",
-        "sa" to "さ", "si" to "し", "su" to "す", "se" to "せ", "so" to "そ",
-        "ta" to "た", "ti" to "ち", "tu" to "つ", "te" to "て", "to" to "と",
-        "na" to "な", "ni" to "に", "nu" to "ぬ", "ne" to "ね", "no" to "の",
-        "ha" to "は", "hi" to "ひ", "hu" to "ふ", "he" to "へ", "ho" to "ほ",
-        "ma" to "ま", "mi" to "み", "mu" to "む", "me" to "め", "mo" to "も",
-        "ya" to "や", "yu" to "ゆ", "yo" to "よ",
-        "ra" to "ら", "ri" to "り", "ru" to "る", "re" to "れ", "ro" to "ろ",
-        "wa" to "わ", "wo" to "を",
-        "ga" to "が", "gi" to "ぎ", "gu" to "ぐ", "ge" to "げ", "go" to "ご",
-        "za" to "ざ", "ji" to "じ", "zu" to "ず", "ze" to "ぜ", "zo" to "ぞ",
-        "da" to "だ", "de" to "で", "do" to "ど",
-        "ba" to "ば", "bi" to "び", "bu" to "ぶ", "be" to "べ", "bo" to "ぼ",
-        "pa" to "ぱ", "pi" to "ぴ", "pu" to "ぷ", "pe" to "ぺ", "po" to "ぽ",
-        "a" to "あ", "i" to "い", "u" to "う", "e" to "え", "o" to "お",
-        "nn" to "ん", "n" to "ん"
-    )
+    private val ROMAJI_TABLE: List<Pair<String, String>> =
+        listOf(
+            "kya" to "きゃ",
+            "kyu" to "きゅ",
+            "kyo" to "きょ",
+            "sha" to "しゃ",
+            "shu" to "しゅ",
+            "sho" to "しょ",
+            "cha" to "ちゃ",
+            "chu" to "ちゅ",
+            "cho" to "ちょ",
+            "nya" to "にゃ",
+            "nyu" to "にゅ",
+            "nyo" to "にょ",
+            "hya" to "ひゃ",
+            "hyu" to "ひゅ",
+            "hyo" to "ひょ",
+            "mya" to "みゃ",
+            "myu" to "みゅ",
+            "myo" to "みょ",
+            "rya" to "りゃ",
+            "ryu" to "りゅ",
+            "ryo" to "りょ",
+            "gya" to "ぎゃ",
+            "gyu" to "ぎゅ",
+            "gyo" to "ぎょ",
+            "ja" to "じゃ",
+            "ju" to "じゅ",
+            "jo" to "じょ",
+            "bya" to "びゃ",
+            "byu" to "びゅ",
+            "byo" to "びょ",
+            "pya" to "ぴゃ",
+            "pyu" to "ぴゅ",
+            "pyo" to "ぴょ",
+            "shi" to "し",
+            "chi" to "ち",
+            "tsu" to "つ",
+            "dji" to "ぢ",
+            "dzu" to "づ",
+            "fu" to "ふ",
+            "ka" to "か",
+            "ki" to "き",
+            "ku" to "く",
+            "ke" to "け",
+            "ko" to "こ",
+            "sa" to "さ",
+            "si" to "し",
+            "su" to "す",
+            "se" to "せ",
+            "so" to "そ",
+            "ta" to "た",
+            "ti" to "ち",
+            "tu" to "つ",
+            "te" to "て",
+            "to" to "と",
+            "na" to "な",
+            "ni" to "に",
+            "nu" to "ぬ",
+            "ne" to "ね",
+            "no" to "の",
+            "ha" to "は",
+            "hi" to "ひ",
+            "hu" to "ふ",
+            "he" to "へ",
+            "ho" to "ほ",
+            "ma" to "ま",
+            "mi" to "み",
+            "mu" to "む",
+            "me" to "め",
+            "mo" to "も",
+            "ya" to "や",
+            "yu" to "ゆ",
+            "yo" to "よ",
+            "ra" to "ら",
+            "ri" to "り",
+            "ru" to "る",
+            "re" to "れ",
+            "ro" to "ろ",
+            "wa" to "わ",
+            "wo" to "を",
+            "ga" to "が",
+            "gi" to "ぎ",
+            "gu" to "ぐ",
+            "ge" to "げ",
+            "go" to "ご",
+            "za" to "ざ",
+            "ji" to "じ",
+            "zu" to "ず",
+            "ze" to "ぜ",
+            "zo" to "ぞ",
+            "da" to "だ",
+            "de" to "で",
+            "do" to "ど",
+            "ba" to "ば",
+            "bi" to "び",
+            "bu" to "ぶ",
+            "be" to "べ",
+            "bo" to "ぼ",
+            "pa" to "ぱ",
+            "pi" to "ぴ",
+            "pu" to "ぷ",
+            "pe" to "ぺ",
+            "po" to "ぽ",
+            "a" to "あ",
+            "i" to "い",
+            "u" to "う",
+            "e" to "え",
+            "o" to "お",
+            "nn" to "ん",
+            "n" to "ん",
+        )
 
     /**
      * Convierte Rōmaji (Hepburn) a Hiragana preservando espacios y signos de puntuación.

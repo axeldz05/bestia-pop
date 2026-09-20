@@ -20,14 +20,26 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal interface PlaybackControllerFacade {
     interface Listener {
         fun onIsPlayingChanged(isPlaying: Boolean) = Unit
+
         fun onPlayWhenReadyChanged(playWhenReady: Boolean) = Unit
+
         fun onPlayerError() = Unit
+
         fun onPlaybackStateChanged(playbackState: Int) = Unit
-        fun onMediaItemTransition(item: PlayableItem?, reason: Int) = Unit
+
+        fun onMediaItemTransition(
+            item: PlayableItem?,
+            reason: Int,
+        ) = Unit
+
         fun onTimelineChanged() = Unit
+
         fun onPositionDiscontinuity(positionMs: Long) = Unit
+
         fun onRepeatModeChanged(repeatMode: Int) = Unit
+
         fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = Unit
+
         fun onDisconnected(controller: PlaybackControllerFacade) = Unit
     }
 
@@ -43,32 +55,72 @@ internal interface PlaybackControllerFacade {
     var shuffleModeEnabled: Boolean
 
     fun addListener(listener: Listener)
+
     fun items(): List<PlayableItem>
-    fun setMediaItems(items: List<PlayableItem>, startIndex: Int, startPositionMs: Long)
-    fun replaceMediaItem(index: Int, item: PlayableItem)
+
+    fun setMediaItems(
+        items: List<PlayableItem>,
+        startIndex: Int,
+        startPositionMs: Long,
+    )
+
+    fun replaceMediaItem(
+        index: Int,
+        item: PlayableItem,
+    )
+
     fun addMediaItems(items: List<PlayableItem>)
-    fun addMediaItems(index: Int, items: List<PlayableItem>)
+
+    fun addMediaItems(
+        index: Int,
+        items: List<PlayableItem>,
+    )
+
     fun removeMediaItem(index: Int)
-    fun removeMediaItems(fromIndex: Int, toIndex: Int)
+
+    fun removeMediaItems(
+        fromIndex: Int,
+        toIndex: Int,
+    )
+
     fun clearMediaItems() {
         if (mediaItemCount > 0) removeMediaItems(0, mediaItemCount)
     }
-    fun moveMediaItem(fromIndex: Int, toIndex: Int)
+
+    fun moveMediaItem(
+        fromIndex: Int,
+        toIndex: Int,
+    )
+
     fun prepare()
+
     fun play()
+
     fun pause()
+
     fun seekTo(positionMs: Long)
-    fun seekTo(index: Int, positionMs: Long)
+
+    fun seekTo(
+        index: Int,
+        positionMs: Long,
+    )
+
     fun seekToNextMediaItem()
+
     fun seekToPreviousMediaItem()
+
     fun hasNextMediaItem(): Boolean
+
     fun hasPreviousMediaItem(): Boolean
+
     fun release()
 }
 
 internal interface PlaybackControllerConnection {
     fun addListener(listener: () -> Unit)
+
     fun get(): PlaybackControllerFacade
+
     fun cancel()
 }
 
@@ -79,7 +131,7 @@ internal fun interface PlaybackControllerConnector {
 @OptIn(UnstableApi::class)
 internal class MediaControllerConnection(
     context: Context,
-    private val library: () -> List<Song>
+    private val library: () -> List<Song>,
 ) : PlaybackControllerConnection {
     private val disconnectionRelay = MediaControllerDisconnectionRelay()
     private val audioStore = MusicFileStore(context)
@@ -88,9 +140,11 @@ internal class MediaControllerConnection(
 
     init {
         val token = SessionToken(context, ComponentName(context, MusicService::class.java))
-        future = MediaController.Builder(context, token)
-            .setListener(disconnectionRelay)
-            .buildAsync()
+        future =
+            MediaController
+                .Builder(context, token)
+                .setListener(disconnectionRelay)
+                .buildAsync()
     }
 
     override fun addListener(listener: () -> Unit) {
@@ -102,7 +156,7 @@ internal class MediaControllerConnection(
             controller = future.get(),
             audioStore = audioStore,
             library = library,
-            disconnectionRelay = disconnectionRelay
+            disconnectionRelay = disconnectionRelay,
         ).also { facade = it }
 
     override fun cancel() {
@@ -132,54 +186,64 @@ internal class MediaControllerFacade(
     private val controller: MediaController,
     private val audioStore: MusicFileStore,
     private val library: () -> List<Song>,
-    private val disconnectionRelay: MediaControllerDisconnectionRelay
+    private val disconnectionRelay: MediaControllerDisconnectionRelay,
 ) : PlaybackControllerFacade {
     private val released = AtomicBoolean(false)
     private var runtimeListener: PlaybackControllerFacade.Listener? = null
-    private val playerListener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            runtimeListener?.onIsPlayingChanged(isPlaying)
-        }
+    private val playerListener =
+        object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                runtimeListener?.onIsPlayingChanged(isPlaying)
+            }
 
-        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            runtimeListener?.onPlayWhenReadyChanged(playWhenReady)
-        }
+            override fun onPlayWhenReadyChanged(
+                playWhenReady: Boolean,
+                reason: Int,
+            ) {
+                runtimeListener?.onPlayWhenReadyChanged(playWhenReady)
+            }
 
-        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            runtimeListener?.onPlayerError()
-        }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                runtimeListener?.onPlayerError()
+            }
 
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            runtimeListener?.onPlaybackStateChanged(playbackState)
-        }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                runtimeListener?.onPlaybackStateChanged(playbackState)
+            }
 
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            runtimeListener?.onMediaItemTransition(
-                mediaItem?.let { PlaybackMediaItemCodec.decode(it, library()) },
-                reason
-            )
-        }
+            override fun onMediaItemTransition(
+                mediaItem: MediaItem?,
+                reason: Int,
+            ) {
+                runtimeListener?.onMediaItemTransition(
+                    mediaItem?.let { PlaybackMediaItemCodec.decode(it, library()) },
+                    reason,
+                )
+            }
 
-        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-            runtimeListener?.onTimelineChanged()
-        }
+            override fun onTimelineChanged(
+                timeline: androidx.media3.common.Timeline,
+                reason: Int,
+            ) {
+                runtimeListener?.onTimelineChanged()
+            }
 
-        override fun onPositionDiscontinuity(
-            oldPosition: Player.PositionInfo,
-            newPosition: Player.PositionInfo,
-            reason: Int
-        ) {
-            runtimeListener?.onPositionDiscontinuity(newPosition.positionMs)
-        }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                runtimeListener?.onPositionDiscontinuity(newPosition.positionMs)
+            }
 
-        override fun onRepeatModeChanged(repeatMode: Int) {
-            runtimeListener?.onRepeatModeChanged(repeatMode)
-        }
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                runtimeListener?.onRepeatModeChanged(repeatMode)
+            }
 
-        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-            runtimeListener?.onShuffleModeEnabledChanged(shuffleModeEnabled)
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                runtimeListener?.onShuffleModeEnabledChanged(shuffleModeEnabled)
+            }
         }
-    }
 
     override val mediaItemCount: Int get() = controller.mediaItemCount
     override val currentMediaItemIndex: Int get() = controller.currentMediaItemIndex
@@ -198,15 +262,16 @@ internal class MediaControllerFacade(
         get() = controller.shuffleModeEnabled
         set(value) {
             controller.shuffleModeEnabled = value
-            val args = Bundle().apply {
-                putIntArray(
-                    MusicService.EXTRA_SHUFFLE_ORDER,
-                    if (value) IntArray(controller.mediaItemCount) { it } else IntArray(0)
-                )
-            }
+            val args =
+                Bundle().apply {
+                    putIntArray(
+                        MusicService.EXTRA_SHUFFLE_ORDER,
+                        if (value) IntArray(controller.mediaItemCount) { it } else IntArray(0),
+                    )
+                }
             controller.sendCustomCommand(
                 SessionCommand(MusicService.ACTION_SET_SHUFFLE_ORDER, Bundle.EMPTY),
-                args
+                args,
             )
         }
 
@@ -237,7 +302,7 @@ internal class MediaControllerFacade(
     override fun setMediaItems(
         items: List<PlayableItem>,
         startIndex: Int,
-        startPositionMs: Long
+        startPositionMs: Long,
     ) {
         val encoded = ArrayList<MediaItem>(items.size)
         for (i in items.indices) {
@@ -246,7 +311,10 @@ internal class MediaControllerFacade(
         controller.setMediaItems(encoded, startIndex, startPositionMs)
     }
 
-    override fun replaceMediaItem(index: Int, item: PlayableItem) {
+    override fun replaceMediaItem(
+        index: Int,
+        item: PlayableItem,
+    ) {
         controller.replaceMediaItem(index, encode(item))
     }
 
@@ -258,7 +326,10 @@ internal class MediaControllerFacade(
         controller.addMediaItems(encoded)
     }
 
-    override fun addMediaItems(index: Int, items: List<PlayableItem>) {
+    override fun addMediaItems(
+        index: Int,
+        items: List<PlayableItem>,
+    ) {
         val encoded = ArrayList<MediaItem>(items.size)
         for (i in items.indices) {
             encoded.add(encode(items[i]))
@@ -267,22 +338,40 @@ internal class MediaControllerFacade(
     }
 
     override fun removeMediaItem(index: Int) = controller.removeMediaItem(index)
-    override fun removeMediaItems(fromIndex: Int, toIndex: Int) =
-        controller.removeMediaItems(fromIndex, toIndex)
+
+    override fun removeMediaItems(
+        fromIndex: Int,
+        toIndex: Int,
+    ) = controller.removeMediaItems(fromIndex, toIndex)
+
     override fun clearMediaItems() = controller.clearMediaItems()
 
-    override fun moveMediaItem(fromIndex: Int, toIndex: Int) =
-        controller.moveMediaItem(fromIndex, toIndex)
+    override fun moveMediaItem(
+        fromIndex: Int,
+        toIndex: Int,
+    ) = controller.moveMediaItem(fromIndex, toIndex)
 
     override fun prepare() = controller.prepare()
+
     override fun play() = controller.play()
+
     override fun pause() = controller.pause()
+
     override fun seekTo(positionMs: Long) = controller.seekTo(positionMs)
-    override fun seekTo(index: Int, positionMs: Long) = controller.seekTo(index, positionMs)
+
+    override fun seekTo(
+        index: Int,
+        positionMs: Long,
+    ) = controller.seekTo(index, positionMs)
+
     override fun seekToNextMediaItem() = controller.seekToNextMediaItem()
+
     override fun seekToPreviousMediaItem() = controller.seekToPreviousMediaItem()
+
     override fun hasNextMediaItem(): Boolean = controller.hasNextMediaItem()
+
     override fun hasPreviousMediaItem(): Boolean = controller.hasPreviousMediaItem()
+
     override fun release() {
         if (!released.compareAndSet(false, true)) return
         disconnectionRelay.clear()

@@ -31,92 +31,108 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 @Category(MediumTest::class)
 class DiscoverFeedCoordinatorTest {
-
-    private fun testSong(id: Long, title: String, artist: String): Song = Song(
-        id = id,
-        uriString = "file:///music/$id.mp3",
-        title = title,
-        artist = artist,
-        album = "Album"
-    )
+    private fun testSong(
+        id: Long,
+        title: String,
+        artist: String,
+    ): Song =
+        Song(
+            id = id,
+            uriString = "file:///music/$id.mp3",
+            title = title,
+            artist = artist,
+            album = "Album",
+        )
 
     @Test
-    fun initialState_hasDefaultValues() = runTest {
-        val context: Context = ApplicationProvider.getApplicationContext()
-        val listenBrainzPrefs = ListenBrainzPreferencesRepository(context)
-        val libraryPrefs = LibraryPreferencesRepository(context)
-        val repo = FakeMusicRepository()
+    fun initialState_hasDefaultValues() =
+        runTest {
+            val context: Context = ApplicationProvider.getApplicationContext()
+            val listenBrainzPrefs = ListenBrainzPreferencesRepository(context)
+            val libraryPrefs = LibraryPreferencesRepository(context)
+            val repo = FakeMusicRepository()
 
-        val coordinator = DiscoverFeedCoordinator(
-            scope = this,
-            repository = repo,
-            listenBrainzPreferences = listenBrainzPrefs,
-            libraryPreferences = libraryPrefs
-        )
+            val coordinator =
+                DiscoverFeedCoordinator(
+                    scope = this,
+                    repository = repo,
+                    listenBrainzPreferences = listenBrainzPrefs,
+                    libraryPreferences = libraryPrefs,
+                )
 
-        assertEquals(DiscoverFeed(), coordinator.discoverFeed.value)
-        assertFalse(coordinator.isLoadingDiscoverFeed.value)
-        assertEquals(TopRelatedFeed(), coordinator.topRelatedFeed.value)
-        assertFalse(coordinator.isLoadingTopRelatedFeed.value)
-        assertTrue(coordinator.lbDiscover.value.data.isEmpty())
-        assertNull(coordinator.cfRecommendations.value.data)
-    }
-
-    @Test
-    fun clearDiscoverState_resetsFeedsAndCallsExternalCallback() = runTest {
-        val context: Context = ApplicationProvider.getApplicationContext()
-        val listenBrainzPrefs = ListenBrainzPreferencesRepository(context)
-        val libraryPrefs = LibraryPreferencesRepository(context)
-        val repo = FakeMusicRepository()
-
-        var externalCleared = false
-        val coordinator = DiscoverFeedCoordinator(
-            scope = this,
-            repository = repo,
-            listenBrainzPreferences = listenBrainzPrefs,
-            libraryPreferences = libraryPrefs,
-            onClearExternalState = { externalCleared = true }
-        )
-
-        coordinator.clearDiscoverState()
-
-        assertTrue(externalCleared)
-        assertTrue(coordinator.lbDiscover.value.phase is LoadPhase.Idle)
-        assertNull(coordinator.cfRecommendations.value.data)
-    }
+            assertEquals(DiscoverFeed(), coordinator.discoverFeed.value)
+            assertFalse(coordinator.isLoadingDiscoverFeed.value)
+            assertEquals(TopRelatedFeed(), coordinator.topRelatedFeed.value)
+            assertFalse(coordinator.isLoadingTopRelatedFeed.value)
+            assertTrue(
+                coordinator.lbDiscover.value.data
+                    .isEmpty(),
+            )
+            assertNull(coordinator.cfRecommendations.value.data)
+        }
 
     @Test
-    fun rematchCfRecommendations_updatesLocalMatchesWhenLibraryChanges() = runTest {
-        val context: Context = ApplicationProvider.getApplicationContext()
-        val listenBrainzPrefs = ListenBrainzPreferencesRepository(context)
-        val libraryPrefs = LibraryPreferencesRepository(context)
-        val repo = FakeMusicRepository()
+    fun clearDiscoverState_resetsFeedsAndCallsExternalCallback() =
+        runTest {
+            val context: Context = ApplicationProvider.getApplicationContext()
+            val listenBrainzPrefs = ListenBrainzPreferencesRepository(context)
+            val libraryPrefs = LibraryPreferencesRepository(context)
+            val repo = FakeMusicRepository()
 
-        val coordinator = DiscoverFeedCoordinator(
-            scope = this,
-            repository = repo,
-            listenBrainzPreferences = listenBrainzPrefs,
-            libraryPreferences = libraryPrefs
-        )
+            var externalCleared = false
+            val coordinator =
+                DiscoverFeedCoordinator(
+                    scope = this,
+                    repository = repo,
+                    listenBrainzPreferences = listenBrainzPrefs,
+                    libraryPreferences = libraryPrefs,
+                    onClearExternalState = { externalCleared = true },
+                )
 
-        val localSong = testSong(101L, "Karma Police", "Radiohead")
-        val unmatchedTrack = MatchedRemoteTrack(
-            identity = TrackIdentity(title = "Karma Police", artist = "Radiohead", album = "OK Computer"),
-            recordingMbid = "mbid-123",
-            localSong = null
-        )
-        val initialRecommendations = MatchedCfRecommendations(
-            payload = com.bestiapop.android.data.listenbrainz.CfRecommendationsPayload(
-                userName = "testuser",
-                recordings = emptyList()
-            ),
-            matches = listOf(unmatchedTrack)
-        )
+            coordinator.clearDiscoverState()
 
-        // Set initial state
-        coordinator.openCfRecommendations() // triggers flow
-        // Simulating populated data:
-        coordinator.rematchCfRecommendations(listOf(localSong)) // with empty current it does not fail
-        assertNull(coordinator.cfRecommendations.value.data)
-    }
+            assertTrue(externalCleared)
+            assertTrue(coordinator.lbDiscover.value.phase is LoadPhase.Idle)
+            assertNull(coordinator.cfRecommendations.value.data)
+        }
+
+    @Test
+    fun rematchCfRecommendations_updatesLocalMatchesWhenLibraryChanges() =
+        runTest {
+            val context: Context = ApplicationProvider.getApplicationContext()
+            val listenBrainzPrefs = ListenBrainzPreferencesRepository(context)
+            val libraryPrefs = LibraryPreferencesRepository(context)
+            val repo = FakeMusicRepository()
+
+            val coordinator =
+                DiscoverFeedCoordinator(
+                    scope = this,
+                    repository = repo,
+                    listenBrainzPreferences = listenBrainzPrefs,
+                    libraryPreferences = libraryPrefs,
+                )
+
+            val localSong = testSong(101L, "Karma Police", "Radiohead")
+            val unmatchedTrack =
+                MatchedRemoteTrack(
+                    identity = TrackIdentity(title = "Karma Police", artist = "Radiohead", album = "OK Computer"),
+                    recordingMbid = "mbid-123",
+                    localSong = null,
+                )
+            val initialRecommendations =
+                MatchedCfRecommendations(
+                    payload =
+                        com.bestiapop.android.data.listenbrainz.CfRecommendationsPayload(
+                            userName = "testuser",
+                            recordings = emptyList(),
+                        ),
+                    matches = listOf(unmatchedTrack),
+                )
+
+            // Set initial state
+            coordinator.openCfRecommendations() // triggers flow
+            // Simulating populated data:
+            coordinator.rematchCfRecommendations(listOf(localSong)) // with empty current it does not fail
+            assertNull(coordinator.cfRecommendations.value.data)
+        }
 }

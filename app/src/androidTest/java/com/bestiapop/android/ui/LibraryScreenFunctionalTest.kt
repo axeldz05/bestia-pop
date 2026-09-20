@@ -21,35 +21,37 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @SmallTest
 class LibraryScreenFunctionalTest {
-
     private val composeTestRule = createComposeRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeTestRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeTestRule)
 
-    private val sampleSongs = listOf(
-        Song(
-            id = 1L,
-            uriString = "content://media/1",
-            title = "Bohemian Rhapsody",
-            artist = "Queen",
-            album = "A Night at the Opera",
-            genre = "Rock"
-        ),
-        Song(
-            id = 2L,
-            uriString = "content://media/2",
-            title = "Hotel California",
-            artist = "Eagles",
-            album = "Hotel California",
-            genre = "Classic Rock"
+    private val sampleSongs =
+        listOf(
+            Song(
+                id = 1L,
+                uriString = "content://media/1",
+                title = "Bohemian Rhapsody",
+                artist = "Queen",
+                album = "A Night at the Opera",
+                genre = "Rock",
+            ),
+            Song(
+                id = 2L,
+                uriString = "content://media/2",
+                title = "Hotel California",
+                artist = "Eagles",
+                album = "Hotel California",
+                genre = "Classic Rock",
+            ),
         )
-    )
 
-    private val libraryList = GetLibrarySongsUseCase()
-        .buildListModel(sampleSongs, LibraryViewMode.FLAT)
+    private val libraryList =
+        GetLibrarySongsUseCase()
+            .buildListModel(sampleSongs, LibraryViewMode.FLAT)
 
     @Test
     fun multiSelectActionBar_displaysSelectedCountAndActions() {
@@ -65,7 +67,7 @@ class LibraryScreenFunctionalTest {
                 onSimilarSelected = {},
                 onDeleteSelected = {},
                 onSelectAll = {},
-                onClearSelection = {}
+                onClearSelection = {},
             )
         }
 
@@ -90,7 +92,7 @@ class LibraryScreenFunctionalTest {
                 onSimilarSelected = {},
                 onDeleteSelected = { deleteClicked = true },
                 onSelectAll = { selectAllClicked = true },
-                onClearSelection = {}
+                onClearSelection = {},
             )
         }
 
@@ -118,7 +120,7 @@ class LibraryScreenFunctionalTest {
                 onEditMetadata = {},
                 onDeleteSong = {},
                 onPlayAlbum = { _, _ -> },
-                onShuffleAlbum = { _, _ -> }
+                onShuffleAlbum = { _, _ -> },
             )
         }
 

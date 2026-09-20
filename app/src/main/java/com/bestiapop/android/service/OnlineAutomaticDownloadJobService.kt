@@ -23,30 +23,33 @@ class OnlineAutomaticDownloadJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         OnlineDownloadServiceLauncher.markRunning(OnlineDownloadBackend.BACKGROUND_JOB, true)
         runner?.cancel()
-        runner = serviceScope.launch {
-            settleOnlineDownloadLifetime(
-                runtime = app.processDownloadRuntime,
-                backend = OnlineDownloadBackend.BACKGROUND_JOB,
-                autoResume = app.shouldAutoResumeDownloads
-            )
-            jobFinished(params, false)
-        }
+        runner =
+            serviceScope.launch {
+                settleOnlineDownloadLifetime(
+                    runtime = app.processDownloadRuntime,
+                    backend = OnlineDownloadBackend.BACKGROUND_JOB,
+                    autoResume = app.shouldAutoResumeDownloads,
+                )
+                jobFinished(params, false)
+            }
         return true
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
         runner?.cancel()
-        val stopReason = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            params.stopReason
-        } else {
-            0
-        }
+        val stopReason =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                params.stopReason
+            } else {
+                0
+            }
         reportOnlineDownloadJobStop(
             OnlineDownloadBackend.BACKGROUND_JOB,
-            stopReason
+            stopReason,
         )
-        val userStopped = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            stopReason == JobParameters.STOP_REASON_USER
+        val userStopped =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                stopReason == JobParameters.STOP_REASON_USER
         return handleOnlineDownloadJobStop(
             backend = OnlineDownloadBackend.BACKGROUND_JOB,
             userStopped = userStopped,
@@ -55,7 +58,7 @@ class OnlineAutomaticDownloadJobService : JobService() {
             },
             interruptNow = {
                 app.processDownloadRuntime.interruptNow(DownloadLane.AUTOSAVE)
-            }
+            },
         )
     }
 

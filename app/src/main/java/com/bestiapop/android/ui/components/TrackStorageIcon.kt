@@ -24,14 +24,14 @@ fun TrackStorageIcon(
     modifier: Modifier = Modifier,
     size: Dp = 15.dp,
     streamingTint: Color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
-    savedTint: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+    savedTint: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
 ) {
     if (isStreaming) {
         Icon(
             imageVector = Icons.Default.Cloud,
             contentDescription = "Streaming",
             tint = streamingTint,
-            modifier = modifier.size(size)
+            modifier = modifier.size(size),
         )
     }
 }
@@ -43,7 +43,7 @@ fun TrackStorageIcon(
 fun TrackStorageIcon(
     song: Song,
     modifier: Modifier = Modifier,
-    size: Dp = 15.dp
+    size: Dp = 15.dp,
 ) {
     TrackStorageIcon(isStreaming = song.isRemote, modifier = modifier, size = size)
 }
@@ -55,7 +55,7 @@ fun TrackStorageIcon(
 fun TrackStorageIcon(
     item: PlayableItem,
     modifier: Modifier = Modifier,
-    size: Dp = 15.dp
+    size: Dp = 15.dp,
 ) {
     val isStreaming = item is PlayableItem.Remote || (item is PlayableItem.Local && item.song.isRemote)
     TrackStorageIcon(isStreaming = isStreaming, modifier = modifier, size = size)

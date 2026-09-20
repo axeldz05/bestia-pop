@@ -45,7 +45,7 @@ internal class PlaybackSessionHydrator(
     private val onSetPlaybackPositionMs: (Long) -> Unit,
     private val onSetIsPlaying: (Boolean) -> Unit,
     private val onApplyHydratedQueue: (hydrated: HydratedQueue, restoreShuffle: Boolean) -> Unit,
-    private val onTogglePlayPause: () -> Unit
+    private val onTogglePlayPause: () -> Unit,
 ) {
     var persistedSessionRestored: Boolean = false
         internal set
@@ -69,7 +69,7 @@ internal class PlaybackSessionHydrator(
                     dependencies.persistence.saveSession(
                         lastPlayed = request.lastPlayed,
                         queue = request.queue,
-                        clearQueue = request.clearQueue
+                        clearQueue = request.clearQueue,
                     )
                 }
             }
@@ -93,11 +93,12 @@ internal class PlaybackSessionHydrator(
 
     fun scheduleSeekPersistence() {
         seekPersistenceJob?.cancel()
-        seekPersistenceJob = scope.launch {
-            delay(SEEK_PERSIST_DEBOUNCE_MS)
-            captureAndQueuePlaybackSession(force = true)
-            seekPersistenceJob = null
-        }
+        seekPersistenceJob =
+            scope.launch {
+                delay(SEEK_PERSIST_DEBOUNCE_MS)
+                captureAndQueuePlaybackSession(force = true)
+                seekPersistenceJob = null
+            }
     }
 
     fun persistPlaybackSession(force: Boolean = true) {
@@ -113,33 +114,35 @@ internal class PlaybackSessionHydrator(
         val items = getQueue()
         val index = getCurrentQueueIndex()
         val last = local?.let { PlaybackHydration.snapshotFromSong(it, position) }
-        val request = if (items.isEmpty()) {
-            PlaybackPersistenceRequest(last, queue = null, clearQueue = true)
-        } else {
-            PlaybackPersistenceRequest(
-                lastPlayed = last,
-                queue = queueSnapshotForPersist(items, index, position),
-                clearQueue = false
-            )
-        }
+        val request =
+            if (items.isEmpty()) {
+                PlaybackPersistenceRequest(last, queue = null, clearQueue = true)
+            } else {
+                PlaybackPersistenceRequest(
+                    lastPlayed = last,
+                    queue = queueSnapshotForPersist(items, index, position),
+                    clearQueue = false,
+                )
+            }
         persistenceRequests.trySend(request)
     }
 
     private fun queueSnapshotForPersist(
         items: List<PlayableItem>,
         index: Int,
-        positionMs: Long
+        positionMs: Long,
     ): QueueSnapshot {
-        val projection = PlaybackQueueSlots.projectSnapshot(
-            queue = items,
-            currentIndex = index,
-            preShuffleOrder = getPreShuffleOrder().takeIf { isShuffle() }
-        )
+        val projection =
+            PlaybackQueueSlots.projectSnapshot(
+                queue = items,
+                currentIndex = index,
+                preShuffleOrder = getPreShuffleOrder().takeIf { isShuffle() },
+            )
         return QueueSnapshotCodec.fromPlayable(
             items = projection.items,
             currentIndex = projection.currentIndex,
             positionMs = positionMs,
-            shufflePlayOrder = projection.shufflePlayOrder
+            shufflePlayOrder = projection.shufflePlayOrder,
         )
     }
 
@@ -147,20 +150,22 @@ internal class PlaybackSessionHydrator(
         val queue = getQueue()
         if (queue.isNotEmpty()) {
             val currentQueueEntryId = getCurrentItem()?.queueEntryId
-            val index = queue.indexOfFirst { it.queueEntryId == currentQueueEntryId }
-                .takeIf { it >= 0 }
-                ?: getCurrentQueueIndex().coerceIn(queue.indices)
+            val index =
+                queue
+                    .indexOfFirst { it.queueEntryId == currentQueueEntryId }
+                    .takeIf { it >= 0 }
+                    ?: getCurrentQueueIndex().coerceIn(queue.indices)
             return PlaybackCollectionSnapshot(
                 items = queue,
                 currentIndex = index,
-                positionMs = getPlaybackPositionMs()
+                positionMs = getPlaybackPositionMs(),
             )
         }
         val current = getCurrentItem() ?: return null
         return PlaybackCollectionSnapshot(
             items = listOf(current),
             currentIndex = 0,
-            positionMs = getPlaybackPositionMs()
+            positionMs = getPlaybackPositionMs(),
         )
     }
 
@@ -170,56 +175,62 @@ internal class PlaybackSessionHydrator(
         val hydrationSongs = songsForHydration(persistedQueue, last)
         val hydrated = PlaybackHydration.hydrateQueue(persistedQueue, hydrationSongs)
         if (hydrated != null && hydrated.items.isNotEmpty()) {
-            val restoreShuffle = PlaybackModeRestore
-                .resolve(
-                    dependencies.playbackSettings.value,
-                    hasLiveSession = false,
-                    liveRepeat = getRepeatMode()
+            val restoreShuffle =
+                PlaybackModeRestore
+                    .resolve(
+                        dependencies.playbackSettings.value,
+                        hasLiveSession = false,
+                        liveRepeat = getRepeatMode(),
+                    ).shuffle
+            val order =
+                PlaybackQueueOrder.validPlayOrderOrNull(
+                    hydrated.shufflePlayOrder,
+                    hydrated.items.size,
                 )
-                .shuffle
-            val order = PlaybackQueueOrder.validPlayOrderOrNull(
-                hydrated.shufflePlayOrder,
-                hydrated.items.size
-            )
             if (order != null && restoreShuffle) {
                 val shuffled = PlaybackQueueOrder.applyPlayOrder(hydrated.items, order)
-                val index = PlaybackQueueOrder.toDisplayIndex(
-                    order,
-                    hydrated.currentIndex,
-                    hydrated.items.size
-                ).coerceIn(shuffled.indices)
+                val index =
+                    PlaybackQueueOrder
+                        .toDisplayIndex(
+                            order,
+                            hydrated.currentIndex,
+                            hydrated.items.size,
+                        ).coerceIn(shuffled.indices)
                 return PersistedCollectionProjection(
                     snapshot = PlaybackCollectionSnapshot(shuffled, index, hydrated.positionMs),
                     hydratedQueue = hydrated,
-                    restoreShuffle = true
+                    restoreShuffle = true,
                 )
             }
             return PersistedCollectionProjection(
-                snapshot = PlaybackCollectionSnapshot(
-                    hydrated.items,
-                    hydrated.currentIndex,
-                    hydrated.positionMs
-                ),
+                snapshot =
+                    PlaybackCollectionSnapshot(
+                        hydrated.items,
+                        hydrated.currentIndex,
+                        hydrated.positionMs,
+                    ),
                 hydratedQueue = hydrated,
-                restoreShuffle = false
+                restoreShuffle = false,
             )
         }
-        val seed = PlaybackHydration.resolveIdleSeed(
-            getLibrary().ifEmpty { hydrationSongs },
-            last
-        ) ?: return null
+        val seed =
+            PlaybackHydration.resolveIdleSeed(
+                getLibrary().ifEmpty { hydrationSongs },
+                last,
+            ) ?: return null
         return PersistedCollectionProjection(
-            snapshot = PlaybackCollectionSnapshot(
-                items = listOf(seed.toPlayable()),
-                currentIndex = 0,
-                positionMs = PlaybackHydration.resumePositionMs(seed, last)
-            )
+            snapshot =
+                PlaybackCollectionSnapshot(
+                    items = listOf(seed.toPlayable()),
+                    currentIndex = 0,
+                    positionMs = PlaybackHydration.resumePositionMs(seed, last),
+                ),
         )
     }
 
     private suspend fun songsForHydration(
         queue: QueueSnapshot?,
-        last: LastPlayedSnapshot?
+        last: LastPlayedSnapshot?,
     ): List<Song> {
         val library = getLibrary()
         if (library.isNotEmpty()) return library

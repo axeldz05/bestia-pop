@@ -8,7 +8,6 @@ import org.junit.Test
 import kotlin.random.Random
 
 class PlaybackQueueOrderTest {
-
     @Test
     fun rotateToStart_zero_keepsOrder() {
         val items = listOf("A", "B", "C", "D")
@@ -20,7 +19,7 @@ class PlaybackQueueOrderTest {
         val items = listOf("A", "B", "C", "D", "E", "F")
         assertEquals(
             listOf("D", "E", "F", "A", "B", "C"),
-            PlaybackQueueOrder.rotateToStart(items, 3)
+            PlaybackQueueOrder.rotateToStart(items, 3),
         )
     }
 
@@ -84,11 +83,12 @@ class PlaybackQueueOrderTest {
     @Test
     fun reshufflePlayOrder_avoidsStartingWith() {
         repeat(8) { seed ->
-            val order = PlaybackQueueOrder.reshufflePlayOrder(
-                size = 4,
-                avoidStartingWith = 1,
-                random = Random(seed)
-            )
+            val order =
+                PlaybackQueueOrder.reshufflePlayOrder(
+                    size = 4,
+                    avoidStartingWith = 1,
+                    random = Random(seed),
+                )
             assertTrue(order.first() != 1)
             assertEquals(setOf(0, 1, 2, 3), order.toSet())
         }
@@ -97,12 +97,13 @@ class PlaybackQueueOrderTest {
     @Test
     fun insertAfterCurrent_playNext_splicesAfterPlaying() {
         // Timeline [A B C D] play order B,D,A,C = [1,3,0,2]; current B(1); insert E at 2
-        val moved = PlaybackQueueOrder.insertAfterCurrent(
-            playOrder = listOf(1, 3, 0, 2),
-            currentTimelineIndex = 1,
-            insertAt = 2,
-            count = 1
-        )
+        val moved =
+            PlaybackQueueOrder.insertAfterCurrent(
+                playOrder = listOf(1, 3, 0, 2),
+                currentTimelineIndex = 1,
+                insertAt = 2,
+                count = 1,
+            )
         assertEquals(listOf(1, 2, 4, 0, 3), moved)
     }
 
@@ -127,11 +128,12 @@ class PlaybackQueueOrderTest {
     @Test
     fun remapPlayOrder_dropsDeletedAndCompacts() {
         // old [A B C D] order C,A,D,B = [2,0,3,1]; B(1) deleted → new A,C,D
-        val remapped = PlaybackQueueOrder.remapPlayOrder(
-            playOrder = listOf(2, 0, 3, 1),
-            oldToNew = mapOf(0 to 0, 2 to 1, 3 to 2),
-            newSize = 3
-        )
+        val remapped =
+            PlaybackQueueOrder.remapPlayOrder(
+                playOrder = listOf(2, 0, 3, 1),
+                oldToNew = mapOf(0 to 0, 2 to 1, 3 to 2),
+                newSize = 3,
+            )
         assertEquals(listOf(1, 0, 2), remapped)
     }
 
@@ -141,8 +143,8 @@ class PlaybackQueueOrderTest {
             PlaybackQueueOrder.remapPlayOrder(
                 playOrder = listOf(0, 1, 1),
                 oldToNew = mapOf(0 to 0, 1 to 1),
-                newSize = 2
-            )
+                newSize = 2,
+            ),
         )
     }
 
@@ -150,18 +152,19 @@ class PlaybackQueueOrderTest {
     fun trimHistory_remapsPlayOrderWithDroppedPrefix() {
         val items = (0..29).toList()
         val playOrder = (0..29).toList().reversed()
-        val trimmed = PlaybackQueueOrder.trimHistory(
-            items,
-            currentIndex = 25,
-            maxHistory = 5,
-            shufflePlayOrder = playOrder
-        )
+        val trimmed =
+            PlaybackQueueOrder.trimHistory(
+                items,
+                currentIndex = 25,
+                maxHistory = 5,
+                shufflePlayOrder = playOrder,
+            )
         assertEquals((20..29).toList(), trimmed.items)
         assertEquals(5, trimmed.currentIndex)
         assertTrue(PlaybackQueueOrder.isValidPlayOrder(trimmed.shufflePlayOrder, 10))
         assertEquals(
             playOrder.filter { it >= 20 }.map { it - 20 },
-            trimmed.shufflePlayOrder
+            trimmed.shufflePlayOrder,
         )
     }
 
@@ -196,15 +199,19 @@ class PlaybackQueueOrderTest {
 
     @Test
     fun reshuffleItemsAvoidingKey_avoidsSpecifiedKey() {
-        data class TestItem(val id: Int, val name: String)
+        data class TestItem(
+            val id: Int,
+            val name: String,
+        )
         val items = listOf(TestItem(1, "A"), TestItem(2, "B"), TestItem(3, "C"))
         for (seed in 0..10) {
-            val reshuffled = PlaybackQueueOrder.reshuffleItemsAvoidingKey(
-                items = items,
-                avoidKey = 1,
-                keySelector = { it.id },
-                random = Random(seed)
-            )
+            val reshuffled =
+                PlaybackQueueOrder.reshuffleItemsAvoidingKey(
+                    items = items,
+                    avoidKey = 1,
+                    keySelector = { it.id },
+                    random = Random(seed),
+                )
             assertTrue("Should not start with item id 1", reshuffled.first().id != 1)
         }
     }

@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PendingListenDao {
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(listen: PendingListenEntity): Long
 
@@ -29,9 +28,12 @@ interface PendingListenDao {
         UPDATE pending_listens
         SET attempts = attempts + 1, lastError = :error
         WHERE id IN (:ids)
-        """
+        """,
     )
-    suspend fun incrementAttempts(ids: List<Long>, error: String?)
+    suspend fun incrementAttempts(
+        ids: List<Long>,
+        error: String?,
+    )
 
     @Query("DELETE FROM pending_listens WHERE attempts >= :maxAttempts")
     suspend fun deleteExhausted(maxAttempts: Int)

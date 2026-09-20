@@ -12,7 +12,7 @@ data class SimilarPlaylistPreview(
     val items: List<PlayableItem>,
     val mode: RadioMode,
     val usedOnline: Boolean,
-    val failedOnline: Boolean
+    val failedOnline: Boolean,
 )
 
 /**
@@ -21,9 +21,8 @@ data class SimilarPlaylistPreview(
  */
 class BuildSimilarPlaylistPreviewUseCase(
     private val radioEngine: RadioEngine,
-    private val repository: IMusicRepository
+    private val repository: IMusicRepository,
 ) {
-
     suspend fun execute(
         seeds: List<PlayableItem>,
         library: List<Song>,
@@ -32,26 +31,27 @@ class BuildSimilarPlaylistPreviewUseCase(
         lbAvailable: Boolean = false,
         lbUsername: String? = null,
         networkAvailable: Boolean = false,
-        limit: Int = RadioEngine.PREVIEW_DEFAULT_LIMIT
+        limit: Int = RadioEngine.PREVIEW_DEFAULT_LIMIT,
     ): SimilarPlaylistPreview {
         val coPlaylistSongIds = resolveCoPlaylistUnion(seeds)
-        val result: RadioSuggestResult = radioEngine.suggestFromSeeds(
-            seeds = seeds,
-            library = library,
-            mode = mode,
-            excludeKeys = emptySet(),
-            limit = limit,
-            lbToken = lbToken,
-            lbAvailable = lbAvailable,
-            lbUsername = lbUsername,
-            networkAvailable = networkAvailable,
-            coPlaylistSongIds = coPlaylistSongIds
-        )
+        val result: RadioSuggestResult =
+            radioEngine.suggestFromSeeds(
+                seeds = seeds,
+                library = library,
+                mode = mode,
+                excludeKeys = emptySet(),
+                limit = limit,
+                lbToken = lbToken,
+                lbAvailable = lbAvailable,
+                lbUsername = lbUsername,
+                networkAvailable = networkAvailable,
+                coPlaylistSongIds = coPlaylistSongIds,
+            )
         return SimilarPlaylistPreview(
             items = result.items,
             mode = mode,
             usedOnline = result.usedOnlineDiscovery,
-            failedOnline = result.onlineDiscoveryFailed
+            failedOnline = result.onlineDiscoveryFailed,
         )
     }
 
@@ -65,13 +65,14 @@ class BuildSimilarPlaylistPreviewUseCase(
         name: String,
         items: List<PlayableItem>,
         description: String? = null,
-        allowEmpty: Boolean = false
-    ): Long? = repository.createPlaylistWithPlayables(
-        name = name.ifBlank { defaultPlaylistName(seedCount = 0) },
-        items = items,
-        description = description,
-        allowEmpty = allowEmpty
-    )
+        allowEmpty: Boolean = false,
+    ): Long? =
+        repository.createPlaylistWithPlayables(
+            name = name.ifBlank { defaultPlaylistName(seedCount = 0) },
+            items = items,
+            description = description,
+            allowEmpty = allowEmpty,
+        )
 
     companion object {
         fun defaultPlaylistName(seeds: List<PlayableItem>): String {
@@ -83,16 +84,16 @@ class BuildSimilarPlaylistPreviewUseCase(
             }
         }
 
-        fun defaultPlaylistName(seedCount: Int): String =
-            if (seedCount > 0) "Similares ($seedCount seeds)" else "Similares"
+        fun defaultPlaylistName(seedCount: Int): String = if (seedCount > 0) "Similares ($seedCount seeds)" else "Similares"
     }
 
     private suspend fun resolveCoPlaylistUnion(seeds: List<PlayableItem>): Set<Long> {
         val out = LinkedHashSet<Long>()
         for (seed in seeds) {
             val local = seed as? PlayableItem.Local ?: continue
-            val ids = runCatching { repository.getCoPlaylistSongIds(local.song.id) }
-                .getOrDefault(emptySet())
+            val ids =
+                runCatching { repository.getCoPlaylistSongIds(local.song.id) }
+                    .getOrDefault(emptySet())
             out.addAll(ids)
         }
         return out

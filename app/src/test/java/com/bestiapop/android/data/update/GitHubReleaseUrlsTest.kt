@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class GitHubReleaseUrlsTest {
-
     @Test
     fun latestApkDownloadUrl_formatsDirectDownloadPath() {
         val url = GitHubReleaseUrls.latestApkDownloadUrl("axeldz05/bestia-pop")

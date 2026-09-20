@@ -7,7 +7,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ListenTrackerTest {
-
     @Test
     fun sameIdentityQueueMutation_doesNotLoseAccumulatedProgress() {
         var nowSec = 100L
@@ -96,21 +95,21 @@ class ListenTrackerTest {
 
     private fun tracker(
         nowSec: () -> Long,
-        listens: MutableList<ListenPayload>
+        listens: MutableList<ListenPayload>,
     ) = ListenTracker(
         nowEpochSeconds = nowSec,
-        onListenReady = listens::add
+        onListenReady = listens::add,
     )
 
     private fun song(
         id: Long = 1L,
-        durationMs: Long
+        durationMs: Long,
     ) = Song(
         id = id,
         uriString = "/music/$id.mp3",
         title = "Song $id",
         artist = "Artist",
         album = "Album",
-        durationMs = durationMs
+        durationMs = durationMs,
     )
 }

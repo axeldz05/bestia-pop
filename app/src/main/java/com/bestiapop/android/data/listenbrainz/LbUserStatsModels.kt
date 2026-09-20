@@ -3,14 +3,14 @@ package com.bestiapop.android.data.listenbrainz
 data class LbUserStatArtist(
     val artistName: String,
     val listenCount: Long = 0,
-    val artistMbid: String? = null
+    val artistMbid: String? = null,
 )
 
 data class LbUserStatRelease(
     val releaseName: String,
     val artistName: String,
     val listenCount: Long = 0,
-    val releaseMbid: String? = null
+    val releaseMbid: String? = null,
 )
 
 data class LbUserStatRecording(
@@ -18,5 +18,5 @@ data class LbUserStatRecording(
     val artistName: String,
     val releaseName: String? = null,
     val listenCount: Long = 0,
-    val recordingMbid: String? = null
+    val recordingMbid: String? = null,
 )

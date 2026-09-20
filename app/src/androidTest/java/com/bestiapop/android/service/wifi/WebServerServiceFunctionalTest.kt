@@ -50,11 +50,11 @@ class WebServerServiceFunctionalTest {
         assertTrue(running.serviceInfo.foreground)
         assertEquals(
             WebServerServiceTestContract.NOTIFICATION_CHANNEL_ID,
-            running.notification.channelId
+            running.notification.channelId,
         )
         assertEquals(
             "Bestia Pop - Servidor WiFi Activo",
-            running.notification.extras.getCharSequence(Notification.EXTRA_TITLE)
+            running.notification.extras.getCharSequence(Notification.EXTRA_TITLE),
         )
 
         val beforeUpload = fixture.getExistingFiles()
@@ -89,7 +89,7 @@ class WebServerServiceFunctionalTest {
         assertEquals(200, afterUpload.code)
         assertTrue(
             WebServerServiceTestContract.FILE_NAME.lowercase() in
-                JSONArray(afterUpload.body).toStringList()
+                JSONArray(afterUpload.body).toStringList(),
         )
 
         fixture.deleteFixtureArtifacts()
@@ -101,6 +101,5 @@ class WebServerServiceFunctionalTest {
         assertNull(fixture.webServerNotification())
     }
 
-    private fun JSONArray.toStringList(): List<String> =
-        (0 until length()).map(::getString)
+    private fun JSONArray.toStringList(): List<String> = (0 until length()).map(::getString)
 }

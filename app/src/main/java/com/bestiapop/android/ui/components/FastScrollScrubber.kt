@@ -74,8 +74,7 @@ import kotlin.math.roundToInt
 /**
  * Maps [FastScrollSide] to corresponding Compose [Alignment].
  */
-fun FastScrollSide.toAlignment(): Alignment =
-    if (this == FastScrollSide.LEFT) Alignment.CenterStart else Alignment.CenterEnd
+fun FastScrollSide.toAlignment(): Alignment = if (this == FastScrollSide.LEFT) Alignment.CenterStart else Alignment.CenterEnd
 
 /**
  * Section descriptor for fast scroll.
@@ -90,17 +89,17 @@ data class FastScrollSection(
     val label: String,
     val popupLabel: String,
     val itemIndex: Int,
-    val previewText: String? = null
+    val previewText: String? = null,
 ) {
     constructor(
         labelPair: Pair<String, String>,
         itemIndex: Int,
-        previewText: String? = null
+        previewText: String? = null,
     ) : this(
         label = labelPair.first,
         popupLabel = labelPair.second,
         itemIndex = itemIndex,
-        previewText = previewText
+        previewText = previewText,
     )
 }
 
@@ -121,12 +120,13 @@ object FastScrollDefaults {
     fun dedicatedStartGutterWidth(
         enabled: Boolean,
         side: FastScrollSide,
-        sectionsCount: Int
-    ): Dp = if (enabled && side == FastScrollSide.LEFT && sectionsCount > 1) {
-        DedicatedLeftGutterWidth
-    } else {
-        0.dp
-    }
+        sectionsCount: Int,
+    ): Dp =
+        if (enabled && side == FastScrollSide.LEFT && sectionsCount > 1) {
+            DedicatedLeftGutterWidth
+        } else {
+            0.dp
+        }
 
     /**
      * Calculates the dedicated end (right) padding required for the list content.
@@ -136,21 +136,22 @@ object FastScrollDefaults {
     fun dedicatedEndGutterWidth(
         enabled: Boolean,
         side: FastScrollSide,
-        sectionsCount: Int
-    ): Dp = if (enabled && side == FastScrollSide.RIGHT && sectionsCount > 1) {
-        DedicatedRightGutterWidth
-    } else {
-        0.dp
-    }
+        sectionsCount: Int,
+    ): Dp =
+        if (enabled && side == FastScrollSide.RIGHT && sectionsCount > 1) {
+            DedicatedRightGutterWidth
+        } else {
+            0.dp
+        }
 
     fun dedicatedStartGutterWidth(
         settings: FastScrollSettings,
-        sectionsCount: Int
+        sectionsCount: Int,
     ): Dp = dedicatedStartGutterWidth(settings.enabled, settings.side, sectionsCount)
 
     fun dedicatedEndGutterWidth(
         settings: FastScrollSettings,
-        sectionsCount: Int
+        sectionsCount: Int,
     ): Dp = dedicatedEndGutterWidth(settings.enabled, settings.side, sectionsCount)
 
     /**
@@ -159,12 +160,12 @@ object FastScrollDefaults {
     fun dedicatedGutterWidth(
         enabled: Boolean,
         side: FastScrollSide,
-        sectionsCount: Int
+        sectionsCount: Int,
     ): Dp = dedicatedStartGutterWidth(enabled, side, sectionsCount)
 
     fun dedicatedGutterWidth(
         settings: FastScrollSettings,
-        sectionsCount: Int
+        sectionsCount: Int,
     ): Dp = dedicatedStartGutterWidth(settings.enabled, settings.side, sectionsCount)
 }
 
@@ -179,7 +180,7 @@ fun FastScrollContainer(
     listState: LazyListState,
     settings: FastScrollSettings,
     modifier: Modifier = Modifier,
-    content: @Composable (contentModifier: Modifier) -> Unit
+    content: @Composable (contentModifier: Modifier) -> Unit,
 ) {
     FastScrollContainer(
         sections = sections,
@@ -187,7 +188,7 @@ fun FastScrollContainer(
         modifier = modifier,
         enabled = settings.enabled,
         side = settings.side,
-        content = content
+        content = content,
     )
 }
 
@@ -201,7 +202,7 @@ fun FastScrollContainer(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     side: FastScrollSide = FastScrollSide.RIGHT,
-    content: @Composable (contentModifier: Modifier) -> Unit
+    content: @Composable (contentModifier: Modifier) -> Unit,
 ) {
     val startGutter = FastScrollDefaults.dedicatedStartGutterWidth(enabled, side, sections.size)
     val endGutter = FastScrollDefaults.dedicatedEndGutterWidth(enabled, side, sections.size)
@@ -210,7 +211,7 @@ fun FastScrollContainer(
         content(
             Modifier
                 .fillMaxSize()
-                .padding(start = startGutter, end = endGutter)
+                .padding(start = startGutter, end = endGutter),
         )
 
         FastScrollScrubber(
@@ -218,7 +219,7 @@ fun FastScrollContainer(
             listState = listState,
             enabled = enabled,
             side = side,
-            modifier = Modifier.align(side.toAlignment())
+            modifier = Modifier.align(side.toAlignment()),
         )
     }
 }
@@ -237,13 +238,13 @@ fun <T> FastScrollLazyColumn(
     key: ((T) -> Any)? = null,
     listState: LazyListState = rememberLazyListState(),
     fastScrollSettings: FastScrollSettings = FastScrollSettings(),
-    itemContent: @Composable LazyItemScope.(T) -> Unit
+    itemContent: @Composable LazyItemScope.(T) -> Unit,
 ) {
     if (items.isEmpty()) {
         EmptyListHint(
             text = emptyText,
             subtitle = emptySubtitle,
-            modifier = modifier.fillMaxSize()
+            modifier = modifier.fillMaxSize(),
         )
         return
     }
@@ -252,7 +253,7 @@ fun <T> FastScrollLazyColumn(
         sections = sections,
         listState = listState,
         settings = fastScrollSettings,
-        modifier = modifier.fillMaxSize()
+        modifier = modifier.fillMaxSize(),
     ) { listModifier ->
         LazyColumn(state = listState, modifier = listModifier) {
             items(items, key = key) { item ->
@@ -270,14 +271,14 @@ fun BoxScope.FastScrollScrubber(
     sections: List<FastScrollSection>,
     listState: LazyListState,
     settings: FastScrollSettings,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     FastScrollScrubber(
         sections = sections,
         listState = listState,
         enabled = settings.enabled,
         side = settings.side,
-        modifier = modifier.align(settings.side.toAlignment())
+        modifier = modifier.align(settings.side.toAlignment()),
     )
 }
 
@@ -289,14 +290,14 @@ fun FastScrollScrubber(
     sections: List<FastScrollSection>,
     listState: LazyListState,
     settings: FastScrollSettings,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     FastScrollScrubber(
         sections = sections,
         listState = listState,
         modifier = modifier,
         enabled = settings.enabled,
-        side = settings.side
+        side = settings.side,
     )
 }
 
@@ -310,7 +311,7 @@ fun FastScrollScrubber(
     listState: LazyListState,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    side: FastScrollSide = FastScrollSide.RIGHT
+    side: FastScrollSide = FastScrollSide.RIGHT,
 ) {
     if (!enabled || sections.size <= 1) return
 
@@ -322,19 +323,22 @@ fun FastScrollScrubber(
     var railHeightPx by remember { mutableFloatStateOf(0f) }
 
     val density = LocalDensity.current
-    val bubbleOffsetY = remember(touchY, railHeightPx) {
-        if (railHeightPx <= 0f) 0
-        else {
-            val clampedY = touchY.coerceIn(0f, railHeightPx)
-            with(density) { (clampedY - 24.dp.toPx()).roundToInt() }
+    val bubbleOffsetY =
+        remember(touchY, railHeightPx) {
+            if (railHeightPx <= 0f) {
+                0
+            } else {
+                val clampedY = touchY.coerceIn(0f, railHeightPx)
+                with(density) { (clampedY - 24.dp.toPx()).roundToInt() }
+            }
         }
-    }
 
     Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .padding(vertical = 12.dp)
-            .onSizeChanged { railHeightPx = it.height.toFloat() }
+        modifier =
+            modifier
+                .fillMaxHeight()
+                .padding(vertical = 12.dp)
+                .onSizeChanged { railHeightPx = it.height.toFloat() },
     ) {
         val safeActiveIndex = activeIndex.coerceIn(0, sections.size - 1)
         val currentSection = sections[safeActiveIndex]
@@ -345,10 +349,11 @@ fun FastScrollScrubber(
             visible = isDragging,
             enter = fadeIn() + scaleIn(initialScale = 0.8f),
             exit = fadeOut() + scaleOut(targetScale = 0.8f),
-            modifier = Modifier
-                .align(if (isLeft) Alignment.TopStart else Alignment.TopEnd)
-                .offset { IntOffset(x = 0, y = bubbleOffsetY) }
-                .padding(start = if (isLeft) 44.dp else 0.dp, end = if (isLeft) 0.dp else 44.dp)
+            modifier =
+                Modifier
+                    .align(if (isLeft) Alignment.TopStart else Alignment.TopEnd)
+                    .offset { IntOffset(x = 0, y = bubbleOffsetY) }
+                    .padding(start = if (isLeft) 44.dp else 0.dp, end = if (isLeft) 0.dp else 44.dp),
         ) {
             FastScrollIndicatorBubble(section = currentSection)
         }
@@ -372,8 +377,9 @@ fun FastScrollScrubber(
             derivedStateOf {
                 val layoutInfo = listState.layoutInfo
                 val totalItems = layoutInfo.totalItemsCount
-                if (totalItems <= 1) 0f
-                else {
+                if (totalItems <= 1) {
+                    0f
+                } else {
                     val first = listState.firstVisibleItemIndex
                     (first.toFloat() / (totalItems - 1).coerceAtLeast(1)).coerceIn(0f, 1f)
                 }
@@ -405,9 +411,10 @@ fun FastScrollScrubber(
                     isDragging = false
                 }
             },
-            modifier = Modifier
-                .align(if (isLeft) Alignment.CenterStart else Alignment.CenterEnd)
-                .then(if (isLeft) Modifier.padding(start = 2.dp) else Modifier.padding(end = 2.dp))
+            modifier =
+                Modifier
+                    .align(if (isLeft) Alignment.CenterStart else Alignment.CenterEnd)
+                    .then(if (isLeft) Modifier.padding(start = 2.dp) else Modifier.padding(end = 2.dp)),
         )
     }
 }
@@ -426,15 +433,16 @@ fun FastScrollRail(
     onSectionSelected: (index: Int, touchY: Float) -> Unit,
     onTouchFractionChange: (fraction: Float, touchY: Float) -> Unit = { _, _ -> },
     onDragEnd: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val count = sections.size
-    val fontSize = when {
-        count > 28 -> 8.sp
-        count > 20 -> 9.sp
-        count > 14 -> 10.sp
-        else -> 11.sp
-    }
+    val fontSize =
+        when {
+            count > 28 -> 8.sp
+            count > 20 -> 9.sp
+            count > 14 -> 10.sp
+            else -> 11.sp
+        }
 
     var railHeightPx by remember { mutableFloatStateOf(0f) }
     var railCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -446,50 +454,55 @@ fun FastScrollRail(
     val isLeft = side == FastScrollSide.LEFT
 
     Box(
-        modifier = modifier
-            .width(32.dp)
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                if (isDragging) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                else MaterialTheme.colorScheme.surface.copy(alpha = 0.08f)
-            )
-            .onGloballyPositioned { railCoordinates = it }
-            .onSizeChanged { railHeightPx = it.height.toFloat() }
-            .pointerInput(sections) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val selectedIndex = FastScrollSections.findClosestSectionIndex(
-                        touchY = down.position.y,
-                        itemCenters = itemCenters,
-                        sectionsCount = sections.size,
-                        railHeight = railHeightPx,
-                        verticalPaddingPx = verticalPaddingPx
-                    )
-                    val fraction = if (railHeightPx > 0f) (down.position.y / railHeightPx).coerceIn(0f, 1f) else 0f
-                    onSectionSelected(selectedIndex, down.position.y)
-                    onTouchFractionChange(fraction, down.position.y)
-
-                    drag(down.id) { change ->
-                        val positionChange = change.positionChange()
-                        if (positionChange.y != 0f || positionChange.x != 0f) {
-                            change.consume()
-                            val dragIndex = FastScrollSections.findClosestSectionIndex(
-                                touchY = change.position.y,
+        modifier =
+            modifier
+                .width(32.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(16.dp))
+                .background(
+                    if (isDragging) {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    } else {
+                        MaterialTheme.colorScheme.surface.copy(alpha = 0.08f)
+                    },
+                ).onGloballyPositioned { railCoordinates = it }
+                .onSizeChanged { railHeightPx = it.height.toFloat() }
+                .pointerInput(sections) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val selectedIndex =
+                            FastScrollSections.findClosestSectionIndex(
+                                touchY = down.position.y,
                                 itemCenters = itemCenters,
                                 sectionsCount = sections.size,
                                 railHeight = railHeightPx,
-                                verticalPaddingPx = verticalPaddingPx
+                                verticalPaddingPx = verticalPaddingPx,
                             )
-                            val dragFraction = if (railHeightPx > 0f) (change.position.y / railHeightPx).coerceIn(0f, 1f) else 0f
-                            onSectionSelected(dragIndex, change.position.y)
-                            onTouchFractionChange(dragFraction, change.position.y)
+                        val fraction = if (railHeightPx > 0f) (down.position.y / railHeightPx).coerceIn(0f, 1f) else 0f
+                        onSectionSelected(selectedIndex, down.position.y)
+                        onTouchFractionChange(fraction, down.position.y)
+
+                        drag(down.id) { change ->
+                            val positionChange = change.positionChange()
+                            if (positionChange.y != 0f || positionChange.x != 0f) {
+                                change.consume()
+                                val dragIndex =
+                                    FastScrollSections.findClosestSectionIndex(
+                                        touchY = change.position.y,
+                                        itemCenters = itemCenters,
+                                        sectionsCount = sections.size,
+                                        railHeight = railHeightPx,
+                                        verticalPaddingPx = verticalPaddingPx,
+                                    )
+                                val dragFraction = if (railHeightPx > 0f) (change.position.y / railHeightPx).coerceIn(0f, 1f) else 0f
+                                onSectionSelected(dragIndex, change.position.y)
+                                onTouchFractionChange(dragFraction, change.position.y)
+                            }
                         }
+                        onDragEnd()
                     }
-                    onDragEnd()
-                }
-            },
-        contentAlignment = Alignment.Center
+                },
+        contentAlignment = Alignment.Center,
     ) {
         // Continuous position indicator thumb along the rail's inner edge
         if (railHeightPx > 0f) {
@@ -497,77 +510,90 @@ fun FastScrollRail(
             val maxTravel = (railHeightPx - thumbHeightPx).coerceAtLeast(0f)
             val thumbOffsetY = (maxTravel * scrollFraction).roundToInt()
             Box(
-                modifier = Modifier
-                    .align(if (isLeft) Alignment.TopEnd else Alignment.TopStart)
-                    .offset { IntOffset(x = 0, y = thumbOffsetY) }
-                    .width(3.dp)
-                    .height(thumbHeightDp)
-                    .clip(RoundedCornerShape(1.5.dp))
-                    .background(
-                        MaterialTheme.colorScheme.primary.copy(
-                            alpha = if (isDragging) 0.9f else 0.55f
-                        )
-                    )
+                modifier =
+                    Modifier
+                        .align(if (isLeft) Alignment.TopEnd else Alignment.TopStart)
+                        .offset { IntOffset(x = 0, y = thumbOffsetY) }
+                        .width(3.dp)
+                        .height(thumbHeightDp)
+                        .clip(RoundedCornerShape(1.5.dp))
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(
+                                alpha = if (isDragging) 0.9f else 0.55f,
+                            ),
+                        ),
             )
         }
 
         Column(
-            modifier = Modifier
-                .fillMaxHeight()
-                .padding(vertical = verticalPaddingDp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier =
+                Modifier
+                    .fillMaxHeight()
+                    .padding(vertical = verticalPaddingDp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             sections.forEachIndexed { index, section ->
                 val isTouched = index == activeIndex && isDragging
                 val isCurrent = index == currentVisibleIndex
                 val scale by animateFloatAsState(
-                    targetValue = if (isTouched) 1.5f else if (isCurrent) 1.2f else 1.0f,
-                    animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
-                    label = "fastScrollCharScale"
-                )
-                val itemBackground = if (isCurrent && !isDragging) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                } else {
-                    androidx.compose.ui.graphics.Color.Transparent
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .onGloballyPositioned { coords ->
-                            val railCoords = railCoordinates
-                            if (railCoords != null && railCoords.isAttached && coords.isAttached) {
-                                val posInRail = railCoords.localPositionOf(coords, Offset.Zero)
-                                val centerY = posInRail.y + coords.size.height / 2f
-                                if (index in itemCenters.indices) {
-                                    itemCenters[index] = centerY
-                                }
-                            } else {
-                                val pos = coords.positionInParent()
-                                val centerY = verticalPaddingPx + pos.y + coords.size.height / 2f
-                                if (index in itemCenters.indices) {
-                                    itemCenters[index] = centerY
-                                }
-                            }
+                    targetValue =
+                        if (isTouched) {
+                            1.5f
+                        } else if (isCurrent) {
+                            1.2f
+                        } else {
+                            1.0f
                         },
-                    contentAlignment = Alignment.Center
+                    animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+                    label = "fastScrollCharScale",
+                )
+                val itemBackground =
+                    if (isCurrent && !isDragging) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    } else {
+                        androidx.compose.ui.graphics.Color.Transparent
+                    }
+                Box(
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .onGloballyPositioned { coords ->
+                                val railCoords = railCoordinates
+                                if (railCoords != null && railCoords.isAttached && coords.isAttached) {
+                                    val posInRail = railCoords.localPositionOf(coords, Offset.Zero)
+                                    val centerY = posInRail.y + coords.size.height / 2f
+                                    if (index in itemCenters.indices) {
+                                        itemCenters[index] = centerY
+                                    }
+                                } else {
+                                    val pos = coords.positionInParent()
+                                    val centerY = verticalPaddingPx + pos.y + coords.size.height / 2f
+                                    if (index in itemCenters.indices) {
+                                        itemCenters[index] = centerY
+                                    }
+                                }
+                            },
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = section.label,
                         fontSize = fontSize,
                         lineHeight = fontSize,
                         fontWeight = if (isTouched || isCurrent) FontWeight.ExtraBold else FontWeight.SemiBold,
-                        color = if (isTouched || isCurrent) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
-                        },
+                        color =
+                            if (isTouched || isCurrent) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                            },
                         textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .scale(scale)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(itemBackground)
-                            .padding(horizontal = 2.dp)
+                        modifier =
+                            Modifier
+                                .scale(scale)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(itemBackground)
+                                .padding(horizontal = 2.dp),
                     )
                 }
             }
@@ -588,7 +614,7 @@ fun FastScrollRail(
     side: FastScrollSide = FastScrollSide.RIGHT,
     onTouchFractionChange: (fraction: Float, touchY: Float) -> Unit,
     onDragEnd: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     FastScrollRail(
         sections = sections,
@@ -603,7 +629,7 @@ fun FastScrollRail(
         },
         onTouchFractionChange = onTouchFractionChange,
         onDragEnd = onDragEnd,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -613,7 +639,7 @@ fun FastScrollRail(
 @Composable
 fun FastScrollIndicatorBubble(
     section: FastScrollSection,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -621,17 +647,17 @@ fun FastScrollIndicatorBubble(
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         shadowElevation = 8.dp,
         tonalElevation = 4.dp,
-        modifier = modifier
+        modifier = modifier,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
         ) {
             Text(
                 text = section.popupLabel,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
             if (!section.previewText.isNullOrBlank()) {
                 Spacer(modifier = Modifier.width(10.dp))
@@ -641,7 +667,7 @@ fun FastScrollIndicatorBubble(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
-                    modifier = Modifier.widthIn(max = 160.dp)
+                    modifier = Modifier.widthIn(max = 160.dp),
                 )
             }
         }

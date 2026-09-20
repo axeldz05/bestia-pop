@@ -42,148 +42,157 @@ import org.junit.runner.RunWith
 @LargeTest
 @HostOrchestratedProcessDeathTest
 class BackupRestoreE2ETest {
-
     private val context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
     @HostOrchestratedProcessDeathTest
-    fun phase1_seedCloudBackupContract() = runBlocking {
-        val dao = AppDatabase.getDatabase(context).musicDao()
-        val songId = dao.insertSong(
-            Song(
-                uriString = "file:///backup-e2e/$ROOM_TITLE.wav",
-                title = ROOM_TITLE,
-                artist = FIXTURE_ARTIST,
-                album = FIXTURE_ALBUM,
-                durationMs = 12_345L
-            )
-        )
-        check(songId > 0L) { "Could not seed Room backup fixture" }
-        val playlistId = dao.insertPlaylist(
-            PlaylistEntity(name = ROOM_PLAYLIST, description = "must not restore")
-        )
-        check(playlistId > 0L) { "Could not seed Room playlist fixture" }
-
-        ThemePreferencesRepository(context).selectPreset(ThemePresets.SunsetGold.id)
-        PlaybackPreferencesRepository(context).apply {
-            setVolumeBoostEnabled(true)
-            setVolumeBoostAmount(EXPECTED_BOOST)
-            setStereoLeftGain(EXPECTED_LEFT_GAIN)
-            setStereoRightGain(EXPECTED_RIGHT_GAIN)
-            setAutoplayOnLaunch(true)
-            setStreamSkipGraceSeconds(EXPECTED_GRACE_SECONDS)
-        }
-        LibraryPreferencesRepository(context).apply {
-            setInitialScanCompleted(true)
-            setHighestDbVersionSeen(AppDatabase.VERSION + 7)
-        }
-        PlaybackSessionStore(context).saveQueue(
-            QueueSnapshot(
-                currentIndex = 0,
-                positionMs = 1_234L,
-                items = listOf(
-                    PersistedQueueItem.Local(
-                        songId = songId,
+    fun phase1_seedCloudBackupContract() =
+        runBlocking {
+            val dao = AppDatabase.getDatabase(context).musicDao()
+            val songId =
+                dao.insertSong(
+                    Song(
                         uriString = "file:///backup-e2e/$ROOM_TITLE.wav",
-                        identity = TrackIdentity(
-                            title = SESSION_TITLE,
-                            artist = FIXTURE_ARTIST
-                        )
-                    )
+                        title = ROOM_TITLE,
+                        artist = FIXTURE_ARTIST,
+                        album = FIXTURE_ALBUM,
+                        durationMs = 12_345L,
+                    ),
                 )
-            )
-        )
+            check(songId > 0L) { "Could not seed Room backup fixture" }
+            val playlistId =
+                dao.insertPlaylist(
+                    PlaylistEntity(name = ROOM_PLAYLIST, description = "must not restore"),
+                )
+            check(playlistId > 0L) { "Could not seed Room playlist fixture" }
 
-        val catalogTrack = OnlineCatalogTrack(
-            identity = TrackIdentity(
-                title = EXCLUDED_TRACK_TITLE,
-                artist = FIXTURE_ARTIST,
-                album = FIXTURE_ALBUM
-            ),
-            id = "backup-e2e-catalog-id",
-            provider = "BackupFixture"
-        )
-        ActiveDownloadsStore(context).save(
-            listOf(
-                ActiveDownload(
-                    id = "backup-e2e-download",
-                    source = ActiveDownloadSource.CATALOG,
-                    candidates = listOf(catalogTrack),
-                    state = CandidateDownloadState.ERROR,
-                    errorMessage = "must not restore"
-                )
+            ThemePreferencesRepository(context).selectPreset(ThemePresets.SunsetGold.id)
+            PlaybackPreferencesRepository(context).apply {
+                setVolumeBoostEnabled(true)
+                setVolumeBoostAmount(EXPECTED_BOOST)
+                setStereoLeftGain(EXPECTED_LEFT_GAIN)
+                setStereoRightGain(EXPECTED_RIGHT_GAIN)
+                setAutoplayOnLaunch(true)
+                setStreamSkipGraceSeconds(EXPECTED_GRACE_SECONDS)
+            }
+            LibraryPreferencesRepository(context).apply {
+                setInitialScanCompleted(true)
+                setHighestDbVersionSeen(AppDatabase.VERSION + 7)
+            }
+            PlaybackSessionStore(context).saveQueue(
+                QueueSnapshot(
+                    currentIndex = 0,
+                    positionMs = 1_234L,
+                    items =
+                        listOf(
+                            PersistedQueueItem.Local(
+                                songId = songId,
+                                uriString = "file:///backup-e2e/$ROOM_TITLE.wav",
+                                identity =
+                                    TrackIdentity(
+                                        title = SESSION_TITLE,
+                                        artist = FIXTURE_ARTIST,
+                                    ),
+                            ),
+                        ),
+                ),
             )
-        )
-        val candidate = IdentifyCandidate(
-            track = catalogTrack,
-            score = 0.75f,
-            reasons = listOf("backup fixture")
-        )
-        IdentifyReviewStore(context).save(
-            PersistedIdentifyReviewQueue(
-                proposals = listOf(
-                    IdentifyProposal(
-                        songId = songId,
-                        queryArtist = FIXTURE_ARTIST,
-                        queryTitle = EXCLUDED_TRACK_TITLE,
-                        candidates = listOf(candidate),
-                        confidence = IdentifyConfidence.MEDIUM,
-                        suggested = candidate
-                    )
+
+            val catalogTrack =
+                OnlineCatalogTrack(
+                    identity =
+                        TrackIdentity(
+                            title = EXCLUDED_TRACK_TITLE,
+                            artist = FIXTURE_ARTIST,
+                            album = FIXTURE_ALBUM,
+                        ),
+                    id = "backup-e2e-catalog-id",
+                    provider = "BackupFixture",
                 )
+            ActiveDownloadsStore(context).save(
+                listOf(
+                    ActiveDownload(
+                        id = "backup-e2e-download",
+                        source = ActiveDownloadSource.CATALOG,
+                        candidates = listOf(catalogTrack),
+                        state = CandidateDownloadState.ERROR,
+                        errorMessage = "must not restore",
+                    ),
+                ),
             )
-        )
-        ListenBrainzPreferencesRepository(context).apply {
-            setToken(LB_TOKEN)
-            setEnabled(true)
+            val candidate =
+                IdentifyCandidate(
+                    track = catalogTrack,
+                    score = 0.75f,
+                    reasons = listOf("backup fixture"),
+                )
+            IdentifyReviewStore(context).save(
+                PersistedIdentifyReviewQueue(
+                    proposals =
+                        listOf(
+                            IdentifyProposal(
+                                songId = songId,
+                                queryArtist = FIXTURE_ARTIST,
+                                queryTitle = EXCLUDED_TRACK_TITLE,
+                                candidates = listOf(candidate),
+                                confidence = IdentifyConfidence.MEDIUM,
+                                suggested = candidate,
+                            ),
+                        ),
+                ),
+            )
+            ListenBrainzPreferencesRepository(context).apply {
+                setToken(LB_TOKEN)
+                setEnabled(true)
+            }
+
+            assertEquals(ThemePresets.SunsetGold.id, ThemePreferencesRepository(context).selectedThemeFlow.first().id)
+            assertTrue(PlaybackPreferencesRepository(context).settingsFlow.first().volumeBoostEnabled)
+            assertTrue(LibraryPreferencesRepository(context).isInitialScanCompleted())
+            assertTrue(PlaybackSessionStore(context).loadQueue() != null)
+            assertTrue(ActiveDownloadsStore(context).load().isNotEmpty())
+            assertTrue(IdentifyReviewStore(context).load().proposals.isNotEmpty())
+            assertEquals(LB_TOKEN, ListenBrainzPreferencesRepository(context).settingsFlow.first().userToken)
         }
-
-        assertEquals(ThemePresets.SunsetGold.id, ThemePreferencesRepository(context).selectedThemeFlow.first().id)
-        assertTrue(PlaybackPreferencesRepository(context).settingsFlow.first().volumeBoostEnabled)
-        assertTrue(LibraryPreferencesRepository(context).isInitialScanCompleted())
-        assertTrue(PlaybackSessionStore(context).loadQueue() != null)
-        assertTrue(ActiveDownloadsStore(context).load().isNotEmpty())
-        assertTrue(IdentifyReviewStore(context).load().proposals.isNotEmpty())
-        assertEquals(LB_TOKEN, ListenBrainzPreferencesRepository(context).settingsFlow.first().userToken)
-    }
 
     @Test
     @HostOrchestratedProcessDeathTest
-    fun phase2_verifyCloudBackupIncludesAndExcludes() = runBlocking {
-        val theme = ThemePreferencesRepository(context).selectedThemeFlow.first()
-        val playback = PlaybackPreferencesRepository(context).settingsFlow.first()
-        assertEquals("Included theme preference was not restored", ThemePresets.SunsetGold.id, theme.id)
-        assertTrue("Included playback setting was not restored", playback.volumeBoostEnabled)
-        assertEquals(EXPECTED_BOOST, playback.volumeBoostAmount)
-        assertEquals(EXPECTED_LEFT_GAIN, playback.stereoLeftGain)
-        assertEquals(EXPECTED_RIGHT_GAIN, playback.stereoRightGain)
-        assertTrue(playback.autoplayOnLaunch)
-        assertEquals(EXPECTED_GRACE_SECONDS, playback.streamSkipGraceSeconds)
+    fun phase2_verifyCloudBackupIncludesAndExcludes() =
+        runBlocking {
+            val theme = ThemePreferencesRepository(context).selectedThemeFlow.first()
+            val playback = PlaybackPreferencesRepository(context).settingsFlow.first()
+            assertEquals("Included theme preference was not restored", ThemePresets.SunsetGold.id, theme.id)
+            assertTrue("Included playback setting was not restored", playback.volumeBoostEnabled)
+            assertEquals(EXPECTED_BOOST, playback.volumeBoostAmount)
+            assertEquals(EXPECTED_LEFT_GAIN, playback.stereoLeftGain)
+            assertEquals(EXPECTED_RIGHT_GAIN, playback.stereoRightGain)
+            assertTrue(playback.autoplayOnLaunch)
+            assertEquals(EXPECTED_GRACE_SECONDS, playback.streamSkipGraceSeconds)
 
-        val library = LibraryPreferencesRepository(context)
-        assertFalse("Library scan marker must be excluded", library.isInitialScanCompleted())
-        assertEquals("Library version marker must be excluded", 0, library.highestDbVersionSeen())
-        assertNull("Playback session must be excluded", PlaybackSessionStore(context).loadQueue())
-        assertTrue("Downloads must be excluded", ActiveDownloadsStore(context).load().isEmpty())
-        assertTrue(
-            "Identify review queue must be excluded",
-            IdentifyReviewStore(context).load().proposals.isEmpty()
-        )
-        val listenBrainz = ListenBrainzPreferencesRepository(context).settingsFlow.first()
-        assertFalse("ListenBrainz enabled state must be excluded with its credential", listenBrainz.enabled)
-        assertTrue("ListenBrainz token must never restore", listenBrainz.userToken.isBlank())
+            val library = LibraryPreferencesRepository(context)
+            assertFalse("Library scan marker must be excluded", library.isInitialScanCompleted())
+            assertEquals("Library version marker must be excluded", 0, library.highestDbVersionSeen())
+            assertNull("Playback session must be excluded", PlaybackSessionStore(context).loadQueue())
+            assertTrue("Downloads must be excluded", ActiveDownloadsStore(context).load().isEmpty())
+            assertTrue(
+                "Identify review queue must be excluded",
+                IdentifyReviewStore(context).load().proposals.isEmpty(),
+            )
+            val listenBrainz = ListenBrainzPreferencesRepository(context).settingsFlow.first()
+            assertFalse("ListenBrainz enabled state must be excluded with its credential", listenBrainz.enabled)
+            assertTrue("ListenBrainz token must never restore", listenBrainz.userToken.isBlank())
 
-        val dao = AppDatabase.getDatabase(context).musicDao()
-        assertTrue(
-            "Room songs must be excluded from cloud backup",
-            dao.getAllSongs().none { it.title == ROOM_TITLE }
-        )
-        assertTrue(
-            "Room playlists must be excluded from cloud backup",
-            dao.getAllPlaylistsFlow().first().none { it.name == ROOM_PLAYLIST }
-        )
-    }
+            val dao = AppDatabase.getDatabase(context).musicDao()
+            assertTrue(
+                "Room songs must be excluded from cloud backup",
+                dao.getAllSongs().none { it.title == ROOM_TITLE },
+            )
+            assertTrue(
+                "Room playlists must be excluded from cloud backup",
+                dao.getAllPlaylistsFlow().first().none { it.name == ROOM_PLAYLIST },
+            )
+        }
 
     private companion object {
         const val FIXTURE_ARTIST = "BestiaPop backup E2E"

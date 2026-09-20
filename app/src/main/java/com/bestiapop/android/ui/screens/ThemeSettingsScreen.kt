@@ -37,7 +37,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +50,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.CustomTheme
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ThemeEditorDialog
@@ -59,7 +59,7 @@ import com.bestiapop.android.ui.theme.ThemePresets
 @Composable
 fun ThemeSettingsScreen(
     viewModel: MusicPlayerViewModel,
-    showTitle: Boolean = true
+    showTitle: Boolean = true,
 ) {
     val currentTheme by viewModel.currentThemeState.collectAsStateWithLifecycle()
     val configuredTheme by viewModel.configuredThemeState.collectAsStateWithLifecycle()
@@ -70,25 +70,26 @@ fun ThemeSettingsScreen(
     val isDynamicActive = configuredTheme.id == ThemePresets.DYNAMIC_THEME_ID
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(16.dp),
     ) {
         if (showTitle) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Default.Palette,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(end = 8.dp)
+                    modifier = Modifier.padding(end = 8.dp),
                 )
                 Text(
                     text = "Temas y Estilo",
                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
             }
 
@@ -97,60 +98,77 @@ fun ThemeSettingsScreen(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // 1. DYNAMIC COLOR BY SONG HERO CARD
             item {
                 Card(
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isDynamicActive) {
-                            MaterialTheme.colorScheme.primaryContainer
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor =
+                                if (isDynamicActive) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                        ),
+                    border =
+                        if (isDynamicActive) {
+                            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
                         } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ),
-                    border = if (isDynamicActive) {
-                        BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-                    } else null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            if (!isDynamicActive) {
-                                viewModel.enableDynamicTheme()
-                            } else {
-                                viewModel.selectThemePreset(ThemePresets.MidnightDark.id)
-                            }
-                        }
+                            null
+                        },
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (!isDynamicActive) {
+                                    viewModel.enableDynamicTheme()
+                                } else {
+                                    viewModel.selectThemePreset(ThemePresets.MidnightDark.id)
+                                }
+                            },
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp)
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(18.dp),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
                             ) {
                                 Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (isDynamicActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-                                        ),
-                                    contentAlignment = Alignment.Center
+                                    modifier =
+                                        Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (isDynamicActive) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.surface
+                                                },
+                                            ),
+                                    contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.AutoAwesome,
                                         contentDescription = null,
-                                        tint = if (isDynamicActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(22.dp)
+                                        tint =
+                                            if (isDynamicActive) {
+                                                MaterialTheme.colorScheme.onPrimary
+                                            } else {
+                                                MaterialTheme.colorScheme.primary
+                                            },
+                                        modifier = Modifier.size(22.dp),
                                     )
                                 }
 
@@ -160,17 +178,23 @@ fun ThemeSettingsScreen(
                                     Text(
                                         text = "Dinámico por Canción",
                                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = if (isDynamicActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                        color =
+                                            if (isDynamicActive) {
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
                                     )
                                     Text(
                                         text = "Extrae los colores de la portada del álbum en reproducción.",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = if (isDynamicActive) {
-                                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        fontSize = 12.sp
+                                        color =
+                                            if (isDynamicActive) {
+                                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            },
+                                        fontSize = 12.sp,
                                     )
                                 }
                             }
@@ -184,10 +208,11 @@ fun ThemeSettingsScreen(
                                         viewModel.selectThemePreset(ThemePresets.MidnightDark.id)
                                     }
                                 },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                                    checkedTrackColor = MaterialTheme.colorScheme.primary
-                                )
+                                colors =
+                                    SwitchDefaults.colors(
+                                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                    ),
                             )
                         }
 
@@ -196,19 +221,20 @@ fun ThemeSettingsScreen(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
                                     Text(
                                         text = "Paleta activa en vivo:",
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        color = MaterialTheme.colorScheme.onSurface,
                                     )
 
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -216,14 +242,15 @@ fun ThemeSettingsScreen(
                                             currentTheme.colors.primary,
                                             currentTheme.colors.secondary,
                                             currentTheme.colors.surface,
-                                            currentTheme.colors.accent
+                                            currentTheme.colors.accent,
                                         ).forEach { colorLong ->
                                             Box(
-                                                modifier = Modifier
-                                                    .size(20.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Color(colorLong))
-                                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                                                modifier =
+                                                    Modifier
+                                                        .size(20.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(colorLong))
+                                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
                                             )
                                         }
                                     }
@@ -238,46 +265,49 @@ fun ThemeSettingsScreen(
             item {
                 Card(
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        ),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp)
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(18.dp),
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Personalizar Paleta Propia",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Text(
                                     text = "Ajustá tonos y visualizá en tiempo real cómo queda la biblioteca.",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                 )
                             }
 
                             Button(
                                 onClick = { showThemeEditor = true },
                                 shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                )
+                                colors =
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    ),
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ColorLens,
                                     contentDescription = "Personalizar",
-                                    modifier = Modifier.padding(end = 4.dp).size(18.dp)
+                                    modifier = Modifier.padding(end = 4.dp).size(18.dp),
                                 )
                                 Text("Editar")
                             }
@@ -292,7 +322,7 @@ fun ThemeSettingsScreen(
                     text = "Presets Predefinidos",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
 
@@ -302,7 +332,7 @@ fun ThemeSettingsScreen(
                 PresetCard(
                     preset = preset,
                     isSelected = isSelected,
-                    onClick = { viewModel.selectThemePreset(preset.id) }
+                    onClick = { viewModel.selectThemePreset(preset.id) },
                 )
             }
         }
@@ -316,7 +346,7 @@ fun ThemeSettingsScreen(
             onConfirm = { updatedColors ->
                 viewModel.saveCustomTheme(updatedColors)
                 showThemeEditor = false
-            }
+            },
         )
     }
 }
@@ -325,46 +355,82 @@ fun ThemeSettingsScreen(
 private fun PresetCard(
     preset: CustomTheme,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     Surface(
         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(16.dp),
-        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("theme-preset-${preset.id}")
-            .selectable(
-                selected = isSelected,
-                role = Role.RadioButton,
-                onClick = onClick
-            )
+        border =
+            if (isSelected) {
+                BorderStroke(
+                    2.dp,
+                    MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            },
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .testTag("theme-preset-${preset.id}")
+                .selectable(
+                    selected = isSelected,
+                    role = Role.RadioButton,
+                    onClick = onClick,
+                ),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Color swatches preview
                 Row(modifier = Modifier.padding(end = 12.dp)) {
-                    Box(modifier = Modifier.size(24.dp).clip(CircleShape).background(Color(preset.colors.primary)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape))
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(
+                                    24.dp,
+                                ).clip(
+                                    CircleShape,
+                                ).background(Color(preset.colors.primary))
+                                .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape),
+                    )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Box(modifier = Modifier.size(24.dp).clip(CircleShape).background(Color(preset.colors.background)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape))
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(
+                                    24.dp,
+                                ).clip(
+                                    CircleShape,
+                                ).background(Color(preset.colors.background))
+                                .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape),
+                    )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Box(modifier = Modifier.size(24.dp).clip(CircleShape).background(Color(preset.colors.accent)).border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape))
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(
+                                    24.dp,
+                                ).clip(
+                                    CircleShape,
+                                ).background(Color(preset.colors.accent))
+                                .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape),
+                    )
                 }
 
                 Column {
                     Text(
                         text = preset.name,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = if (preset.isDark) "Tema oscuro" else "Tema claro",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -373,7 +439,7 @@ private fun PresetCard(
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
                 )
             }
         }

@@ -31,32 +31,35 @@ class OnlineDownloadJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         OnlineDownloadServiceLauncher.markRunning(
             OnlineDownloadBackend.USER_INITIATED_JOB,
-            true
+            true,
         )
         val helper = DownloadNotificationHelper(this)
         updateNotification(
             params,
             helper.build(
-                app.processDownloads.downloads.value.forLane(DownloadLane.EXPLICIT),
-                ongoing = true
-            ) ?: helper.buildStarting(ongoing = true)
+                app.processDownloads.downloads.value
+                    .forLane(DownloadLane.EXPLICIT),
+                ongoing = true,
+            ) ?: helper.buildStarting(ongoing = true),
         )
         notificationCollector?.cancel()
-        notificationCollector = serviceScope.collectDownloadNotifications(
-            downloads = app.processDownloads.downloads,
-            lane = DownloadLane.EXPLICIT,
-            helper = helper
-        ) { notification -> updateNotification(params, notification) }
+        notificationCollector =
+            serviceScope.collectDownloadNotifications(
+                downloads = app.processDownloads.downloads,
+                lane = DownloadLane.EXPLICIT,
+                helper = helper,
+            ) { notification -> updateNotification(params, notification) }
         runner?.cancel()
-        runner = serviceScope.launch {
-            settleOnlineDownloadLifetime(
-                runtime = app.processDownloadRuntime,
-                backend = OnlineDownloadBackend.USER_INITIATED_JOB,
-                autoResume = app.shouldAutoResumeDownloads
-            )
-            notificationCollector?.cancel()
-            jobFinished(params, false)
-        }
+        runner =
+            serviceScope.launch {
+                settleOnlineDownloadLifetime(
+                    runtime = app.processDownloadRuntime,
+                    backend = OnlineDownloadBackend.USER_INITIATED_JOB,
+                    autoResume = app.shouldAutoResumeDownloads,
+                )
+                notificationCollector?.cancel()
+                jobFinished(params, false)
+            }
         return true
     }
 
@@ -65,7 +68,7 @@ class OnlineDownloadJobService : JobService() {
         notificationCollector?.cancel()
         reportOnlineDownloadJobStop(
             OnlineDownloadBackend.USER_INITIATED_JOB,
-            params.stopReason
+            params.stopReason,
         )
         return handleOnlineDownloadJobStop(
             backend = OnlineDownloadBackend.USER_INITIATED_JOB,
@@ -75,25 +78,28 @@ class OnlineDownloadJobService : JobService() {
             },
             interruptNow = {
                 app.processDownloadRuntime.interruptNow(DownloadLane.EXPLICIT)
-            }
+            },
         )
     }
 
     override fun onDestroy() {
         OnlineDownloadServiceLauncher.markRunning(
             OnlineDownloadBackend.USER_INITIATED_JOB,
-            false
+            false,
         )
         serviceScope.cancel()
         super.onDestroy()
     }
 
-    private fun updateNotification(params: JobParameters, notification: Notification) {
+    private fun updateNotification(
+        params: JobParameters,
+        notification: Notification,
+    ) {
         setNotification(
             params,
             DownloadNotificationHelper.NOTIFICATION_ID,
             notification,
-            JOB_END_NOTIFICATION_POLICY_REMOVE
+            JOB_END_NOTIFICATION_POLICY_REMOVE,
         )
     }
 }

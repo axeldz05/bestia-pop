@@ -18,7 +18,7 @@ fun isMatchedTrackPlaying(
     localSong: Song?,
     artist: String,
     title: String,
-    currentItem: PlayableItem?
+    currentItem: PlayableItem?,
 ): Boolean {
     if (currentItem == null) return false
     if (localSong != null && currentItem is PlayableItem.Local) {
@@ -30,17 +30,22 @@ fun isMatchedTrackPlaying(
     return currentKey.isNotEmpty() && currentKey == matchKey
 }
 
-fun isCurrentPlaying(current: PlayableItem?, song: Song): Boolean =
-    current?.matchesSong(song) == true
+fun isCurrentPlaying(
+    current: PlayableItem?,
+    song: Song,
+): Boolean = current?.matchesSong(song) == true
 
-fun isCurrentPlaying(current: PlayableItem?, item: PlayableItem): Boolean {
+fun isCurrentPlaying(
+    current: PlayableItem?,
+    item: PlayableItem,
+): Boolean {
     if (current == null) return false
     if (current.matchesItem(item)) return true
     return isMatchedTrackPlaying(
         localSong = (item as? PlayableItem.Local)?.song,
         artist = item.artist,
         title = item.title,
-        currentItem = current
+        currentItem = current,
     )
 }
 
@@ -48,7 +53,7 @@ fun isCurrentPlaying(
     current: PlayableItem?,
     localSong: Song?,
     artist: String,
-    title: String
+    title: String,
 ): Boolean {
     if (localSong != null && current?.matchesSong(localSong) == true) return true
     return isMatchedTrackPlaying(localSong, artist, title, current)
@@ -57,7 +62,7 @@ fun isCurrentPlaying(
 fun isCurrentPlaying(
     current: PlayableItem?,
     artist: String,
-    title: String
+    title: String,
 ): Boolean = isCurrentPlaying(current, null, artist, title)
 
 /**
@@ -79,7 +84,7 @@ fun MatchedTrackRow(
     onCancelDownload: ((String) -> Unit)? = null,
     songActions: SongItemActions,
     leadingIcon: ImageVector = Icons.Default.PlayArrow,
-    onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null
+    onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null,
 ) {
     val local = localSong
     if (local != null) {
@@ -88,7 +93,7 @@ fun MatchedTrackRow(
             actions = songActions,
             artworkUri = meta.artworkUri ?: local.artworkUri,
             isCurrentPlaying = isCurrentPlaying,
-            onClick = onPlayAt
+            onClick = onPlayAt,
         )
     } else if (remote != null) {
         RemoteTrackPlaceholderRow(
@@ -102,10 +107,11 @@ fun MatchedTrackRow(
             onDownload = { onDownloadRemote(remote) },
             download = download,
             onRetry = download?.id?.let { id -> onRetryDownload?.let { retry -> { retry(id) } } },
-            onCancelDownload = download?.id?.let { id ->
-                onCancelDownload?.let { cancel -> { cancel(id) } }
-            },
-            onSwipeAction = onSwipeRemote?.let { cb -> { cb(remote) } }
+            onCancelDownload =
+                download?.id?.let { id ->
+                    onCancelDownload?.let { cancel -> { cancel(id) } }
+                },
+            onSwipeAction = onSwipeRemote?.let { cb -> { cb(remote) } },
         )
     }
 }
@@ -131,7 +137,7 @@ fun MatchedTrackRow(
     onEditMetadata: ((Song) -> Unit)? = null,
     onEditLyrics: ((Song) -> Unit)? = null,
     onIdentify: ((Song) -> Unit)? = null,
-    onDelete: ((Song) -> Unit)? = null
+    onDelete: ((Song) -> Unit)? = null,
 ) = MatchedTrackRow(
     localSong = localSong,
     meta = meta,
@@ -143,15 +149,16 @@ fun MatchedTrackRow(
     onDownloadRemote = onDownloadRemote,
     onRetryDownload = onRetryDownload,
     onCancelDownload = onCancelDownload,
-    songActions = SongItemActions.from(
-        queueActions = queueActions,
-        onAddToPlaylist = onAddToPlaylist,
-        onEditMetadata = onEditMetadata,
-        onEditLyrics = onEditLyrics,
-        onIdentify = onIdentify,
-        onDelete = onDelete
-    ),
-    leadingIcon = leadingIcon
+    songActions =
+        SongItemActions.from(
+            queueActions = queueActions,
+            onAddToPlaylist = onAddToPlaylist,
+            onEditMetadata = onEditMetadata,
+            onEditLyrics = onEditLyrics,
+            onIdentify = onIdentify,
+            onDelete = onDelete,
+        ),
+    leadingIcon = leadingIcon,
 )
 
 /** L1: flat title/artist when a call site lacks a [TrackMeta] wrapper. */
@@ -174,7 +181,7 @@ fun MatchedTrackRow(
     onEditMetadata: ((Song) -> Unit)? = null,
     onEditLyrics: ((Song) -> Unit)? = null,
     onIdentify: ((Song) -> Unit)? = null,
-    onDelete: ((Song) -> Unit)? = null
+    onDelete: ((Song) -> Unit)? = null,
 ) = MatchedTrackRow(
     localSong = localSong,
     meta = TrackIdentity(title = title, artist = artist),
@@ -192,5 +199,5 @@ fun MatchedTrackRow(
     onEditMetadata = onEditMetadata,
     onEditLyrics = onEditLyrics,
     onIdentify = onIdentify,
-    onDelete = onDelete
+    onDelete = onDelete,
 )

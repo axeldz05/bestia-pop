@@ -16,7 +16,7 @@ data class SimilarPlaylistPreviewState(
     val seedCount: Int,
     val playlistName: String,
     val usedOnline: Boolean = false,
-    val failedOnline: Boolean = false
+    val failedOnline: Boolean = false,
 ) {
     val selectedItems: List<PlayableItem>
         get() = items.filter { previewKey(it) in selectedKeys }
@@ -27,7 +27,6 @@ data class SimilarPlaylistPreviewState(
             return match.ifEmpty { item.mediaId }
         }
 
-        fun keysOf(items: List<PlayableItem>): Set<String> =
-            items.mapTo(LinkedHashSet()) { previewKey(it) }
+        fun keysOf(items: List<PlayableItem>): Set<String> = items.mapTo(LinkedHashSet()) { previewKey(it) }
     }
 }

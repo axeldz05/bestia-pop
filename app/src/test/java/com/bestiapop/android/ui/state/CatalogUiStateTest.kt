@@ -9,19 +9,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CatalogUiStateTest {
-
     @Test
     fun currentResultsAreEmpty_readsOnlySelectedCategory() {
-        val track = OnlineCatalogTrack(
-            id = "1",
-            title = "Song",
-            artist = "Artist",
-            album = "Album",
-            artworkUri = null,
-            durationMs = 0L,
-            audioUrl = "",
-            provider = "test"
-        )
+        val track =
+            OnlineCatalogTrack(
+                id = "1",
+                title = "Song",
+                artist = "Artist",
+                album = "Album",
+                artworkUri = null,
+                durationMs = 0L,
+                audioUrl = "",
+                provider = "test",
+            )
         val tracks = CatalogSearchUiState(tracks = listOf(track))
 
         assertFalse(tracks.currentResultsAreEmpty())
@@ -42,11 +42,12 @@ class CatalogUiStateTest {
 
     @Test
     fun catalogSearchUiState_searchFiltersMapsArtistAlbumAndYear() {
-        val state = CatalogSearchUiState(
-            searchFilterArtist = "Daft Punk",
-            searchFilterAlbum = "Discovery",
-            searchFilterYear = "2001"
-        )
+        val state =
+            CatalogSearchUiState(
+                searchFilterArtist = "Daft Punk",
+                searchFilterAlbum = "Discovery",
+                searchFilterYear = "2001",
+            )
         assertTrue(state.hasActiveFilters)
         val filters = state.searchFilters
         assertEquals("Daft Punk", filters.artist)
@@ -56,11 +57,12 @@ class CatalogUiStateTest {
 
     @Test
     fun catalogSearchUiState_hasActiveFiltersIgnoresBlankOrInvalidYear() {
-        val blankState = CatalogSearchUiState(
-            searchFilterArtist = "   ",
-            searchFilterAlbum = "",
-            searchFilterYear = "invalid"
-        )
+        val blankState =
+            CatalogSearchUiState(
+                searchFilterArtist = "   ",
+                searchFilterAlbum = "",
+                searchFilterYear = "invalid",
+            )
         assertFalse(blankState.hasActiveFilters)
         assertEquals(0, blankState.searchFilters.year)
     }
@@ -73,18 +75,19 @@ class CatalogUiStateTest {
                 selectionKey = "playlist:1#1",
                 title = "Playlist",
                 kind = CatalogCollectionKind.PLAYLIST,
-                isLoading = true
-            ).isOpen
+                isLoading = true,
+            ).isOpen,
         )
     }
 
     @Test
     fun collectionIdentity_distinguishesHomonymousAndReopenedCollections() {
-        val first = CatalogCollectionUiState(
-            selectionKey = "playlist:remote-a#1",
-            title = "Mix",
-            kind = CatalogCollectionKind.PLAYLIST
-        )
+        val first =
+            CatalogCollectionUiState(
+                selectionKey = "playlist:remote-a#1",
+                title = "Mix",
+                kind = CatalogCollectionKind.PLAYLIST,
+            )
         val homonym = first.copy(selectionKey = "playlist:remote-b#2")
         val reopened = first.copy(selectionKey = "playlist:remote-a#3")
 

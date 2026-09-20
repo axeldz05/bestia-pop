@@ -8,16 +8,22 @@ import java.io.File
 
 sealed class TagWriteResult {
     data object Success : TagWriteResult()
+
     data object Unsupported : TagWriteResult()
+
     data object NotWritable : TagWriteResult()
+
     data object PostponedActivePlayback : TagWriteResult()
-    data class IoError(val message: String) : TagWriteResult()
+
+    data class IoError(
+        val message: String,
+    ) : TagWriteResult()
 }
 
 data class TagSyncSummary(
     val updated: Int = 0,
     val skipped: Int = 0,
-    val errors: Int = 0
+    val errors: Int = 0,
 )
 
 /**
@@ -25,13 +31,14 @@ data class TagSyncSummary(
  * Supports mp3 / m4a / flac / ogg; other extensions → [TagWriteResult.Unsupported].
  */
 object AudioTagWriter {
-
     internal val SUPPORTED_EXT = setOf("mp3", "m4a", "mp4", "flac", "ogg", "oga")
 
-    fun isSupportedExtension(file: File): Boolean =
-        file.extension.lowercase() in SUPPORTED_EXT
+    fun isSupportedExtension(file: File): Boolean = file.extension.lowercase() in SUPPORTED_EXT
 
-    fun write(song: Song, file: File): TagWriteResult {
+    fun write(
+        song: Song,
+        file: File,
+    ): TagWriteResult {
         if (!file.exists() || !file.isFile) return TagWriteResult.NotWritable
         if (!file.canWrite()) return TagWriteResult.NotWritable
         if (!isSupportedExtension(file)) return TagWriteResult.Unsupported
@@ -57,7 +64,10 @@ object AudioTagWriter {
         }
     }
 
-    private fun writeArtworkIfLocal(tag: org.jaudiotagger.tag.Tag, artworkUri: String?) {
+    private fun writeArtworkIfLocal(
+        tag: org.jaudiotagger.tag.Tag,
+        artworkUri: String?,
+    ) {
         val path = localArtworkPath(artworkUri) ?: return
         val artFile = File(path)
         if (!artFile.isFile || !artFile.canRead()) return

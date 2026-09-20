@@ -34,10 +34,6 @@ import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.radio.RadioSuggestResult
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.ContinuationInterceptor
-import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,6 +49,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Process-scoped playback owner retained by BestiaPopApplication.
@@ -62,7 +62,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(UnstableApi::class)
 class PlaybackRuntime internal constructor(
-    private val dependencies: PlaybackRuntimeDependencies
+    private val dependencies: PlaybackRuntimeDependencies,
 ) {
     private val scope = dependencies.scope
 
@@ -86,177 +86,184 @@ class PlaybackRuntime internal constructor(
         MutableStateFlow<DiscoverPlaybackOrigin>(DiscoverPlaybackOrigin.None)
     val discoverPlaybackOrigin = _discoverPlaybackOrigin.asStateFlow()
 
-    private val controllerLifecycleManager: PlaybackControllerLifecycleManager = PlaybackControllerLifecycleManager(
-        scope = scope,
-        dependencies = dependencies,
-        getPlayWhenReadyIntent = { playWhenReadyIntent },
-        getIsPlaying = { _isPlaying.value },
-        getQueueSize = { _queue.value.size },
-        emitEvent = { _events.tryEmit(it) },
-        getPlayerListener = { playerListener },
-        onControllerAttached = ::onControllerAttached,
-        onControllerDisconnectedCleanup = ::onControllerDisconnectedCleanup,
-        onTaskRemovedCleanup = ::onTaskRemovedCleanup,
-        onIdleReleasedCleanup = ::onIdleReleasedCleanup,
-        samplePositionAndOwnership = ::samplePositionAndOwnership
-    )
+    private val controllerLifecycleManager: PlaybackControllerLifecycleManager =
+        PlaybackControllerLifecycleManager(
+            scope = scope,
+            dependencies = dependencies,
+            getPlayWhenReadyIntent = { playWhenReadyIntent },
+            getIsPlaying = { _isPlaying.value },
+            getQueueSize = { _queue.value.size },
+            emitEvent = { _events.tryEmit(it) },
+            getPlayerListener = { playerListener },
+            onControllerAttached = ::onControllerAttached,
+            onControllerDisconnectedCleanup = ::onControllerDisconnectedCleanup,
+            onTaskRemovedCleanup = ::onTaskRemovedCleanup,
+            onIdleReleasedCleanup = ::onIdleReleasedCleanup,
+            samplePositionAndOwnership = ::samplePositionAndOwnership,
+        )
 
-    private val sessionHydrator: PlaybackSessionHydrator = PlaybackSessionHydrator(
-        scope = scope,
-        dependencies = dependencies,
-        getCurrentItem = { _currentItem.value },
-        getQueue = { _queue.value },
-        getPlaybackPositionMs = { _playbackPositionMs.value },
-        getRepeatMode = { _repeatMode.value },
-        isShuffle = { _isShuffle.value },
-        getPreShuffleOrder = { queueCoordinator.preShuffleOrder },
-        getCurrentQueueIndex = ::currentQueueIndex,
-        isLibraryReady = { libraryReady.value },
-        getLibrary = { library },
-        getUiAttachments = { controllerLifecycleManager.uiAttachmentCount },
-        isPlayWhenReadyIntent = { playWhenReadyIntent },
-        hasController = { controllerLifecycleManager.isControllerConnected },
-        getControllerMediaItemCount = { controller?.mediaItemCount ?: 0 },
-        onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
-        onSetCurrentItem = { item, persist -> setCurrentItem(item, persistLastPlayed = persist) },
-        onSetPlaybackPositionMs = { _playbackPositionMs.value = it },
-        onSetIsPlaying = { _isPlaying.value = it },
-        onApplyHydratedQueue = ::applyHydratedQueue,
-        onTogglePlayPause = ::togglePlayPause
-    )
+    private val sessionHydrator: PlaybackSessionHydrator =
+        PlaybackSessionHydrator(
+            scope = scope,
+            dependencies = dependencies,
+            getCurrentItem = { _currentItem.value },
+            getQueue = { _queue.value },
+            getPlaybackPositionMs = { _playbackPositionMs.value },
+            getRepeatMode = { _repeatMode.value },
+            isShuffle = { _isShuffle.value },
+            getPreShuffleOrder = { queueCoordinator.preShuffleOrder },
+            getCurrentQueueIndex = ::currentQueueIndex,
+            isLibraryReady = { libraryReady.value },
+            getLibrary = { library },
+            getUiAttachments = { controllerLifecycleManager.uiAttachmentCount },
+            isPlayWhenReadyIntent = { playWhenReadyIntent },
+            hasController = { controllerLifecycleManager.isControllerConnected },
+            getControllerMediaItemCount = { controller?.mediaItemCount ?: 0 },
+            onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
+            onSetCurrentItem = { item, persist -> setCurrentItem(item, persistLastPlayed = persist) },
+            onSetPlaybackPositionMs = { _playbackPositionMs.value = it },
+            onSetIsPlaying = { _isPlaying.value = it },
+            onApplyHydratedQueue = ::applyHydratedQueue,
+            onTogglePlayPause = ::togglePlayPause,
+        )
 
-    private val timelineSynchronizer = PlaybackTimelineSynchronizer(
-        scope = scope,
-        dependencies = dependencies,
-        getController = { controller },
-        getQueue = { _queue.value },
-        setQueue = { _queue.value = it },
-        getCurrentItem = { _currentItem.value },
-        setCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
-        setPlaybackPositionMs = { _playbackPositionMs.value = it },
-        getLastMediaItemIndex = { lastMediaItemIndex },
-        setLastMediaItemIndex = { lastMediaItemIndex = it },
-        getPlayWhenReadyIntent = { playWhenReadyIntent },
-        setPlayWhenReadyIntent = { playWhenReadyIntent = it },
-        getPendingPlayIntentEpoch = { pendingPlayIntentEpoch },
-        cancelPendingPlayIntent = ::cancelPendingPlayIntent,
-        setPendingNewPlaybackQueueEntryId = { pendingNewPlaybackQueueEntryId = it },
-        getPlaybackGeneration = { playbackGeneration },
-        isPlaybackGenerationCurrent = ::isPlaybackGenerationCurrent,
-        ensureRemoteReadyAt = ::ensureRemoteReadyAt,
-        prefetchAround = ::prefetchAround,
-        syncShuffleToPlayer = ::syncShuffleToPlayer,
-        updateTickerLifecycle = ::updateTickerLifecycle,
-        invalidatePlaybackWork = ::invalidatePlaybackWork,
-        clearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
-        persistPlaybackSession = { persistPlaybackSession(it) },
-        applyPendingExternalPlaybackModes = ::applyPendingExternalPlaybackModes,
-        restartAsyncPlaybackWork = ::restartAsyncPlaybackWork,
-        setLiveSessionHydrated = { sessionHydrator.liveSessionHydrated = it }
-    )
+    private val timelineSynchronizer =
+        PlaybackTimelineSynchronizer(
+            scope = scope,
+            dependencies = dependencies,
+            getController = { controller },
+            getQueue = { _queue.value },
+            setQueue = { _queue.value = it },
+            getCurrentItem = { _currentItem.value },
+            setCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
+            setPlaybackPositionMs = { _playbackPositionMs.value = it },
+            getLastMediaItemIndex = { lastMediaItemIndex },
+            setLastMediaItemIndex = { lastMediaItemIndex = it },
+            getPlayWhenReadyIntent = { playWhenReadyIntent },
+            setPlayWhenReadyIntent = { playWhenReadyIntent = it },
+            getPendingPlayIntentEpoch = { pendingPlayIntentEpoch },
+            cancelPendingPlayIntent = ::cancelPendingPlayIntent,
+            setPendingNewPlaybackQueueEntryId = { pendingNewPlaybackQueueEntryId = it },
+            getPlaybackGeneration = { playbackGeneration },
+            isPlaybackGenerationCurrent = ::isPlaybackGenerationCurrent,
+            ensureRemoteReadyAt = ::ensureRemoteReadyAt,
+            prefetchAround = ::prefetchAround,
+            syncShuffleToPlayer = ::syncShuffleToPlayer,
+            updateTickerLifecycle = ::updateTickerLifecycle,
+            invalidatePlaybackWork = ::invalidatePlaybackWork,
+            clearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
+            persistPlaybackSession = { persistPlaybackSession(it) },
+            applyPendingExternalPlaybackModes = ::applyPendingExternalPlaybackModes,
+            restartAsyncPlaybackWork = ::restartAsyncPlaybackWork,
+            setLiveSessionHydrated = { sessionHydrator.liveSessionHydrated = it },
+        )
 
-    private val queueCoordinator: PlaybackQueueCoordinator = PlaybackQueueCoordinator(
-        scope = scope,
-        dependencies = dependencies,
-        getQueue = { _queue.value },
-        onSetQueue = { _queue.value = it },
-        getCurrentItem = { _currentItem.value },
-        onSetCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
-        getRepeatMode = { _repeatMode.value },
-        onSetRepeatModeState = { _repeatMode.value = it },
-        isShuffle = { _isShuffle.value },
-        onSetShuffleState = { _isShuffle.value = it },
-        getPlaybackPositionMs = { _playbackPositionMs.value },
-        onSetPlaybackPositionMs = { _playbackPositionMs.value = it },
-        isPlayWhenReadyIntent = { playWhenReadyIntent },
-        onSetPlayWhenReadyIntent = { playWhenReadyIntent = it },
-        getController = { controller },
-        hasMaterializedTimeline = ::hasMaterializedTimeline,
-        setTimelineMaterialized = { timelineSynchronizer.timelineMaterialized = it },
-        getLastMediaItemIndex = { lastMediaItemIndex },
-        setLastMediaItemIndex = { lastMediaItemIndex = it },
-        currentQueueIndex = ::currentQueueIndex,
-        onInvalidatePlaybackWork = ::invalidatePlaybackWork,
-        onRestartAsyncPlaybackWork = ::restartAsyncPlaybackWork,
-        onPersistPlaybackSession = { sessionHydrator.persistPlaybackSession(it) },
-        onBumpQueueFocus = ::bumpQueueFocus,
-        onStopRadio = ::stopRadio,
-        onCancelPendingPlayIntent = ::cancelPendingPlayIntent,
-        onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
-        onReleaseControllerIfIdle = ::releaseControllerIfIdle,
-        onEnsureControllerConnection = ::ensureControllerConnection,
-        applyQueueReorder = ::applyQueueReorder,
-        mutateMaterializedTimeline = ::mutateMaterializedTimeline,
-        syncChangedTimelineItems = ::syncChangedTimelineItems,
-        onSetPendingExternalPlaybackModes = { sessionHydrator.setPendingExternalPlaybackModes(it) }
-    )
+    private val queueCoordinator: PlaybackQueueCoordinator =
+        PlaybackQueueCoordinator(
+            scope = scope,
+            dependencies = dependencies,
+            getQueue = { _queue.value },
+            onSetQueue = { _queue.value = it },
+            getCurrentItem = { _currentItem.value },
+            onSetCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
+            getRepeatMode = { _repeatMode.value },
+            onSetRepeatModeState = { _repeatMode.value = it },
+            isShuffle = { _isShuffle.value },
+            onSetShuffleState = { _isShuffle.value = it },
+            getPlaybackPositionMs = { _playbackPositionMs.value },
+            onSetPlaybackPositionMs = { _playbackPositionMs.value = it },
+            isPlayWhenReadyIntent = { playWhenReadyIntent },
+            onSetPlayWhenReadyIntent = { playWhenReadyIntent = it },
+            getController = { controller },
+            hasMaterializedTimeline = ::hasMaterializedTimeline,
+            setTimelineMaterialized = { timelineSynchronizer.timelineMaterialized = it },
+            getLastMediaItemIndex = { lastMediaItemIndex },
+            setLastMediaItemIndex = { lastMediaItemIndex = it },
+            currentQueueIndex = ::currentQueueIndex,
+            onInvalidatePlaybackWork = ::invalidatePlaybackWork,
+            onRestartAsyncPlaybackWork = ::restartAsyncPlaybackWork,
+            onPersistPlaybackSession = { sessionHydrator.persistPlaybackSession(it) },
+            onBumpQueueFocus = ::bumpQueueFocus,
+            onStopRadio = ::stopRadio,
+            onCancelPendingPlayIntent = ::cancelPendingPlayIntent,
+            onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
+            onReleaseControllerIfIdle = ::releaseControllerIfIdle,
+            onEnsureControllerConnection = ::ensureControllerConnection,
+            applyQueueReorder = ::applyQueueReorder,
+            mutateMaterializedTimeline = ::mutateMaterializedTimeline,
+            syncChangedTimelineItems = ::syncChangedTimelineItems,
+            onSetPendingExternalPlaybackModes = { sessionHydrator.setPendingExternalPlaybackModes(it) },
+        )
 
-    private val streamRecoveryCoordinator: PlaybackStreamRecoveryCoordinator = PlaybackStreamRecoveryCoordinator(
-        scope = scope,
-        dependencies = dependencies,
-        getQueue = { _queue.value },
-        onUpdateQueue = { _queue.value = it },
-        getCurrentItem = { _currentItem.value },
-        onSetCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
-        getPlaybackPositionMs = { _playbackPositionMs.value },
-        onSetPlaybackPositionMs = { _playbackPositionMs.value = it },
-        onSetIsPlaying = { _isPlaying.value = it },
-        isPlayWhenReadyIntent = { playWhenReadyIntent },
-        onSetPlayWhenReadyIntent = { playWhenReadyIntent = it },
-        getController = { controller },
-        setLastMediaItemIndex = { lastMediaItemIndex = it },
-        onEmitEvent = { _events.tryEmit(it) },
-        onCancelPendingPlayIntent = ::cancelPendingPlayIntent,
-        ensurePreparedForPlayback = ::ensurePreparedForPlayback,
-        getPlaybackGeneration = { playbackGeneration }
-    )
+    private val streamRecoveryCoordinator: PlaybackStreamRecoveryCoordinator =
+        PlaybackStreamRecoveryCoordinator(
+            scope = scope,
+            dependencies = dependencies,
+            getQueue = { _queue.value },
+            onUpdateQueue = { _queue.value = it },
+            getCurrentItem = { _currentItem.value },
+            onSetCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
+            getPlaybackPositionMs = { _playbackPositionMs.value },
+            onSetPlaybackPositionMs = { _playbackPositionMs.value = it },
+            onSetIsPlaying = { _isPlaying.value = it },
+            isPlayWhenReadyIntent = { playWhenReadyIntent },
+            onSetPlayWhenReadyIntent = { playWhenReadyIntent = it },
+            getController = { controller },
+            setLastMediaItemIndex = { lastMediaItemIndex = it },
+            onEmitEvent = { _events.tryEmit(it) },
+            onCancelPendingPlayIntent = ::cancelPendingPlayIntent,
+            ensurePreparedForPlayback = ::ensurePreparedForPlayback,
+            getPlaybackGeneration = { playbackGeneration },
+        )
 
     val resolvingRemote: StateFlow<Boolean> = streamRecoveryCoordinator.resolvingRemote
 
-    private val radioCoordinator = PlaybackRadioCoordinator(
-        scope = scope,
-        dependencies = dependencies,
-        getCurrentItem = { _currentItem.value },
-        getQueue = { _queue.value },
-        getCurrentIndex = { controller?.currentMediaItemIndex ?: lastMediaItemIndex },
-        getRepeatMode = { _repeatMode.value },
-        isPlayWhenReadyIntent = { playWhenReadyIntent },
-        canKeepCurrent = ::shouldKeepCurrentWhenStartingRadio,
-        getLibrary = { library },
-        onEmitEvent = { _events.tryEmit(it) },
-        onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
-        onApplyRadioStartModes = ::applyRadioStartModes,
-        onReplaceUpcomingWithRadio = ::replaceUpcomingWithRadio,
-        onPlayPlayableCollection = { items, fromRadio, rotate ->
-            playPlayableCollection(items, fromRadio = fromRadio, rotate = rotate)
-        },
-        onAddPlayableBatch = ::addPlayableBatch,
-        onPrefetchAround = ::prefetchAround
-    )
+    private val radioCoordinator =
+        PlaybackRadioCoordinator(
+            scope = scope,
+            dependencies = dependencies,
+            getCurrentItem = { _currentItem.value },
+            getQueue = { _queue.value },
+            getCurrentIndex = { controller?.currentMediaItemIndex ?: lastMediaItemIndex },
+            getRepeatMode = { _repeatMode.value },
+            isPlayWhenReadyIntent = { playWhenReadyIntent },
+            canKeepCurrent = ::shouldKeepCurrentWhenStartingRadio,
+            getLibrary = { library },
+            onEmitEvent = { _events.tryEmit(it) },
+            onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
+            onApplyRadioStartModes = ::applyRadioStartModes,
+            onReplaceUpcomingWithRadio = ::replaceUpcomingWithRadio,
+            onPlayPlayableCollection = { items, fromRadio, rotate ->
+                playPlayableCollection(items, fromRadio = fromRadio, rotate = rotate)
+            },
+            onAddPlayableBatch = ::addPlayableBatch,
+            onPrefetchAround = ::prefetchAround,
+        )
     val radioActive = radioCoordinator.radioActive
     val radioLoading = radioCoordinator.radioLoading
     val radioMode = radioCoordinator.radioMode
     val radioStatusLabel = radioCoordinator.radioStatusLabel
 
-    private val analyticsCoordinator = PlaybackAnalyticsCoordinator(
-        scope = scope,
-        dependencies = dependencies,
-        getCurrentItem = { _currentItem.value },
-        setCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
-        getCurrentSong = { _currentSong.value },
-        setCurrentSong = { _currentSong.value = it },
-        getQueue = { _queue.value },
-        setQueue = { _queue.value = it },
-        getController = { controller },
-        getIsPlaying = { _isPlaying.value },
-        setIsPlaying = { _isPlaying.value = it },
-        getPlaybackPositionMs = { _playbackPositionMs.value },
-        setPlaybackPositionMs = { _playbackPositionMs.value = it },
-        getLastSeekTimestamp = { lastSeekTimestamp },
-        clearRemoteRecoveryAfterProgress = ::clearRemoteRecoveryAfterProgress,
-        clearRejectedQueueEntries = { streamRecoveryCoordinator.clearRejectedQueueEntries() },
-        maybeSaveWhileListening = ::maybeSaveWhileListening
-    )
+    private val analyticsCoordinator =
+        PlaybackAnalyticsCoordinator(
+            scope = scope,
+            dependencies = dependencies,
+            getCurrentItem = { _currentItem.value },
+            setCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
+            getCurrentSong = { _currentSong.value },
+            setCurrentSong = { _currentSong.value = it },
+            getQueue = { _queue.value },
+            setQueue = { _queue.value = it },
+            getController = { controller },
+            getIsPlaying = { _isPlaying.value },
+            setIsPlaying = { _isPlaying.value = it },
+            getPlaybackPositionMs = { _playbackPositionMs.value },
+            setPlaybackPositionMs = { _playbackPositionMs.value = it },
+            getLastSeekTimestamp = { lastSeekTimestamp },
+            clearRemoteRecoveryAfterProgress = ::clearRemoteRecoveryAfterProgress,
+            clearRejectedQueueEntries = { streamRecoveryCoordinator.clearRejectedQueueEntries() },
+            maybeSaveWhileListening = ::maybeSaveWhileListening,
+        )
 
     private val _queueFocusEpoch = MutableStateFlow(0)
     val queueFocusEpoch = _queueFocusEpoch.asStateFlow()
@@ -304,7 +311,7 @@ class PlaybackRuntime internal constructor(
         if (controller != null || controllerLifecycleManager.uiAttachmentCount > 0) return
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.warmup() (anticipating MediaController connection)"
+            "PlaybackRuntime.warmup() (anticipating MediaController connection)",
         )
         controllerLifecycleManager.warmUpController()
     }
@@ -342,8 +349,7 @@ class PlaybackRuntime internal constructor(
     internal suspend fun systemResumptionMetadataSnapshot(): PlaybackCollectionSnapshot? =
         sessionHydrator.systemResumptionMetadataSnapshot()
 
-    internal suspend fun restoreSystemPlaybackSnapshot(): PlaybackCollectionSnapshot? =
-        sessionHydrator.restoreSystemPlaybackSnapshot()
+    internal suspend fun restoreSystemPlaybackSnapshot(): PlaybackCollectionSnapshot? = sessionHydrator.restoreSystemPlaybackSnapshot()
 
     internal fun attachControllerForTest(controller: PlaybackControllerFacade) {
         controllerLifecycleManager.attachControllerForTest(controller)
@@ -363,16 +369,17 @@ class PlaybackRuntime internal constructor(
         samplePositionAndOwnership()
     }
 
-    private fun libraryUpdateContext() = try {
-        val interceptor = scope.coroutineContext[ContinuationInterceptor]
-        if (interceptor === Dispatchers.Main || interceptor === Dispatchers.Main.immediate) {
-            Dispatchers.Default
-        } else {
+    private fun libraryUpdateContext() =
+        try {
+            val interceptor = scope.coroutineContext[ContinuationInterceptor]
+            if (interceptor === Dispatchers.Main || interceptor === Dispatchers.Main.immediate) {
+                Dispatchers.Default
+            } else {
+                EmptyCoroutineContext
+            }
+        } catch (_: IllegalStateException) {
             EmptyCoroutineContext
         }
-    } catch (_: IllegalStateException) {
-        EmptyCoroutineContext
-    }
 
     private fun start() {
         if (!started.compareAndSet(false, true)) return
@@ -385,15 +392,18 @@ class PlaybackRuntime internal constructor(
                     libraryReady.value = true
                     if (updated !== oldQueue) {
                         val isPlaying = _isPlaying.value || playWhenReadyIntent
-                        val sortedByTrack = if (!isPlaying) {
-                            reorderAlbumQueueByTrackNumber(updated, _isShuffle.value)
-                        } else {
-                            null
-                        }
+                        val sortedByTrack =
+                            if (!isPlaying) {
+                                reorderAlbumQueueByTrackNumber(updated, _isShuffle.value)
+                            } else {
+                                null
+                            }
                         if (sortedByTrack != null) {
                             val currentSlot = _currentItem.value?.queueEntryId
-                            val newIndex = sortedByTrack.indexOfFirst { it.queueEntryId == currentSlot }
-                                .takeIf { it >= 0 } ?: 0
+                            val newIndex =
+                                sortedByTrack
+                                    .indexOfFirst { it.queueEntryId == currentSlot }
+                                    .takeIf { it >= 0 } ?: 0
                             val position = _playbackPositionMs.value
                             applyQueueReorder(sortedByTrack, newIndex, position, isPlaying)
                             persistPlaybackSession(force = true)
@@ -404,7 +414,7 @@ class PlaybackRuntime internal constructor(
                                 setCurrentItem(
                                     it,
                                     persistLastPlayed = false,
-                                    hint = PlaybackChangeHint.METADATA_UPDATE
+                                    hint = PlaybackChangeHint.METADATA_UPDATE,
                                 )
                             }
                             syncChangedTimelineItems(oldQueue, updated)
@@ -429,9 +439,9 @@ class PlaybackRuntime internal constructor(
             PlaybackControllerConnector {
                 MediaControllerConnection(
                     context = context,
-                    library = { library }
+                    library = { library },
                 )
-            }
+            },
         )
     }
 
@@ -508,98 +518,102 @@ class PlaybackRuntime internal constructor(
         controllerLifecycleManager.updateTickerLifecycle()
     }
 
-    private val playerListener: PlaybackControllerFacade.Listener = object : PlaybackControllerFacade.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            PlaybackDiagnostics.log(
-                PlaybackDiagnostics.TAG_RUNTIME,
-                "PlaybackRuntime.playerListener.onIsPlayingChanged: isPlaying=$isPlaying"
-            )
-            _isPlaying.value = isPlaying
-            if (isPlaying) {
-                clearRemoteRecoveryAfterProgress()
-                scope.launch { samplePositionAndOwnership() }
-            } else {
-                controller?.let { player ->
-                    val pos = player.currentPosition.coerceAtLeast(0L)
-                    _playbackPositionMs.value = pos
-                    if (pos > 0L) {
-                        dependencies.listenTracker.creditPlaybackTime(pos)
-                    }
-                }
-                dependencies.listenTracker.onStopped()
-                persistPlaybackSession(force = true)
-                triggerFlushPostponedTagWrites()
-            }
-            updateTickerLifecycle()
-            if (!isPlaying) postOrRunReleaseControllerIfIdle()
-        }
-
-        override fun onPlayWhenReadyChanged(playWhenReady: Boolean) {
-            PlaybackDiagnostics.log(
-                PlaybackDiagnostics.TAG_RUNTIME,
-                "PlaybackRuntime.playerListener.onPlayWhenReadyChanged: playWhenReady=$playWhenReady"
-            )
-            playWhenReadyIntent = playWhenReady
-            if (playWhenReady) {
-                pendingPlayIntentEpoch = null
-                val index = currentQueueIndex()
-                ensureRemoteReadyAt(index, startPlaying = true)
-                prefetchAround(index)
-            } else {
-                cancelPendingPlayIntent()
-                streamRecoveryCoordinator.invalidatePlaybackWork(clearRejectedEntries = false)
-            }
-        }
-
-        override fun onPlayerError() {
-            PlaybackDiagnostics.error(
-                PlaybackDiagnostics.TAG_RUNTIME,
-                "PlaybackRuntime.playerListener.onPlayerError() triggered"
-            )
-            handlePlayerError()
-        }
-
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState != Player.STATE_ENDED) return
-            (_currentItem.value as? PlayableItem.Remote)?.let {
-                maybeSaveWhileListening(
-                    remote = it,
-                    event = SaveWhileListeningEvent.PLAYBACK_COMPLETED,
-                    positionMs = _playbackPositionMs.value
+    private val playerListener: PlaybackControllerFacade.Listener =
+        object : PlaybackControllerFacade.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                PlaybackDiagnostics.log(
+                    PlaybackDiagnostics.TAG_RUNTIME,
+                    "PlaybackRuntime.playerListener.onIsPlayingChanged: isPlaying=$isPlaying",
                 )
+                _isPlaying.value = isPlaying
+                if (isPlaying) {
+                    clearRemoteRecoveryAfterProgress()
+                    scope.launch { samplePositionAndOwnership() }
+                } else {
+                    controller?.let { player ->
+                        val pos = player.currentPosition.coerceAtLeast(0L)
+                        _playbackPositionMs.value = pos
+                        if (pos > 0L) {
+                            dependencies.listenTracker.creditPlaybackTime(pos)
+                        }
+                    }
+                    dependencies.listenTracker.onStopped()
+                    persistPlaybackSession(force = true)
+                    triggerFlushPostponedTagWrites()
+                }
+                updateTickerLifecycle()
+                if (!isPlaying) postOrRunReleaseControllerIfIdle()
             }
-            radioCoordinator.maybeAutoStartRadioOnQueueEnd()
-        }
 
-        override fun onMediaItemTransition(item: PlayableItem?, reason: Int) {
-            handleMediaItemTransition(item, reason)
-        }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean) {
+                PlaybackDiagnostics.log(
+                    PlaybackDiagnostics.TAG_RUNTIME,
+                    "PlaybackRuntime.playerListener.onPlayWhenReadyChanged: playWhenReady=$playWhenReady",
+                )
+                playWhenReadyIntent = playWhenReady
+                if (playWhenReady) {
+                    pendingPlayIntentEpoch = null
+                    val index = currentQueueIndex()
+                    ensureRemoteReadyAt(index, startPlaying = true)
+                    prefetchAround(index)
+                } else {
+                    cancelPendingPlayIntent()
+                    streamRecoveryCoordinator.invalidatePlaybackWork(clearRejectedEntries = false)
+                }
+            }
 
-        override fun onTimelineChanged() {
-            reconcileTimelineFromController()
-        }
+            override fun onPlayerError() {
+                PlaybackDiagnostics.error(
+                    PlaybackDiagnostics.TAG_RUNTIME,
+                    "PlaybackRuntime.playerListener.onPlayerError() triggered",
+                )
+                handlePlayerError()
+            }
 
-        override fun onPositionDiscontinuity(positionMs: Long) {
-            _playbackPositionMs.value = positionMs.coerceAtLeast(0L)
-            lastSeekTimestamp = dependencies.clockMs()
-            if (!_isPlaying.value) scheduleSeekPersistence()
-        }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState != Player.STATE_ENDED) return
+                (_currentItem.value as? PlayableItem.Remote)?.let {
+                    maybeSaveWhileListening(
+                        remote = it,
+                        event = SaveWhileListeningEvent.PLAYBACK_COMPLETED,
+                        positionMs = _playbackPositionMs.value,
+                    )
+                }
+                radioCoordinator.maybeAutoStartRadioOnQueueEnd()
+            }
 
-        override fun onRepeatModeChanged(repeatMode: Int) {
-            val resolved = repeatModeFromPlayer(repeatMode)
-            if (resolved == _repeatMode.value) return
-            _repeatMode.value = resolved
-            scope.launch { dependencies.persistRepeat(resolved) }
-        }
+            override fun onMediaItemTransition(
+                item: PlayableItem?,
+                reason: Int,
+            ) {
+                handleMediaItemTransition(item, reason)
+            }
 
-        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-            reconcileExternalShuffleMode(shuffleModeEnabled)
-        }
+            override fun onTimelineChanged() {
+                reconcileTimelineFromController()
+            }
 
-        override fun onDisconnected(controller: PlaybackControllerFacade) {
-            scope.launch { controllerLifecycleManager.handleControllerDisconnected(controller) }
+            override fun onPositionDiscontinuity(positionMs: Long) {
+                _playbackPositionMs.value = positionMs.coerceAtLeast(0L)
+                lastSeekTimestamp = dependencies.clockMs()
+                if (!_isPlaying.value) scheduleSeekPersistence()
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                val resolved = repeatModeFromPlayer(repeatMode)
+                if (resolved == _repeatMode.value) return
+                _repeatMode.value = resolved
+                scope.launch { dependencies.persistRepeat(resolved) }
+            }
+
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                reconcileExternalShuffleMode(shuffleModeEnabled)
+            }
+
+            override fun onDisconnected(controller: PlaybackControllerFacade) {
+                scope.launch { controllerLifecycleManager.handleControllerDisconnected(controller) }
+            }
         }
-    }
 
     private fun syncFromController() {
         val player = controller ?: return
@@ -640,7 +654,7 @@ class PlaybackRuntime internal constructor(
     private fun setCurrentItem(
         item: PlayableItem?,
         persistLastPlayed: Boolean = true,
-        hint: PlaybackChangeHint = PlaybackChangeHint.METADATA_UPDATE
+        hint: PlaybackChangeHint = PlaybackChangeHint.METADATA_UPDATE,
     ) {
         val previousSlot = _currentItem.value?.queueEntryId
         val occurrenceChanged = item?.queueEntryId != previousSlot
@@ -649,11 +663,12 @@ class PlaybackRuntime internal constructor(
         lastKnownQueueEntryId = item?.queueEntryId
         val local = (item as? PlayableItem.Local)?.song
         val previous = _currentSong.value
-        val displayed = when {
-            local == null -> null
-            previous?.id == local.id -> previous.keepLyricsIfIncomingSlim(local)
-            else -> local
-        }
+        val displayed =
+            when {
+                local == null -> null
+                previous?.id == local.id -> previous.keepLyricsIfIncomingSlim(local)
+                else -> local
+            }
         _currentSong.value = displayed
         dependencies.listenTracker.onTrackChanged(local, hint)
         if (displayed != null && displayed.lyrics.isNullOrEmpty() && controllerLifecycleManager.uiAttachmentCount > 0) {
@@ -669,7 +684,10 @@ class PlaybackRuntime internal constructor(
         analyticsCoordinator.hydrateCurrentSongLyrics(songId)
     }
 
-    fun updateCurrentSongLyrics(songId: Long, lyrics: String?) {
+    fun updateCurrentSongLyrics(
+        songId: Long,
+        lyrics: String?,
+    ) {
         analyticsCoordinator.updateCurrentSongLyrics(songId, lyrics)
     }
 
@@ -677,11 +695,17 @@ class PlaybackRuntime internal constructor(
         analyticsCoordinator.updateCurrentItemLyrics(lyrics)
     }
 
-    private fun applyLyricsToCurrent(songId: Long, lyrics: String?) {
+    private fun applyLyricsToCurrent(
+        songId: Long,
+        lyrics: String?,
+    ) {
         analyticsCoordinator.applyLyricsToCurrent(songId, lyrics)
     }
 
-    private fun touchLastPlayed(item: PlayableItem?, force: Boolean = false) {
+    private fun touchLastPlayed(
+        item: PlayableItem?,
+        force: Boolean = false,
+    ) {
         analyticsCoordinator.touchLastPlayed(item, force = force)
     }
 
@@ -727,21 +751,27 @@ class PlaybackRuntime internal constructor(
         sessionHydrator.maybeSeedIdlePlayer()
     }
 
-    private fun applyHydratedQueue(hydrated: HydratedQueue, restoreShuffle: Boolean) {
+    private fun applyHydratedQueue(
+        hydrated: HydratedQueue,
+        restoreShuffle: Boolean,
+    ) {
         invalidatePlaybackWork()
         clearDiscoverPlaybackOrigin()
-        val order = PlaybackQueueOrder.validPlayOrderOrNull(
-            hydrated.shufflePlayOrder,
-            hydrated.items.size
-        )
+        val order =
+            PlaybackQueueOrder.validPlayOrderOrNull(
+                hydrated.shufflePlayOrder,
+                hydrated.items.size,
+            )
         if (order != null && restoreShuffle) {
             queueCoordinator.preShuffleOrder = PlaybackQueueSlots.capturePreShuffleOrder(hydrated.items)
             val shuffled = PlaybackQueueOrder.applyPlayOrder(hydrated.items, order)
-            val index = PlaybackQueueOrder.toDisplayIndex(
-                order,
-                hydrated.currentIndex,
-                hydrated.items.size
-            ).coerceIn(0, shuffled.lastIndex)
+            val index =
+                PlaybackQueueOrder
+                    .toDisplayIndex(
+                        order,
+                        hydrated.currentIndex,
+                        hydrated.items.size,
+                    ).coerceIn(0, shuffled.lastIndex)
             _queue.value = shuffled
             lastMediaItemIndex = index
             _isShuffle.value = true
@@ -766,7 +796,7 @@ class PlaybackRuntime internal constructor(
         applyManualModes: Boolean = true,
         startShuffled: Boolean = false,
         origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
-        resumeAtMs: Long? = null
+        resumeAtMs: Long? = null,
     ) {
         if (items.isEmpty()) return
         invalidatePlaybackWork()
@@ -779,14 +809,14 @@ class PlaybackRuntime internal constructor(
             rotate = rotate,
             applyManualModes = applyManualModes,
             startShuffled = startShuffled,
-            resumeAtMs = resumeAtMs
+            resumeAtMs = resumeAtMs,
         )
     }
 
     internal fun stageExternalPlayableCollection(
         items: List<PlayableItem>,
         startIndex: Int,
-        startPositionMs: Long
+        startPositionMs: Long,
     ): PlaybackCollectionSnapshot? {
         if (items.isEmpty()) return null
         invalidatePlaybackWork()
@@ -794,17 +824,19 @@ class PlaybackRuntime internal constructor(
         clearDiscoverPlaybackOrigin()
         val staged = items.ensureFreshQueueEntryIds()
         val index = startIndex.coerceIn(staged.indices)
-        val launchModes = queueCoordinator.resolveLaunchModes(
-            startShuffled = false,
-            applyManualModes = true,
-            fromRadio = false
-        )
-        val (playItems, playIndex) = if (launchModes.willShuffle) {
-            permuteQueueToPlayOrder(staged, index, backupSource = true)
-        } else {
-            queueCoordinator.preShuffleOrder = null
-            staged to index
-        }
+        val launchModes =
+            queueCoordinator.resolveLaunchModes(
+                startShuffled = false,
+                applyManualModes = true,
+                fromRadio = false,
+            )
+        val (playItems, playIndex) =
+            if (launchModes.willShuffle) {
+                permuteQueueToPlayOrder(staged, index, backupSource = true)
+            } else {
+                queueCoordinator.preShuffleOrder = null
+                staged to index
+            }
         stageQueueCore(playItems, playIndex)
         queueCoordinator.applyLaunchModes(launchModes, deferPlayerSync = true)
         val snapshot = publishStagedCollectionCore(playItems, playIndex, startPositionMs)
@@ -820,14 +852,15 @@ class PlaybackRuntime internal constructor(
         rotate: Boolean,
         applyManualModes: Boolean,
         startShuffled: Boolean,
-        resumeAtMs: Long?
+        resumeAtMs: Long?,
     ) {
         if (!fromRadio) radioCoordinator.clearRadioSession()
-        val launchModes = queueCoordinator.resolveLaunchModes(
-            startShuffled = startShuffled,
-            applyManualModes = applyManualModes,
-            fromRadio = fromRadio
-        )
+        val launchModes =
+            queueCoordinator.resolveLaunchModes(
+                startShuffled = startShuffled,
+                applyManualModes = applyManualModes,
+                fromRadio = fromRadio,
+            )
         val validIndex = startIndex.coerceIn(0, items.lastIndex)
         val shouldRotate = rotate && !fromRadio && !launchModes.willShuffle && validIndex > 0
         val ordered = if (shouldRotate) PlaybackQueueOrder.rotateToStart(items, validIndex) else items
@@ -837,13 +870,14 @@ class PlaybackRuntime internal constructor(
             playWhenReadyIntent = true
             beginPendingPlayIntent()
         }
-        val playingIndex = finishPlayPlayableCollection(
-            items = ordered,
-            index = startAt,
-            fromRadio = fromRadio,
-            launchModes = launchModes,
-            resumeAtMs = resumePosition
-        )
+        val playingIndex =
+            finishPlayPlayableCollection(
+                items = ordered,
+                index = startAt,
+                fromRadio = fromRadio,
+                launchModes = launchModes,
+                resumeAtMs = resumePosition,
+            )
         ensureControllerConnection()
         if (fromRadio && radioActive.value && playWhenReadyIntent) {
             radioCoordinator.maybeRefillRadio(playingIndex)
@@ -856,19 +890,21 @@ class PlaybackRuntime internal constructor(
         fromRadio: Boolean,
         launchModes: ResolvedLaunchModes? = null,
         resumeAtMs: Long? = null,
-        startPlaying: Boolean = true
+        startPlaying: Boolean = true,
     ): Int {
-        val resolvedModes = launchModes ?: queueCoordinator.resolveLaunchModes(
-            startShuffled = false,
-            applyManualModes = false,
-            fromRadio = fromRadio
-        )
-        val (playItems, playIndex) = if (resolvedModes.willShuffle) {
-            permuteQueueToPlayOrder(items, index, backupSource = true)
-        } else {
-            if (!fromRadio && !_isShuffle.value) queueCoordinator.preShuffleOrder = null
-            items to index
-        }
+        val resolvedModes =
+            launchModes ?: queueCoordinator.resolveLaunchModes(
+                startShuffled = false,
+                applyManualModes = false,
+                fromRadio = fromRadio,
+            )
+        val (playItems, playIndex) =
+            if (resolvedModes.willShuffle) {
+                permuteQueueToPlayOrder(items, index, backupSource = true)
+            } else {
+                if (!fromRadio && !_isShuffle.value) queueCoordinator.preShuffleOrder = null
+                items to index
+            }
         stageQueueCore(playItems, playIndex)
         val startPosition = if (resolvedModes.willShuffle) 0L else resumeAtMs?.coerceAtLeast(0L) ?: 0L
         queueCoordinator.applyLaunchModes(resolvedModes)
@@ -879,7 +915,7 @@ class PlaybackRuntime internal constructor(
             snapshot.currentIndex,
             snapshot.positionMs,
             startPlaying = startPlaying,
-            newPlayback = true
+            newPlayback = true,
         )
         if (startPlaying) {
             touchLastPlayed(snapshot.currentItem, force = true)
@@ -892,7 +928,7 @@ class PlaybackRuntime internal constructor(
 
     private fun stageQueueCore(
         items: List<PlayableItem>,
-        index: Int
+        index: Int,
     ) {
         val previous = _currentItem.value
         if (previous?.queueEntryId != items[index].queueEntryId) {
@@ -900,7 +936,7 @@ class PlaybackRuntime internal constructor(
                 maybeSaveWhileListening(
                     it,
                     SaveWhileListeningEvent.MANUAL_SKIP,
-                    _playbackPositionMs.value
+                    _playbackPositionMs.value,
                 )
             }
         }
@@ -911,7 +947,7 @@ class PlaybackRuntime internal constructor(
     private fun publishStagedCollectionCore(
         items: List<PlayableItem>,
         index: Int,
-        startPositionMs: Long
+        startPositionMs: Long,
     ): PlaybackCollectionSnapshot {
         setCurrentItem(items[index], persistLastPlayed = false)
         sessionHydrator.liveSessionHydrated = true
@@ -953,16 +989,19 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun requestPlaybackForCurrent() {
-        val player = controller ?: run {
-            beginPendingPlayIntent()
-            ensureControllerConnection()
-            return
-        }
+        val player =
+            controller ?: run {
+                beginPendingPlayIntent()
+                ensureControllerConnection()
+                return
+            }
         val current = _currentItem.value ?: return
         val items = _queue.value.ifEmpty { listOf(current) }
-        val index = items.indexOfFirst { it.queueEntryId == current.queueEntryId }
-            .takeIf { it >= 0 }
-            ?: lastMediaItemIndex.coerceIn(0, items.lastIndex)
+        val index =
+            items
+                .indexOfFirst { it.queueEntryId == current.queueEntryId }
+                .takeIf { it >= 0 }
+                ?: lastMediaItemIndex.coerceIn(0, items.lastIndex)
         val position = _playbackPositionMs.value.coerceAtLeast(0L)
         playWhenReadyIntent = true
         pendingPlayIntentEpoch = null
@@ -971,7 +1010,7 @@ class PlaybackRuntime internal constructor(
                 items = items,
                 startIndex = index,
                 startPositionMs = position,
-                startPlaying = true
+                startPlaying = true,
             )
             return
         }
@@ -1040,12 +1079,14 @@ class PlaybackRuntime internal constructor(
         queueCoordinator.playNextBatch(items)
     }
 
-    fun updateAlbumArtworkInQueue(albumKey: String, artworkUri: String?) {
+    fun updateAlbumArtworkInQueue(
+        albumKey: String,
+        artworkUri: String?,
+    ) {
         queueCoordinator.updateAlbumArtworkInQueue(albumKey, artworkUri)
     }
 
-    fun removeFromQueue(queueEntryId: String): Boolean =
-        queueCoordinator.removeFromQueue(queueEntryId)
+    fun removeFromQueue(queueEntryId: String): Boolean = queueCoordinator.removeFromQueue(queueEntryId)
 
     fun removeFromQueue(index: Int) {
         queueCoordinator.removeFromQueue(index)
@@ -1055,7 +1096,10 @@ class PlaybackRuntime internal constructor(
         queueCoordinator.clearQueue()
     }
 
-    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+    fun moveQueueItem(
+        fromIndex: Int,
+        toIndex: Int,
+    ) {
         queueCoordinator.moveQueueItem(fromIndex, toIndex)
     }
 
@@ -1075,80 +1119,86 @@ class PlaybackRuntime internal constructor(
         val snapshot = _queue.value
         val start = snapshot.indexOfQueueEntry(selected)
         if (start < 0) return
-        queueSelectionJob = scope.launch {
-            streamRecoveryCoordinator.beginResolving()
-            try {
-                val online = dependencies.isOnline()
-                for (step in PlaybackFallbackPlanner.circularPlan(snapshot, start)) {
-                    if (!selectionGate.isCurrent(token) ||
-                        !isPlaybackGenerationCurrent(generation)
-                    ) {
-                        return@launch
-                    }
-                    val liveIndex = _queue.value.indexOfQueueEntry(step.item)
-                    if (liveIndex < 0) continue
-                    when (val live = _queue.value.getOrNull(liveIndex) ?: continue) {
-                        is PlayableItem.Local -> {
-                            if (selectionGate.isCurrent(token)) {
-                                val shouldPlay = playWhenReadyIntent &&
-                                        (pendingPlayIntentEpoch == playIntent || controller != null)
-                                if (shouldPlay) pendingPlayIntentEpoch = null
-                                applyQueueSelection(live, startPlaying = shouldPlay)
-                            }
+        queueSelectionJob =
+            scope.launch {
+                streamRecoveryCoordinator.beginResolving()
+                try {
+                    val online = dependencies.isOnline()
+                    for (step in PlaybackFallbackPlanner.circularPlan(snapshot, start)) {
+                        if (!selectionGate.isCurrent(token) ||
+                            !isPlaybackGenerationCurrent(generation)
+                        ) {
                             return@launch
                         }
-
-                        is PlayableItem.Remote -> {
-                            val needsResolve = dependencies.streamAccess.needsResolve(live)
-                            if (needsResolve && !online) {
-                                continue
-                            }
-                            val ready = if (needsResolve) {
-                                dependencies.streamAccess.resolve(live)
-                            } else {
-                                live
-                            } ?: continue
-                            if (!selectionGate.isCurrent(token) ||
-                                !isPlaybackGenerationCurrent(generation)
-                            ) {
+                        val liveIndex = _queue.value.indexOfQueueEntry(step.item)
+                        if (liveIndex < 0) continue
+                        when (val live = _queue.value.getOrNull(liveIndex) ?: continue) {
+                            is PlayableItem.Local -> {
+                                if (selectionGate.isCurrent(token)) {
+                                    val shouldPlay =
+                                        playWhenReadyIntent &&
+                                            (pendingPlayIntentEpoch == playIntent || controller != null)
+                                    if (shouldPlay) pendingPlayIntentEpoch = null
+                                    applyQueueSelection(live, startPlaying = shouldPlay)
+                                }
                                 return@launch
                             }
-                            val slot = if (ready === live) {
-                                _queue.value.indexOfQueueEntry(live)
-                            } else {
-                                applyResolvedRemote(live, ready)
+
+                            is PlayableItem.Remote -> {
+                                val needsResolve = dependencies.streamAccess.needsResolve(live)
+                                if (needsResolve && !online) {
+                                    continue
+                                }
+                                val ready =
+                                    if (needsResolve) {
+                                        dependencies.streamAccess.resolve(live)
+                                    } else {
+                                        live
+                                    } ?: continue
+                                if (!selectionGate.isCurrent(token) ||
+                                    !isPlaybackGenerationCurrent(generation)
+                                ) {
+                                    return@launch
+                                }
+                                val slot =
+                                    if (ready === live) {
+                                        _queue.value.indexOfQueueEntry(live)
+                                    } else {
+                                        applyResolvedRemote(live, ready)
+                                    }
+                                val applied = _queue.value.getOrNull(slot) ?: continue
+                                if (selectionGate.isCurrent(token)) {
+                                    val shouldPlay =
+                                        playWhenReadyIntent &&
+                                            (pendingPlayIntentEpoch == playIntent || controller != null)
+                                    if (shouldPlay) pendingPlayIntentEpoch = null
+                                    applyQueueSelection(applied, startPlaying = shouldPlay)
+                                }
+                                return@launch
                             }
-                            val applied = _queue.value.getOrNull(slot) ?: continue
-                            if (selectionGate.isCurrent(token)) {
-                                val shouldPlay = playWhenReadyIntent &&
-                                        (pendingPlayIntentEpoch == playIntent || controller != null)
-                                if (shouldPlay) pendingPlayIntentEpoch = null
-                                applyQueueSelection(applied, startPlaying = shouldPlay)
-                            }
-                            return@launch
                         }
                     }
-                }
-                if (selectionGate.isCurrent(token) &&
-                    isPlaybackGenerationCurrent(generation)
-                ) {
-                    val message = if (!online) {
-                        "Sin conexión a internet"
-                    } else {
-                        "No se pudo resolver el audio online"
+                    if (selectionGate.isCurrent(token) &&
+                        isPlaybackGenerationCurrent(generation)
+                    ) {
+                        val message =
+                            if (!online) {
+                                "Sin conexión a internet"
+                            } else {
+                                "No se pudo resolver el audio online"
+                            }
+                        _events.tryEmit(message)
                     }
-                    _events.tryEmit(message)
+                } finally {
+                    if (pendingPlayIntentEpoch == playIntent) pendingPlayIntentEpoch = null
+                    streamRecoveryCoordinator.endResolving()
                 }
-            } finally {
-                if (pendingPlayIntentEpoch == playIntent) pendingPlayIntentEpoch = null
-                streamRecoveryCoordinator.endResolving()
             }
-        }
     }
 
     private fun applyQueueSelection(
         item: PlayableItem,
-        startPlaying: Boolean = true
+        startPlaying: Boolean = true,
     ): Boolean {
         val items = _queue.value
         val slot = items.indexOfQueueEntry(item)
@@ -1165,7 +1215,7 @@ class PlaybackRuntime internal constructor(
                 items,
                 slot,
                 fromRadio = radioActive.value,
-                startPlaying = startPlaying
+                startPlaying = startPlaying,
             )
         } else {
             lastMediaItemIndex = slot
@@ -1182,7 +1232,10 @@ class PlaybackRuntime internal constructor(
         return true
     }
 
-    private fun handleMediaItemTransition(incoming: PlayableItem?, reason: Int) {
+    private fun handleMediaItemTransition(
+        incoming: PlayableItem?,
+        reason: Int,
+    ) {
         val player = controller
         val newIndex = player?.currentMediaItemIndex ?: -1
         if (suppressPlaylistMutationCallbacks) {
@@ -1190,12 +1243,13 @@ class PlaybackRuntime internal constructor(
             return
         }
         val queueSize = _queue.value.size
-        val wrappedShuffleCycle = !suppressShuffleWrapDetection &&
+        val wrappedShuffleCycle =
+            !suppressShuffleWrapDetection &&
                 queueCoordinator.shouldReshuffleOnWrap(
                     reason = reason,
                     lastIndex = lastMediaItemIndex,
                     newIndex = newIndex,
-                    queueSize = queueSize
+                    queueSize = queueSize,
                 )
 
         if (wrappedShuffleCycle) {
@@ -1205,18 +1259,19 @@ class PlaybackRuntime internal constructor(
                 maybeSaveWhileListening(
                     outgoing,
                     SaveWhileListeningEvent.AUTOMATIC_TRANSITION,
-                    _playbackPositionMs.value
+                    _playbackPositionMs.value,
                 )
             }
             _playbackPositionMs.value = 0L
             invalidatePlaybackWork(clearRejectedEntries = false)
 
             val avoid = _queue.value.getOrNull(lastMediaItemIndex)?.queueEntryId
-            val reshuffled = PlaybackQueueOrder.reshuffleItemsAvoidingKey(
-                items = _queue.value,
-                avoidKey = avoid,
-                keySelector = { it.queueEntryId }
-            )
+            val reshuffled =
+                PlaybackQueueOrder.reshuffleItemsAvoidingKey(
+                    items = _queue.value,
+                    avoidKey = avoid,
+                    keySelector = { it.queueEntryId },
+                )
             _queue.value = reshuffled
             suppressShuffleWrapDetection = true
             try {
@@ -1224,12 +1279,12 @@ class PlaybackRuntime internal constructor(
                     reshuffled,
                     0,
                     0L,
-                    startPlaying = playWhenReadyIntent
+                    startPlaying = playWhenReadyIntent,
                 )
                 setCurrentItem(
                     reshuffled[0],
                     persistLastPlayed = false,
-                    hint = PlaybackChangeHint.NEW_PLAYBACK
+                    hint = PlaybackChangeHint.NEW_PLAYBACK,
                 )
                 lastMediaItemIndex = 0
             } finally {
@@ -1253,33 +1308,39 @@ class PlaybackRuntime internal constructor(
 
         if (incoming != null) {
             val previous = _currentItem.value
-            val playable = _queue.value.firstOrNull {
-                it.queueEntryId == incoming.queueEntryId
-            } ?: _queue.value.getOrNull(newIndex) ?: incoming
+            val playable =
+                _queue.value.firstOrNull {
+                    it.queueEntryId == incoming.queueEntryId
+                } ?: _queue.value.getOrNull(newIndex) ?: incoming
             val sameOccurrence = previous?.queueEntryId == playable.queueEntryId
             val explicitStart = pendingNewPlaybackQueueEntryId == playable.queueEntryId
             if (explicitStart) pendingNewPlaybackQueueEntryId = null
             val metadataOnly =
                 reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
-                        sameOccurrence &&
-                        !explicitStart
+                    sameOccurrence &&
+                    !explicitStart
             if (!metadataOnly) {
                 creditItemPlayback(
                     previous,
-                    completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+                    completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
                 )
                 (previous as? PlayableItem.Remote)?.let { outgoing ->
-                    val event = when (reason) {
-                        Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
-                        Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT ->
-                            SaveWhileListeningEvent.AUTOMATIC_TRANSITION
+                    val event =
+                        when (reason) {
+                            Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
+                            Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT,
+                            -> {
+                                SaveWhileListeningEvent.AUTOMATIC_TRANSITION
+                            }
 
-                        else -> SaveWhileListeningEvent.MANUAL_SKIP
-                    }
+                            else -> {
+                                SaveWhileListeningEvent.MANUAL_SKIP
+                            }
+                        }
                     maybeSaveWhileListening(
                         outgoing,
                         event,
-                        _playbackPositionMs.value
+                        _playbackPositionMs.value,
                     )
                 }
                 _playbackPositionMs.value = 0L
@@ -1288,11 +1349,12 @@ class PlaybackRuntime internal constructor(
             }
             setCurrentItem(
                 playable,
-                hint = if (metadataOnly) {
-                    PlaybackChangeHint.METADATA_UPDATE
-                } else {
-                    PlaybackChangeHint.NEW_PLAYBACK
-                }
+                hint =
+                    if (metadataOnly) {
+                        PlaybackChangeHint.METADATA_UPDATE
+                    } else {
+                        PlaybackChangeHint.NEW_PLAYBACK
+                    },
             )
             ensurePreparedForPlayback()
             if (playWhenReadyIntent) {
@@ -1312,11 +1374,17 @@ class PlaybackRuntime internal constructor(
         lastMediaItemIndex = newIndex
     }
 
-    private fun creditItemPlayback(item: PlayableItem?, completed: Boolean = false) {
+    private fun creditItemPlayback(
+        item: PlayableItem?,
+        completed: Boolean = false,
+    ) {
         analyticsCoordinator.creditItemPlayback(item, completed)
     }
 
-    private fun ensureRemoteReadyAt(index: Int, startPlaying: Boolean) {
+    private fun ensureRemoteReadyAt(
+        index: Int,
+        startPlaying: Boolean,
+    ) {
         streamRecoveryCoordinator.ensureRemoteReadyAt(index, startPlaying)
     }
 
@@ -1326,7 +1394,7 @@ class PlaybackRuntime internal constructor(
 
     private fun applyResolvedRemote(
         original: PlayableItem.Remote,
-        resolved: PlayableItem.Remote
+        resolved: PlayableItem.Remote,
     ): Int = streamRecoveryCoordinator.applyResolvedRemote(original, resolved)
 
     private fun handlePlayerError() {
@@ -1403,7 +1471,7 @@ class PlaybackRuntime internal constructor(
         remote: PlayableItem.Remote,
         event: SaveWhileListeningEvent,
         positionMs: Long,
-        durationMs: Long = remote.durationMs
+        durationMs: Long = remote.durationMs,
     ) {
         streamRecoveryCoordinator.maybeSaveWhileListening(remote, event, positionMs, durationMs)
     }
@@ -1422,14 +1490,13 @@ class PlaybackRuntime internal constructor(
         seedSong: Song? = null,
         mode: RadioMode? = null,
         auto: Boolean = false,
-        announceMode: Boolean = false
+        announceMode: Boolean = false,
     ) {
         radioCoordinator.startRadio(seedSong, mode, auto, announceMode)
     }
 
-    internal suspend fun suggestRadioWithRetry(
-        request: PlaybackRuntimeRadioRequest
-    ): RadioSuggestResult = radioCoordinator.suggestRadioWithRetry(request)
+    internal suspend fun suggestRadioWithRetry(request: PlaybackRuntimeRadioRequest): RadioSuggestResult =
+        radioCoordinator.suggestRadioWithRetry(request)
 
     private fun replaceUpcomingWithRadio(suggestions: List<PlayableItem>) {
         val currentIndex = (controller?.currentMediaItemIndex ?: lastMediaItemIndex).coerceAtLeast(0)
@@ -1454,9 +1521,9 @@ class PlaybackRuntime internal constructor(
         val player = controller ?: return false
         val index = player.currentMediaItemIndex
         return _queue.value.isNotEmpty() &&
-                index in _queue.value.indices &&
-                player.playbackState != Player.STATE_ENDED &&
-                player.playbackState != Player.STATE_IDLE
+            index in _queue.value.indices &&
+            player.playbackState != Player.STATE_ENDED &&
+            player.playbackState != Player.STATE_IDLE
     }
 
     private fun clearDiscoverPlaybackOrigin() {
@@ -1470,22 +1537,24 @@ class PlaybackRuntime internal constructor(
         startIndex: Int,
         startPositionMs: Long,
         startPlaying: Boolean,
-        newPlayback: Boolean = false
+        newPlayback: Boolean = false,
     ) {
         timelineSynchronizer.reloadPlayerTimeline(items, startIndex, startPositionMs, startPlaying, newPlayback)
     }
 
-    private fun hasMaterializedTimeline(): Boolean =
-        timelineSynchronizer.hasMaterializedTimeline()
+    private fun hasMaterializedTimeline(): Boolean = timelineSynchronizer.hasMaterializedTimeline()
 
     private fun mutateMaterializedTimeline(
         syncShuffle: Boolean = true,
-        mutation: (PlaybackControllerFacade) -> Unit
+        mutation: (PlaybackControllerFacade) -> Unit,
     ) {
         timelineSynchronizer.mutateMaterializedTimeline(syncShuffle, mutation)
     }
 
-    private fun syncChangedTimelineItems(oldQueue: List<PlayableItem>, newQueue: List<PlayableItem>) {
+    private fun syncChangedTimelineItems(
+        oldQueue: List<PlayableItem>,
+        newQueue: List<PlayableItem>,
+    ) {
         timelineSynchronizer.syncChangedTimelineItems(oldQueue, newQueue)
     }
 
@@ -1496,7 +1565,7 @@ class PlaybackRuntime internal constructor(
         newOrder: List<PlayableItem>,
         focusIndex: Int,
         positionMs: Long,
-        startPlaying: Boolean
+        startPlaying: Boolean,
     ) {
         timelineSynchronizer.applyQueueReorder(newOrder, focusIndex, positionMs, startPlaying)
     }
@@ -1504,12 +1573,10 @@ class PlaybackRuntime internal constructor(
     private fun permuteQueueToPlayOrder(
         items: List<PlayableItem>,
         currentIndex: Int,
-        backupSource: Boolean
-    ): Pair<List<PlayableItem>, Int> =
-        queueCoordinator.permuteQueueToPlayOrder(items, currentIndex, backupSource)
+        backupSource: Boolean,
+    ): Pair<List<PlayableItem>, Int> = queueCoordinator.permuteQueueToPlayOrder(items, currentIndex, backupSource)
 
-    private fun preShuffleQueueOrNull(): List<PlayableItem>? =
-        queueCoordinator.preShuffleQueueOrNull()
+    private fun preShuffleQueueOrNull(): List<PlayableItem>? = queueCoordinator.preShuffleQueueOrNull()
 
     private fun syncShuffleToPlayer() {
         queueCoordinator.syncShuffleToPlayer()
@@ -1527,8 +1594,7 @@ class PlaybackRuntime internal constructor(
         queueCoordinator.applyRadioStartModes()
     }
 
-    private fun repeatModeFromPlayer(value: Int): RepeatMode =
-        queueCoordinator.repeatModeFromPlayer(value)
+    private fun repeatModeFromPlayer(value: Int): RepeatMode = queueCoordinator.repeatModeFromPlayer(value)
 
     private fun invalidateQueueSelection() {
         selectionGate.invalidate()
@@ -1544,8 +1610,7 @@ class PlaybackRuntime internal constructor(
         sessionHydrator.cancelSeekPersistence()
     }
 
-    private fun isPlaybackGenerationCurrent(generation: Long): Boolean =
-        generation == playbackGeneration
+    private fun isPlaybackGenerationCurrent(generation: Long): Boolean = generation == playbackGeneration
 
     private fun bumpQueueFocus() {
         _queueFocusEpoch.value += 1
@@ -1559,7 +1624,7 @@ class PlaybackRuntime internal constructor(
             repository: MusicRepository,
             radioEngine: RadioEngine,
             pendingListenDao: PendingListenDao,
-            saveDownloads: PlaybackRuntimeSaveDownloads
+            saveDownloads: PlaybackRuntimeSaveDownloads,
         ): PlaybackRuntime {
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
             val playbackPreferences = PlaybackPreferencesRepository(context)
@@ -1581,72 +1646,82 @@ class PlaybackRuntime internal constructor(
                     listenSettingsReady.value = true
                 }
             }
-            val sync = ListenSyncCoordinator(
-                scope,
-                pendingListenDao,
-                listenPreferences,
-                connectivity::isCurrentlyOnline
-            )
-            val tracker = ListenTracker(
-                scope,
-                pendingListenDao,
-                listenPreferences,
-                sync::requestSync
-            )
-            val resolver = repository.streamResolver
-            val runtime = PlaybackRuntime(
-                PlaybackRuntimeDependencies(
-                    scope = scope,
-                    libraryUpdates = repository.allSongsFlow,
-                    playbackSettings = playbackSettings,
-                    playbackSettingsReady = playbackSettingsReady,
-                    listenSettings = listenSettings,
-                    listenSettingsReady = listenSettingsReady,
-                    persistence = PlaybackSessionStoreRuntimePersistence(
-                        PlaybackSessionStore(context)
-                    ),
-                    listenTracker = ListenTrackerRuntimeAdapter(tracker),
-                    streamAccess = StreamResolverRuntimeAccess(
-                        resolver,
-                        System::currentTimeMillis
-                    ),
-                    saveDownloads = saveDownloads,
-                    radioSuggester = PlaybackRuntimeRadioSuggester { request ->
-                        val online = connectivity.isCurrentlyOnline()
-                        val settings = request.settings
-                        radioEngine.suggest(
-                            seed = request.seed,
-                            library = request.library,
-                            mode = request.mode,
-                            excludeKeys = request.excludeKeys,
-                            limit = RADIO_BATCH_SIZE,
-                            lbToken = settings.userToken.takeIf { it.isNotBlank() },
-                            lbAvailable = settings.enabled &&
-                                    settings.userToken.isNotBlank() &&
-                                    online,
-                            lbUsername = settings.username,
-                            networkAvailable = online,
-                            coPlaylistSongIds = request.coPlaylistSongIds
-                        )
-                    },
-                    resolveCoPlaylistSongIds = { seed ->
-                        val local = seed as? PlayableItem.Local
-                        if (local == null) emptySet()
-                        else runCatching {
-                            repository.getCoPlaylistSongIds(local.song.id)
-                        }.getOrDefault(emptySet())
-                    },
-                    isOnline = connectivity::isCurrentlyOnline,
-                    persistShuffle = playbackPreferences::setLastShuffleEnabled,
-                    persistRepeat = playbackPreferences::setLastRepeatMode,
-                    touchItemLastPlayed = repository::touchItemLastPlayed,
-                    updateSongDuration = repository::updateSongDuration,
-                    loadSongById = repository::getSongById,
-                    loadSongsByIds = repository::getSongsByIds,
-                    requestListenSync = sync::requestSync,
-                    flushPostponedTagWrites = { activeId -> repository.flushPostponedTagWrites(activeId) }
+            val sync =
+                ListenSyncCoordinator(
+                    scope,
+                    pendingListenDao,
+                    listenPreferences,
+                    connectivity::isCurrentlyOnline,
                 )
-            )
+            val tracker =
+                ListenTracker(
+                    scope,
+                    pendingListenDao,
+                    listenPreferences,
+                    sync::requestSync,
+                )
+            val resolver = repository.streamResolver
+            val runtime =
+                PlaybackRuntime(
+                    PlaybackRuntimeDependencies(
+                        scope = scope,
+                        libraryUpdates = repository.allSongsFlow,
+                        playbackSettings = playbackSettings,
+                        playbackSettingsReady = playbackSettingsReady,
+                        listenSettings = listenSettings,
+                        listenSettingsReady = listenSettingsReady,
+                        persistence =
+                            PlaybackSessionStoreRuntimePersistence(
+                                PlaybackSessionStore(context),
+                            ),
+                        listenTracker = ListenTrackerRuntimeAdapter(tracker),
+                        streamAccess =
+                            StreamResolverRuntimeAccess(
+                                resolver,
+                                System::currentTimeMillis,
+                            ),
+                        saveDownloads = saveDownloads,
+                        radioSuggester =
+                            PlaybackRuntimeRadioSuggester { request ->
+                                val online = connectivity.isCurrentlyOnline()
+                                val settings = request.settings
+                                radioEngine.suggest(
+                                    seed = request.seed,
+                                    library = request.library,
+                                    mode = request.mode,
+                                    excludeKeys = request.excludeKeys,
+                                    limit = RADIO_BATCH_SIZE,
+                                    lbToken = settings.userToken.takeIf { it.isNotBlank() },
+                                    lbAvailable =
+                                        settings.enabled &&
+                                            settings.userToken.isNotBlank() &&
+                                            online,
+                                    lbUsername = settings.username,
+                                    networkAvailable = online,
+                                    coPlaylistSongIds = request.coPlaylistSongIds,
+                                )
+                            },
+                        resolveCoPlaylistSongIds = { seed ->
+                            val local = seed as? PlayableItem.Local
+                            if (local == null) {
+                                emptySet()
+                            } else {
+                                runCatching {
+                                    repository.getCoPlaylistSongIds(local.song.id)
+                                }.getOrDefault(emptySet())
+                            }
+                        },
+                        isOnline = connectivity::isCurrentlyOnline,
+                        persistShuffle = playbackPreferences::setLastShuffleEnabled,
+                        persistRepeat = playbackPreferences::setLastRepeatMode,
+                        touchItemLastPlayed = repository::touchItemLastPlayed,
+                        updateSongDuration = repository::updateSongDuration,
+                        loadSongById = repository::getSongById,
+                        loadSongsByIds = repository::getSongsByIds,
+                        requestListenSync = sync::requestSync,
+                        flushPostponedTagWrites = { activeId -> repository.flushPostponedTagWrites(activeId) },
+                    ),
+                )
             repository.isSongActiveInPlayback = { songId -> runtime.isSongActiveInPlayback(songId) }
             runtime.connect(context)
             scope.launch {

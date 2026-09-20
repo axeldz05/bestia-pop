@@ -20,7 +20,6 @@ import org.junit.runner.RunWith
 @LargeTest
 @HostOrchestratedProcessDeathTest
 class LockedScreenPlaybackFunctionalTest {
-
     private val probe = PlaybackDeviceProbe()
     private val context
         get() = probe.context
@@ -32,12 +31,13 @@ class LockedScreenPlaybackFunctionalTest {
         val wasInteractive = powerManager.isInteractive
         val controller = probe.connectController()
         try {
-            val baseline = probe.onMain {
-                check(controller.playWhenReady && controller.isPlaying) {
-                    "Start playback before running the locked-screen characterization"
+            val baseline =
+                probe.onMain {
+                    check(controller.playWhenReady && controller.isPlaying) {
+                        "Start playback before running the locked-screen characterization"
+                    }
+                    controller.currentPosition
                 }
-                controller.currentPosition
-            }
             assertTrue(probe.musicServiceInfo()?.foreground == true)
             assertTrue(probe.playbackNotification() != null)
 

@@ -33,8 +33,6 @@ import com.bestiapop.android.testutil.PcmWavFixture
 import com.bestiapop.android.testutil.PlaybackDeviceProbe
 import com.bestiapop.android.ui.persistence.MainActivityStateRule
 import com.bestiapop.android.ui.theme.ThemePresets
-import java.io.File
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -42,6 +40,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
+import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 @LargeTest
@@ -56,11 +56,12 @@ class SettingsRuntimeFunctionalTest {
     private val deviceProbe = PlaybackDeviceProbe()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(settingsStateRule)
-        .around(mainStateRule)
-        .around(activityRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(settingsStateRule)
+            .around(mainStateRule)
+            .around(activityRule)
 
     @Test
     fun themePreset_selectedFromUi_survivesActivityRecreate() {
@@ -84,7 +85,7 @@ class SettingsRuntimeFunctionalTest {
             .assertIsSelected()
         assertEquals(
             ThemePresets.SunsetGold.id,
-            runBlocking { preferences.selectedThemeFlow.first().id }
+            runBlocking { preferences.selectedThemeFlow.first().id },
         )
     }
 
@@ -141,11 +142,11 @@ class SettingsRuntimeFunctionalTest {
                                     uriString = wav.absolutePath,
                                     title = "Settings service probe",
                                     artist = "BestiaPop instrumentation",
-                                    durationMs = PLAYBACK_DURATION_MS.toLong()
-                                )
-                            )
+                                    durationMs = PLAYBACK_DURATION_MS.toLong(),
+                                ),
+                            ),
                         ),
-                        rotate = false
+                        rotate = false,
                     )
             }
             activityRule.waitUntil(timeoutMillis = ASYNC_TIMEOUT_MS) {
@@ -195,10 +196,12 @@ class SettingsRuntimeFunctionalTest {
         activityRule.onNodeWithText(title).performClick()
     }
 
-    private fun switchNode(title: String) =
-        activityRule.onNode(hasText(title) and hasClickAction())
+    private fun switchNode(title: String) = activityRule.onNode(hasText(title) and hasClickAction())
 
-    private fun setSlider(contentDescription: String, value: Float) {
+    private fun setSlider(
+        contentDescription: String,
+        value: Float,
+    ) {
         activityRule
             .onNodeWithContentDescription(contentDescription)
             .performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
@@ -210,8 +213,7 @@ class SettingsRuntimeFunctionalTest {
 
     private fun <T> onMain(block: () -> T): T = deviceProbe.onMain(block)
 
-    private fun Float.closeTo(expected: Float): Boolean =
-        kotlin.math.abs(this - expected) <= FLOAT_TOLERANCE
+    private fun Float.closeTo(expected: Float): Boolean = kotlin.math.abs(this - expected) <= FLOAT_TOLERANCE
 
     private companion object {
         const val ASYNC_TIMEOUT_MS = 10_000L

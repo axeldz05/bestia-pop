@@ -7,38 +7,40 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class EmbeddedTagFillTest {
-
     @Test
     fun blackHoleUnknown_fillsFromFileAndUnifiesFlitterArtist() {
-        val sibling = Song(
-            id = 1L,
-            uriString = "/a.mp3",
-            title = "Alive",
-            artist = "Namitape",
-            album = "Flitter",
-            genre = "Electronica"
-        )
-        val unknown = Song(
-            id = 2L,
-            uriString = "/b.mp3",
-            title = "Black Hole",
-            artist = "Unknown Artist",
-            album = "Unknown Album",
-            genre = "Music",
-            artworkUri = "https://cdn.example/wrong.jpg",
-            lyrics = "I'd rather be a light, not a black hole"
-        )
-        val meta = AudioFileMetadata(
-            title = "ブラックホール / Black Hole",
-            artist = "namitape; Kaai Yuki",
-            album = "Flitter",
-            genre = "Electronica; Vocaloid",
-            durationMs = 214_204L,
-            artworkUri = "file:///embedded.png",
-            trackNumber = 2,
-            year = 2023,
-            lyrics = "目にブラックホールがあります"
-        )
+        val sibling =
+            Song(
+                id = 1L,
+                uriString = "/a.mp3",
+                title = "Alive",
+                artist = "Namitape",
+                album = "Flitter",
+                genre = "Electronica",
+            )
+        val unknown =
+            Song(
+                id = 2L,
+                uriString = "/b.mp3",
+                title = "Black Hole",
+                artist = "Unknown Artist",
+                album = "Unknown Album",
+                genre = "Music",
+                artworkUri = "https://cdn.example/wrong.jpg",
+                lyrics = "I'd rather be a light, not a black hole",
+            )
+        val meta =
+            AudioFileMetadata(
+                title = "ブラックホール / Black Hole",
+                artist = "namitape; Kaai Yuki",
+                album = "Flitter",
+                genre = "Electronica; Vocaloid",
+                durationMs = 214_204L,
+                artworkUri = "file:///embedded.png",
+                trackNumber = 2,
+                year = 2023,
+                lyrics = "目にブラックホールがあります",
+            )
         val filled = fillSongGapsFromFileTags(unknown, meta, listOf(sibling))
         assertEquals("Namitape", filled.artist)
         assertEquals("Flitter", filled.album)
@@ -53,26 +55,28 @@ class EmbeddedTagFillTest {
 
     @Test
     fun alreadyIdentified_isNotOverwritten() {
-        val known = Song(
-            id = 3L,
-            uriString = "/c.mp3",
-            title = "Alive",
-            artist = "Namitape",
-            album = "Flitter",
-            genre = "Electronica",
-            year = 2023,
-            lyrics = "kept"
-        )
-        val meta = AudioFileMetadata(
-            title = "Other Title",
-            artist = "Other Artist",
-            album = "Other Album",
-            genre = "Pop",
-            durationMs = 1000L,
-            artworkUri = "file:///x.png",
-            year = 1999,
-            lyrics = "nope"
-        )
+        val known =
+            Song(
+                id = 3L,
+                uriString = "/c.mp3",
+                title = "Alive",
+                artist = "Namitape",
+                album = "Flitter",
+                genre = "Electronica",
+                year = 2023,
+                lyrics = "kept",
+            )
+        val meta =
+            AudioFileMetadata(
+                title = "Other Title",
+                artist = "Other Artist",
+                album = "Other Album",
+                genre = "Pop",
+                durationMs = 1000L,
+                artworkUri = "file:///x.png",
+                year = 1999,
+                lyrics = "nope",
+            )
         val filled = fillSongGapsFromFileTags(known, meta, listOf(known))
         assertEquals("Namitape", filled.artist)
         assertEquals("Flitter", filled.album)
@@ -84,29 +88,32 @@ class EmbeddedTagFillTest {
 
     @Test
     fun unknownDashDownload_splitsUsingKnownLibraryArtist() {
-        val sibling = Song(
-            id = 10L,
-            uriString = "/known.mp3",
-            title = "Light My Fire",
-            artist = "The Doors",
-            album = "The Doors"
-        )
-        val unknown = Song(
-            id = 11L,
-            uriString = "/storage/emulated/0/Music/BestiaPop/The_Doors_Roadhouse_Blues.m4a",
-            title = "The Doors Roadhouse Blues",
-            artist = "Unknown Artist",
-            album = "Unknown Album",
-            genre = "Music"
-        )
-        val meta = AudioFileMetadata(
-            title = "The Doors Roadhouse Blues",
-            artist = "Unknown Artist",
-            album = "Unknown Album",
-            genre = "Music",
-            durationMs = 240_000L,
-            artworkUri = null
-        )
+        val sibling =
+            Song(
+                id = 10L,
+                uriString = "/known.mp3",
+                title = "Light My Fire",
+                artist = "The Doors",
+                album = "The Doors",
+            )
+        val unknown =
+            Song(
+                id = 11L,
+                uriString = "/storage/emulated/0/Music/BestiaPop/The_Doors_Roadhouse_Blues.m4a",
+                title = "The Doors Roadhouse Blues",
+                artist = "Unknown Artist",
+                album = "Unknown Album",
+                genre = "Music",
+            )
+        val meta =
+            AudioFileMetadata(
+                title = "The Doors Roadhouse Blues",
+                artist = "Unknown Artist",
+                album = "Unknown Album",
+                genre = "Music",
+                durationMs = 240_000L,
+                artworkUri = null,
+            )
         val filled = fillSongGapsFromFileTags(unknown, meta, listOf(sibling))
         assertEquals("The Doors", filled.artist)
         assertEquals("Roadhouse Blues", filled.title)
@@ -115,23 +122,25 @@ class EmbeddedTagFillTest {
 
     @Test
     fun genericBonusTrack_withSpuriousArtistMatch_isResetToUnknown() {
-        val misassigned = Song(
-            id = 20L,
-            uriString = "/storage/emulated/0/Download/bonus.mp3",
-            folderPath = "/storage/emulated/0/Download",
-            title = "Bonus",
-            artist = "Ciro y los Persas",
-            album = "Naranja Persa 2",
-            artworkUri = "https://catalog.example/ciro_art.jpg"
-        )
-        val meta = AudioFileMetadata(
-            title = "bonus",
-            artist = "Unknown Artist",
-            album = "Unknown Album",
-            genre = "Music",
-            durationMs = 180_000L,
-            artworkUri = null
-        )
+        val misassigned =
+            Song(
+                id = 20L,
+                uriString = "/storage/emulated/0/Download/bonus.mp3",
+                folderPath = "/storage/emulated/0/Download",
+                title = "Bonus",
+                artist = "Ciro y los Persas",
+                album = "Naranja Persa 2",
+                artworkUri = "https://catalog.example/ciro_art.jpg",
+            )
+        val meta =
+            AudioFileMetadata(
+                title = "bonus",
+                artist = "Unknown Artist",
+                album = "Unknown Album",
+                genre = "Music",
+                durationMs = 180_000L,
+                artworkUri = null,
+            )
         val filled = fillSongGapsFromFileTags(misassigned, meta, emptyList())
         assertEquals(Song.UNKNOWN_ARTIST, filled.artist)
         assertEquals(Song.UNKNOWN_ALBUM, filled.album)
@@ -140,23 +149,25 @@ class EmbeddedTagFillTest {
 
     @Test
     fun genericBonusTrack_withDiskTags_restoresRealArtist() {
-        val misassigned = Song(
-            id = 21L,
-            uriString = "/storage/emulated/0/Download/track_01.mp3",
-            folderPath = "/storage/emulated/0/Download",
-            title = "Track",
-            artist = "Ciro y los Persas",
-            album = "Naranja Persa 2",
-            artworkUri = "https://catalog.example/ciro_art.jpg"
-        )
-        val meta = AudioFileMetadata(
-            title = "Actual Song Title",
-            artist = "Gorillaz",
-            album = "Demon Days",
-            genre = "Alternative",
-            durationMs = 210_000L,
-            artworkUri = "file:///albumart.jpg"
-        )
+        val misassigned =
+            Song(
+                id = 21L,
+                uriString = "/storage/emulated/0/Download/track_01.mp3",
+                folderPath = "/storage/emulated/0/Download",
+                title = "Track",
+                artist = "Ciro y los Persas",
+                album = "Naranja Persa 2",
+                artworkUri = "https://catalog.example/ciro_art.jpg",
+            )
+        val meta =
+            AudioFileMetadata(
+                title = "Actual Song Title",
+                artist = "Gorillaz",
+                album = "Demon Days",
+                genre = "Alternative",
+                durationMs = 210_000L,
+                artworkUri = "file:///albumart.jpg",
+            )
         val filled = fillSongGapsFromFileTags(misassigned, meta, emptyList())
         assertEquals("Gorillaz", filled.artist)
         assertEquals("Demon Days", filled.album)
@@ -164,4 +175,3 @@ class EmbeddedTagFillTest {
         assertEquals("file:///albumart.jpg", filled.artworkUri)
     }
 }
-

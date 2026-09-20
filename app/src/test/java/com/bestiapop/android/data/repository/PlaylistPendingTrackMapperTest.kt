@@ -6,19 +6,19 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class PlaylistPendingTrackMapperTest {
-
     @Test
     fun roundTrip_nullReleaseNameBecomesBlankAlbum() {
-        val entity = PlaylistPendingTrackEntity(
-            id = 1L,
-            playlistId = 10L,
-            title = "Song",
-            artist = "Artist",
-            releaseName = null,
-            trackNumber = 4,
-            recordingMbid = "mbid",
-            position = 3
-        )
+        val entity =
+            PlaylistPendingTrackEntity(
+                id = 1L,
+                playlistId = 10L,
+                title = "Song",
+                artist = "Artist",
+                releaseName = null,
+                trackNumber = 4,
+                recordingMbid = "mbid",
+                position = 3,
+            )
         val domain = entity.toPendingTrack()
         assertEquals("", domain.album)
         assertEquals("Song", domain.title)
@@ -42,13 +42,14 @@ class PlaylistPendingTrackMapperTest {
 
     @Test
     fun roundTrip_releaseNamePreserved() {
-        val entity = PlaylistPendingTrackEntity(
-            id = 2L,
-            playlistId = 10L,
-            title = "Song",
-            artist = "Artist",
-            releaseName = "EP"
-        )
+        val entity =
+            PlaylistPendingTrackEntity(
+                id = 2L,
+                playlistId = 10L,
+                title = "Song",
+                artist = "Artist",
+                releaseName = "EP",
+            )
         val domain = entity.toPendingTrack()
         assertEquals("EP", domain.album)
         assertEquals("EP", domain.toEntity().releaseName)

@@ -29,7 +29,7 @@ class SimilarPlaylistCoordinator(
     private val onPlaylistCreated: (playlistId: Long, localCount: Int, pendingCount: Int, downloadMissing: Boolean) -> Unit,
     private val playPlayableCollection: (List<PlayableItem>) -> Unit,
     private val addPlayableBatch: (List<PlayableItem>) -> Unit,
-    private val toast: (String) -> Unit
+    private val toast: (String) -> Unit,
 ) {
     private val _state = MutableStateFlow<SimilarPlaylistPreviewState?>(null)
     val state: StateFlow<SimilarPlaylistPreviewState?> = _state.asStateFlow()
@@ -39,21 +39,22 @@ class SimilarPlaylistCoordinator(
 
     fun open(
         seeds: List<PlayableItem>,
-        mode: RadioMode? = null
+        mode: RadioMode? = null,
     ) {
         if (seeds.isEmpty()) return
         val networkOnline = isNetworkOnline()
         val resolvedMode = resolvePreferredRadioMode(mode, networkOnline)
         previewSeeds = seeds
         val name = BuildSimilarPlaylistPreviewUseCase.defaultPlaylistName(seeds)
-        _state.value = SimilarPlaylistPreviewState(
-            items = emptyList(),
-            selectedKeys = emptySet(),
-            mode = resolvedMode,
-            loading = true,
-            seedCount = seeds.size,
-            playlistName = name
-        )
+        _state.value =
+            SimilarPlaylistPreviewState(
+                items = emptyList(),
+                selectedKeys = emptySet(),
+                mode = resolvedMode,
+                loading = true,
+                seedCount = seeds.size,
+                playlistName = name,
+            )
         runPreview(resolvedMode)
     }
 
@@ -86,7 +87,7 @@ class SimilarPlaylistCoordinator(
 
     fun confirmAsPlaylist(
         name: String? = null,
-        downloadMissing: Boolean = false
+        downloadMissing: Boolean = false,
     ) {
         val current = _state.value ?: return
         if (current.loading) return
@@ -95,14 +96,16 @@ class SimilarPlaylistCoordinator(
             toast(DownloadMessages.selectAtLeastOneSong)
             return
         }
-        val playlistName = (name ?: current.playlistName).ifBlank {
-            BuildSimilarPlaylistPreviewUseCase.defaultPlaylistName(previewSeeds)
-        }
+        val playlistName =
+            (name ?: current.playlistName).ifBlank {
+                BuildSimilarPlaylistPreviewUseCase.defaultPlaylistName(previewSeeds)
+            }
         scope.launch {
-            val playlistId = useCase.createPlaylistFromPlayables(
-                name = playlistName,
-                items = selected
-            )
+            val playlistId =
+                useCase.createPlaylistFromPlayables(
+                    name = playlistName,
+                    items = selected,
+                )
             if (playlistId == null) {
                 toast(PlaylistMessages.createFailed)
                 return@launch
@@ -143,38 +146,45 @@ class SimilarPlaylistCoordinator(
         val seeds = previewSeeds
         if (seeds.isEmpty()) return
         previewJob?.cancel()
-        previewJob = scope.launch {
-            val settings = getListenBrainzSettings()
-            val networkOnline = isNetworkOnline()
-            val canUseLb = settings.enabled &&
-                settings.userToken.isNotBlank() &&
-                networkOnline
-            val library = getAllSongs()
-            val preview = useCase.execute(
-                seeds = seeds,
-                library = library,
-                mode = mode,
-                lbToken = settings.userToken.takeIf { it.isNotBlank() },
-                lbAvailable = canUseLb,
-                lbUsername = settings.username,
-                networkAvailable = networkOnline
-            )
-            val current = _state.value
-            if (current == null) return@launch
-            if (preview.items.isEmpty()) {
-                toast(
-                    if (preview.failedOnline) "Radio online no disponible"
-                    else "No encontré canciones parecidas"
-                )
+        previewJob =
+            scope.launch {
+                val settings = getListenBrainzSettings()
+                val networkOnline = isNetworkOnline()
+                val canUseLb =
+                    settings.enabled &&
+                        settings.userToken.isNotBlank() &&
+                        networkOnline
+                val library = getAllSongs()
+                val preview =
+                    useCase.execute(
+                        seeds = seeds,
+                        library = library,
+                        mode = mode,
+                        lbToken = settings.userToken.takeIf { it.isNotBlank() },
+                        lbAvailable = canUseLb,
+                        lbUsername = settings.username,
+                        networkAvailable = networkOnline,
+                    )
+                val current = _state.value
+                if (current == null) return@launch
+                if (preview.items.isEmpty()) {
+                    toast(
+                        if (preview.failedOnline) {
+                            "Radio online no disponible"
+                        } else {
+                            "No encontré canciones parecidas"
+                        },
+                    )
+                }
+                _state.value =
+                    current.copy(
+                        items = preview.items,
+                        selectedKeys = SimilarPlaylistPreviewState.keysOf(preview.items),
+                        mode = mode,
+                        loading = false,
+                        usedOnline = preview.usedOnline,
+                        failedOnline = preview.failedOnline,
+                    )
             }
-            _state.value = current.copy(
-                items = preview.items,
-                selectedKeys = SimilarPlaylistPreviewState.keysOf(preview.items),
-                mode = mode,
-                loading = false,
-                usedOnline = preview.usedOnline,
-                failedOnline = preview.failedOnline
-            )
-        }
     }
 }

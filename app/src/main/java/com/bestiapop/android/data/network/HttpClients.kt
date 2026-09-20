@@ -18,26 +18,28 @@ import java.util.concurrent.TimeUnit
  * response that trickles bytes slower than the read timeout could hang a request indefinitely.
  */
 object HttpClients {
-
     private const val HTTP_CACHE_SIZE_BYTES = 25L * 1024 * 1024 // 25 MB
 
     @Volatile
     var isOfflineMode: () -> Boolean = { false }
 
-    private val offlineInterceptor = Interceptor { chain ->
-        if (isOfflineMode()) {
-            throw IOException(com.bestiapop.android.data.model.OfflineMessages.blockedByUser)
+    private val offlineInterceptor =
+        Interceptor { chain ->
+            if (isOfflineMode()) {
+                throw IOException(com.bestiapop.android.data.model.OfflineMessages.blockedByUser)
+            }
+            chain.proceed(chain.request())
         }
-        chain.proceed(chain.request())
-    }
 
-    private val baseBuilder: OkHttpClient.Builder = OkHttpClient.Builder()
-        .addInterceptor(offlineInterceptor)
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .writeTimeout(20, TimeUnit.SECONDS)
-        .callTimeout(45, TimeUnit.SECONDS)
-        .connectionPool(ConnectionPool(5, 30, TimeUnit.SECONDS))
+    private val baseBuilder: OkHttpClient.Builder =
+        OkHttpClient
+            .Builder()
+            .addInterceptor(offlineInterceptor)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(45, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(5, 30, TimeUnit.SECONDS))
 
     /** Catalog / API calls: short, bounded end to end, with HTTP disk caching when initialized. */
     var api: OkHttpClient = baseBuilder.build()
@@ -47,12 +49,14 @@ object HttpClients {
      * Byte transfers (audio download, APK update). No overall call cap — a large file legitimately
      * takes minutes — but a stalled socket still trips the read timeout.
      */
-    var transfer: OkHttpClient = api.newBuilder()
-        .callTimeout(0, TimeUnit.MILLISECONDS)
-        .readTimeout(5, TimeUnit.MINUTES)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    var transfer: OkHttpClient =
+        api
+            .newBuilder()
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .readTimeout(5, TimeUnit.MINUTES)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
         private set
 
     /**
@@ -64,12 +68,14 @@ object HttpClients {
             val cacheDir = File(context.cacheDir, "http_api_cache")
             val cache = Cache(cacheDir, HTTP_CACHE_SIZE_BYTES)
             api = baseBuilder.cache(cache).build()
-            transfer = api.newBuilder()
-                .callTimeout(0, TimeUnit.MILLISECONDS)
-                .readTimeout(5, TimeUnit.MINUTES)
-                .followRedirects(true)
-                .followSslRedirects(true)
-                .build()
+            transfer =
+                api
+                    .newBuilder()
+                    .callTimeout(0, TimeUnit.MILLISECONDS)
+                    .readTimeout(5, TimeUnit.MINUTES)
+                    .followRedirects(true)
+                    .followSslRedirects(true)
+                    .build()
         } catch (_: Exception) {
         }
     }

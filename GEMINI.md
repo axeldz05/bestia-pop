@@ -71,9 +71,9 @@ Una regla de oro para saber si tenes comportamiento repetido es pensar en cuanto
 - **Modernización y adaptación de APIs:** Si se requiere interactuar con funcionalidades de APIs inestables (ej. `@UnstableApi` en Media3) o deprecadas, investigar y adaptar el diseño para usar APIs estables o desacoplar la lógica en el límite correcto (ej. en la factoría de `DataSource` en lugar de llamadas de conveniencia).
 - **Linters canónicos del proyecto:**
   - **Android Lint:** Correr `./gradlew lintDebug` o `./gradlew lint` para validar APIs de Android, recursos, KTX, ciclos de vida y seguridad.
-  - **ktlint:** El linter y formateador estandarizado para Kotlin proviene exclusivamente de `https://github.com/ktlint/ktlint` (nunca de repositorios obsoletos de terceros).
+  - **ktlint:** Ejecutar siempre `ktlint --editorconfig=.editorconfig "app/src/**/*.kt"` (o sobre los archivos modificados). Se puede usar `ktlint -F` para autocorrección de estilo antes de resolver los errores estructurales restantes.
   - **Kotlin compiler:** Compilar con `-Pkotlin.compiler.allWarningsAsErrors=true` para garantizar código libre de advertencias de compilación.
-- **Invariante de entrega:** Todo cambio debe finalizar con **0 errores y 0 warnings en el código base** reportados por Android Lint, compilador de Kotlin y ktlint en los bloques de código modificados. Consulta el skill `.agents/skills/kotlin-linter-management/SKILL.md`.
+- **Invariante de entrega:** Todo cambio debe finalizar con **0 errores y 0 warnings en el código base** reportados por Android Lint, compilador de Kotlin y ktlint en los bloques de código modificados. Está estrictamente prohibido ignorar, postergar o pasar por alto advertencias de ktlint; deben resolverse apropiadamente en su origen. Consulta el skill `.agents/skills/kotlin-linter-management/SKILL.md`.
 
 ## Herramientas de diagnóstico y catálogo (scripts externos)
 

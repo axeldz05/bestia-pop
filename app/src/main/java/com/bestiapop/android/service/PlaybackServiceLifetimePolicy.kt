@@ -12,7 +12,7 @@ object PlaybackServiceLifetimePolicy {
     fun isPlaybackEngaged(
         playWhenReady: Boolean,
         mediaItemCount: Int,
-        playbackState: Int
+        playbackState: Int,
     ): Boolean =
         playWhenReady &&
             mediaItemCount > 0 &&
@@ -25,7 +25,7 @@ object PlaybackServiceLifetimePolicy {
     fun shouldStopAfterTaskRemoved(
         playWhenReady: Boolean = false,
         mediaItemCount: Int = 0,
-        playbackState: Int = Player.STATE_IDLE
+        playbackState: Int = Player.STATE_IDLE,
     ): Boolean = true
 
     /**
@@ -34,7 +34,6 @@ object PlaybackServiceLifetimePolicy {
      */
     fun shouldShowPlaybackNotification(
         mediaItemCount: Int,
-        playbackState: Int
-    ): Boolean =
-        mediaItemCount > 0 && playbackState != Player.STATE_ENDED
+        playbackState: Int,
+    ): Boolean = mediaItemCount > 0 && playbackState != Player.STATE_ENDED
 }

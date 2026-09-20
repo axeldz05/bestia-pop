@@ -25,13 +25,13 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @SmallTest
 class PlaylistRemoteRowFunctionalTest {
-
     private val composeTestRule = createComposeRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeTestRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeTestRule)
 
     @Test
     fun unmatchedRemote_downloadButton() {
@@ -44,7 +44,7 @@ class PlaylistRemoteRowFunctionalTest {
                 leadingIcon = Icons.Default.Cloud,
                 highlighted = false,
                 onClick = {},
-                onDownload = { downloaded = true }
+                onDownload = { downloaded = true },
             )
         }
         composeTestRule.onNodeWithText("Remote Hit").assertIsDisplayed()
@@ -62,18 +62,20 @@ class PlaylistRemoteRowFunctionalTest {
                 badge = "Online",
                 leadingIcon = Icons.Default.Cloud,
                 highlighted = false,
-                download = ActiveDownload(
-                    id = "artist b|remote hit",
-                    source = ActiveDownloadSource.DISCOVER,
-                    candidates = listOf(
-                        OnlineCatalogTrack(
-                            identity = TrackIdentity(title = "Remote Hit", artist = "Artist B"),
-                            id = "r1"
-                        )
+                download =
+                    ActiveDownload(
+                        id = "artist b|remote hit",
+                        source = ActiveDownloadSource.DISCOVER,
+                        candidates =
+                            listOf(
+                                OnlineCatalogTrack(
+                                    identity = TrackIdentity(title = "Remote Hit", artist = "Artist B"),
+                                    id = "r1",
+                                ),
+                            ),
+                        state = CandidateDownloadState.QUEUED,
                     ),
-                    state = CandidateDownloadState.QUEUED
-                ),
-                onCancelDownload = { cancelled = true }
+                onCancelDownload = { cancelled = true },
             )
         }
         composeTestRule.onNodeWithContentDescription("Cancelar descarga").performClick()

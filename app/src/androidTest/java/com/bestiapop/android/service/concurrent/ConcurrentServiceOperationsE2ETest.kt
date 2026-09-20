@@ -51,29 +51,30 @@ class ConcurrentServiceOperationsE2ETest {
                     upload.start()
                     upload.awaitFirstChunkSent()
 
-                    val uploading = awaitConcurrentValue(
-                        "WiFi transfer makes partial progress",
-                        diagnostics = {
-                            "${webServer.diagnostics()}, ${upload.diagnostics()}, " +
-                                playback.diagnostics()
+                    val uploading =
+                        awaitConcurrentValue(
+                            "WiFi transfer makes partial progress",
+                            diagnostics = {
+                                "${webServer.diagnostics()}, ${upload.diagnostics()}, " +
+                                    playback.diagnostics()
+                            },
+                        ) {
+                            WebServerService.transfers.value.firstOrNull {
+                                it.fileName == WebServerServiceTestContract.FILE_NAME &&
+                                    it.state == WifiTransferState.UPLOADING &&
+                                    it.progressPercent in 1..99
+                            }
                         }
-                    ) {
-                        WebServerService.transfers.value.firstOrNull {
-                            it.fileName == WebServerServiceTestContract.FILE_NAME &&
-                                it.state == WifiTransferState.UPLOADING &&
-                                it.progressPercent in 1..99
-                        }
-                    }
                     assertTrue(uploading.progressPercent in 1..99)
 
                     playback.assertPositionAdvancesFrom(
                         positionBeforeUpload,
-                        "blocked localhost WAV upload"
+                        "blocked localhost WAV upload",
                     )
                     assertEquals(playbackPid, playback.assertPlaybackForeground())
                     assertWebServerForeground(
                         checkNotNull(webServer.serviceInfo()),
-                        webServer
+                        webServer,
                     )
 
                     upload.release()
@@ -92,7 +93,7 @@ class ConcurrentServiceOperationsE2ETest {
                 val positionAfterUpload = playback.position()
                 playback.assertPositionAdvancesFrom(
                     positionAfterUpload,
-                    "WiFi upload persistence"
+                    "WiFi upload persistence",
                 )
                 assertEquals(playbackPid, playback.assertPlaybackForeground())
 
@@ -124,8 +125,8 @@ class ConcurrentServiceOperationsE2ETest {
                             album = CatalogDownloadTestContract.ALBUM,
                             durationMs = 3_000L,
                             provider = "Deezer",
-                            trackNumber = CatalogDownloadTestContract.TRACK_NUMBER
-                        )
+                            trackNumber = CatalogDownloadTestContract.TRACK_NUMBER,
+                        ),
                     )
                 }
 
@@ -134,20 +135,20 @@ class ConcurrentServiceOperationsE2ETest {
                     "online download waits at the gated audio response",
                     diagnostics = {
                         "${download.diagnostic()}, ${playback.diagnostics()}"
-                    }
+                    },
                 ) {
                     download.isDownloadingAt(75)
                 }
                 awaitConcurrent(
                     "online download notification",
-                    diagnostics = download::diagnostic
+                    diagnostics = download::diagnostic,
                 ) {
                     downloadNotificationIsVisible()
                 }
 
                 playback.assertPositionAdvancesFrom(
                     positionBeforeDownload,
-                    "gated MockWebServer audio response"
+                    "gated MockWebServer audio response",
                 )
                 assertEquals(playbackPid, playback.assertPlaybackForeground())
 
@@ -156,21 +157,23 @@ class ConcurrentServiceOperationsE2ETest {
                     "online pipeline SUCCESS",
                     diagnostics = {
                         "${download.diagnostic()}, ${playback.diagnostics()}"
-                    }
+                    },
                 ) {
                     download.isDownloadComplete()
                 }
 
                 val persistedSong = download.persistedSong()
                 download.verifyPersistedSongAndFile(persistedSong)
-                val completed = (
-                    InstrumentationRegistry.getInstrumentation()
-                        .targetContext.applicationContext as BestiaPopApplication
+                val completed =
+                    (
+                        InstrumentationRegistry
+                            .getInstrumentation()
+                            .targetContext.applicationContext as BestiaPopApplication
                     ).processDownloads.findByTrack(
-                    downloadId = CatalogDownloadTestContract.DOWNLOAD_ID,
-                    artist = CatalogDownloadTestContract.ARTIST,
-                    title = CatalogDownloadTestContract.TITLE
-                )
+                        downloadId = CatalogDownloadTestContract.DOWNLOAD_ID,
+                        artist = CatalogDownloadTestContract.ARTIST,
+                        title = CatalogDownloadTestContract.TITLE,
+                    )
                 assertNotNull(completed)
                 assertEquals(CandidateDownloadState.SUCCESS, completed?.state)
                 assertEquals(persistedSong.id, completed?.resultSongId)
@@ -178,7 +181,7 @@ class ConcurrentServiceOperationsE2ETest {
                 val positionAfterDownload = playback.position()
                 playback.assertPositionAdvancesFrom(
                     positionAfterDownload,
-                    "completed online download"
+                    "completed online download",
                 )
                 assertEquals(playbackPid, playback.assertPlaybackForeground())
             }
@@ -187,20 +190,21 @@ class ConcurrentServiceOperationsE2ETest {
 
     private fun assertWebServerForeground(
         service: ActivityManager.RunningServiceInfo,
-        fixture: WebServerServiceTestFixture
+        fixture: WebServerServiceTestFixture,
     ) {
         assertTrue(service.foreground)
         val notification = fixture.webServerNotification()
         assertNotNull(notification)
         assertEquals(
             WebServerServiceTestContract.NOTIFICATION_CHANNEL_ID,
-            notification?.channelId
+            notification?.channelId,
         )
     }
 
     private fun downloadNotificationIsVisible(): Boolean {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        return context.getSystemService(NotificationManager::class.java)
+        return context
+            .getSystemService(NotificationManager::class.java)
             .activeNotifications
             .any { it.id == DownloadNotificationHelper.NOTIFICATION_ID }
     }

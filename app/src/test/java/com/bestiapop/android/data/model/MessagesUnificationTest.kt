@@ -5,11 +5,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessagesUnificationTest {
-
     @Test
     fun playlistMessages_formatsPluralizedAndDynamicStrings() {
         assertEquals("Añadir a Favoritos", PlaylistMessages.addToPlaylistNamed("Favoritos"))
-        assertEquals("¿Estás seguro de que deseas eliminar 'Rock'? Esta acción no se puede deshacer.", PlaylistMessages.deletePlaylistConfirm("Rock"))
+        assertEquals(
+            "¿Estás seguro de que deseas eliminar 'Rock'? Esta acción no se puede deshacer.",
+            PlaylistMessages.deletePlaylistConfirm("Rock"),
+        )
 
         assertEquals("Añadir a playlist", PlaylistMessages.addSongsCount(1))
         assertEquals("Añadir 5 canciones a playlist", PlaylistMessages.addSongsCount(5))

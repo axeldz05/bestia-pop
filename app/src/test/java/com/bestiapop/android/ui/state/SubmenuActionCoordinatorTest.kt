@@ -15,7 +15,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SubmenuActionCoordinatorTest {
-
     private fun createCoordinator(
         scope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined),
         addPlayableBatch: (List<PlayableItem>) -> Unit = {},
@@ -31,7 +30,7 @@ class SubmenuActionCoordinatorTest {
         getLocalSongsByMatchKey: () -> Map<String, Song> = { emptyMap() },
         getAllSongsByMatchKey: () -> Map<String, Song> = { emptyMap() },
         getCatalogCollection: () -> CatalogCollectionUiState = { CatalogCollectionUiState() },
-        findLocalSongFor: (TrackMeta) -> Song? = { null }
+        findLocalSongFor: (TrackMeta) -> Song? = { null },
     ) = SubmenuActionCoordinator(
         scope = scope,
         addPlayableBatch = addPlayableBatch,
@@ -47,7 +46,7 @@ class SubmenuActionCoordinatorTest {
         getLocalSongsByMatchKey = getLocalSongsByMatchKey,
         getAllSongsByMatchKey = getAllSongsByMatchKey,
         getCatalogCollection = getCatalogCollection,
-        findLocalSongFor = findLocalSongFor
+        findLocalSongFor = findLocalSongFor,
     )
 
     @Test
@@ -55,17 +54,19 @@ class SubmenuActionCoordinatorTest {
         var playedNextItems: List<PlayableItem>? = null
         var toastMessage: String? = null
 
-        val coordinator = createCoordinator(
-            playNextPlayableBatch = { playedNextItems = it },
-            toast = { toastMessage = it }
-        )
+        val coordinator =
+            createCoordinator(
+                playNextPlayableBatch = { playedNextItems = it },
+                toast = { toastMessage = it },
+            )
 
-        val meta = TrackIdentity(
-            title = "Get Lucky",
-            artist = "Daft Punk",
-            album = "RAM",
-            durationMs = 240000L
-        )
+        val meta =
+            TrackIdentity(
+                title = "Get Lucky",
+                artist = "Daft Punk",
+                album = "RAM",
+                durationMs = 240000L,
+            )
 
         coordinator.executeForTrack(SubmenuSwipeAction.PLAY_NEXT, meta)
 
@@ -78,16 +79,18 @@ class SubmenuActionCoordinatorTest {
         var enqueuedItems: List<PlayableItem>? = null
         var toastMessage: String? = null
 
-        val coordinator = createCoordinator(
-            addPlayableBatch = { enqueuedItems = it },
-            toast = { toastMessage = it }
-        )
+        val coordinator =
+            createCoordinator(
+                addPlayableBatch = { enqueuedItems = it },
+                toast = { toastMessage = it },
+            )
 
-        val meta = TrackIdentity(
-            title = "One More Time",
-            artist = "Daft Punk",
-            album = "Discovery"
-        )
+        val meta =
+            TrackIdentity(
+                title = "One More Time",
+                artist = "Daft Punk",
+                album = "Discovery",
+            )
 
         coordinator.executeForTrack(SubmenuSwipeAction.ENQUEUE_ALL, meta)
 
@@ -98,29 +101,32 @@ class SubmenuActionCoordinatorTest {
     @Test
     fun executeForTrack_addToPlaylist_invokesOnAddToPlaylistWithResolvedSong() {
         var addedSong: Song? = null
-        val song = Song(
-            id = 101L,
-            uriString = "content://music/101",
-            title = "Around The World",
-            artist = "Daft Punk",
-            album = "Homework",
-            durationMs = 200000L
-        )
+        val song =
+            Song(
+                id = 101L,
+                uriString = "content://music/101",
+                title = "Around The World",
+                artist = "Daft Punk",
+                album = "Homework",
+                durationMs = 200000L,
+            )
 
-        val coordinator = createCoordinator(
-            findLocalSongFor = { song }
-        )
+        val coordinator =
+            createCoordinator(
+                findLocalSongFor = { song },
+            )
 
-        val meta = TrackIdentity(
-            title = "Around The World",
-            artist = "Daft Punk",
-            album = "Homework"
-        )
+        val meta =
+            TrackIdentity(
+                title = "Around The World",
+                artist = "Daft Punk",
+                album = "Homework",
+            )
 
         coordinator.executeForTrack(
             SubmenuSwipeAction.ADD_TO_PLAYLIST,
             meta,
-            onAddToPlaylist = { addedSong = it }
+            onAddToPlaylist = { addedSong = it },
         )
 
         assertEquals(101L, addedSong?.id)
@@ -132,33 +138,37 @@ class SubmenuActionCoordinatorTest {
         var playedNextItems: List<PlayableItem>? = null
         var toastMessage: String? = null
 
-        val song1 = Song(
-            id = 1L,
-            uriString = "content://music/1",
-            title = "One More Time",
-            artist = "Daft Punk",
-            album = "Discovery"
-        )
-        val song2 = Song(
-            id = 2L,
-            uriString = "content://music/2",
-            title = "Aerodynamic",
-            artist = "Daft Punk",
-            album = "Discovery"
-        )
+        val song1 =
+            Song(
+                id = 1L,
+                uriString = "content://music/1",
+                title = "One More Time",
+                artist = "Daft Punk",
+                album = "Discovery",
+            )
+        val song2 =
+            Song(
+                id = 2L,
+                uriString = "content://music/2",
+                title = "Aerodynamic",
+                artist = "Daft Punk",
+                album = "Discovery",
+            )
 
-        val coordinator = createCoordinator(
-            getLibrarySongs = { listOf(song1, song2) },
-            playNextPlayableBatch = { playedNextItems = it },
-            toast = { toastMessage = it }
-        )
+        val coordinator =
+            createCoordinator(
+                getLibrarySongs = { listOf(song1, song2) },
+                playNextPlayableBatch = { playedNextItems = it },
+                toast = { toastMessage = it },
+            )
 
-        val album = Album(
-            name = "Discovery",
-            artist = "Daft Punk",
-            songCount = 2,
-            year = 2001
-        )
+        val album =
+            Album(
+                name = "Discovery",
+                artist = "Daft Punk",
+                songCount = 2,
+                year = 2001,
+            )
 
         coordinator.executeForAlbum(SubmenuSwipeAction.PLAY_NEXT, album)
 
@@ -171,34 +181,38 @@ class SubmenuActionCoordinatorTest {
         var searchedQuery: String? = null
         var navigatedToDiscover = false
 
-        val candidate = CatalogTrackCandidate(
-            identity = TrackIdentity(
-                title = "Give Life Back to Music",
+        val candidate =
+            CatalogTrackCandidate(
+                identity =
+                    TrackIdentity(
+                        title = "Give Life Back to Music",
+                        artist = "Daft Punk",
+                        album = "Random Access Memories",
+                        durationMs = 274000L,
+                    ),
+                candidates = emptyList(),
+            )
+
+        val coordinator =
+            createCoordinator(
+                searchCatalog = { searchedQuery = it },
+                navigateToDiscover = { navigatedToDiscover = true },
+                getCatalogCollection = {
+                    CatalogCollectionUiState(
+                        selectionKey = "key1",
+                        title = "Random Access Memories",
+                        candidates = listOf(candidate),
+                    )
+                },
+            )
+
+        val catalogAlbum =
+            CatalogAlbum(
+                id = "album-1",
+                title = "Random Access Memories",
                 artist = "Daft Punk",
-                album = "Random Access Memories",
-                durationMs = 274000L
-            ),
-            candidates = emptyList()
-        )
-
-        val coordinator = createCoordinator(
-            searchCatalog = { searchedQuery = it },
-            navigateToDiscover = { navigatedToDiscover = true },
-            getCatalogCollection = {
-                CatalogCollectionUiState(
-                    selectionKey = "key1",
-                    title = "Random Access Memories",
-                    candidates = listOf(candidate)
-                )
-            }
-        )
-
-        val catalogAlbum = CatalogAlbum(
-            id = "album-1",
-            title = "Random Access Memories",
-            artist = "Daft Punk",
-            coverUrl = "https://example.com/cover.jpg"
-        )
+                coverUrl = "https://example.com/cover.jpg",
+            )
 
         coordinator.executeForAlbum(SubmenuSwipeAction.SEARCH_SIMILAR, catalogAlbum)
 
@@ -211,10 +225,11 @@ class SubmenuActionCoordinatorTest {
         var searchedQuery: String? = null
         var navigatedToDiscover = false
 
-        val coordinator = createCoordinator(
-            searchCatalog = { searchedQuery = it },
-            navigateToDiscover = { navigatedToDiscover = true }
-        )
+        val coordinator =
+            createCoordinator(
+                searchCatalog = { searchedQuery = it },
+                navigateToDiscover = { navigatedToDiscover = true },
+            )
 
         coordinator.executeForArtist(SubmenuSwipeAction.SEARCH_SIMILAR, "Justice")
 
@@ -227,19 +242,21 @@ class SubmenuActionCoordinatorTest {
         var playedItems: List<PlayableItem>? = null
         var toastMessage: String? = null
 
-        val coordinator = createCoordinator(
-            playNextPlayableBatch = { playedItems = it },
-            toast = { toastMessage = it }
-        )
+        val coordinator =
+            createCoordinator(
+                playNextPlayableBatch = { playedItems = it },
+                toast = { toastMessage = it },
+            )
 
-        val song = Song(
-            id = 42L,
-            uriString = "content://music/42",
-            title = "Genesis",
-            artist = "Justice",
-            album = "Cross",
-            durationMs = 230000L
-        )
+        val song =
+            Song(
+                id = 42L,
+                uriString = "content://music/42",
+                title = "Genesis",
+                artist = "Justice",
+                album = "Cross",
+                durationMs = 230000L,
+            )
         val playable = PlayableItem.Local(song)
 
         coordinator.executeForPlayables(SubmenuSwipeAction.PLAY_NEXT, listOf(playable))

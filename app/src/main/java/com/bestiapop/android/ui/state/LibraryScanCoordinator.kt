@@ -35,7 +35,7 @@ class LibraryScanCoordinator(
     private val libraryPreferences: LibraryPreferencesRepository,
     private val identifyProgress: StateFlow<LibraryJobProgress?>,
     private val identifyImportedGaps: (List<Song>) -> Unit,
-    private val toast: (String) -> Unit
+    private val toast: (String) -> Unit,
 ) {
     private val _localLibraryJobProgress = MutableStateFlow<LibraryJobProgress?>(null)
     val localLibraryJobProgress: StateFlow<LibraryJobProgress?> = _localLibraryJobProgress.asStateFlow()
@@ -52,7 +52,7 @@ class LibraryScanCoordinator(
         kind: LibraryJobKind,
         done: Int,
         total: Int,
-        label: String
+        label: String,
     ) {
         _localLibraryJobProgress.value = LibraryJobProgress(kind, done, total, label)
     }
@@ -61,9 +61,10 @@ class LibraryScanCoordinator(
         _localLibraryJobProgress.value = null
     }
 
-    private fun importScanProgress(): (Int, Int, String) -> Unit = { done, total, fileName ->
-        reportLibraryProgress(LibraryJobKind.IMPORT, done, total, fileName)
-    }
+    private fun importScanProgress(): (Int, Int, String) -> Unit =
+        { done, total, fileName ->
+            reportLibraryProgress(LibraryJobKind.IMPORT, done, total, fileName)
+        }
 
     // SAF Import
     fun importFolder(treeUri: Uri) {
@@ -73,24 +74,25 @@ class LibraryScanCoordinator(
             reportLibraryProgress(LibraryJobKind.IMPORT, 0, 0, "Buscando archivos…")
             // finally: a stuck banner blocks every later library job (see the guard in
             // syncLibraryTagsToFiles), so it must clear even if the scan throws.
-            val inserted = try {
-                withContext(Dispatchers.IO) {
-                    repository.scanFolderUri(treeUri, importScanProgress())
+            val inserted =
+                try {
+                    withContext(Dispatchers.IO) {
+                        repository.scanFolderUri(treeUri, importScanProgress())
+                    }
+                } catch (e: Exception) {
+                    CrashReporter.recordNonFatal(e, mapOf("scan_phase" to "folder_import"))
+                    toast("No se pudo leer esa carpeta")
+                    return@launch
+                } finally {
+                    clearLibraryProgress()
                 }
-            } catch (e: Exception) {
-                CrashReporter.recordNonFatal(e, mapOf("scan_phase" to "folder_import"))
-                toast("No se pudo leer esa carpeta")
-                return@launch
-            } finally {
-                clearLibraryProgress()
-            }
             val count = inserted.size
             toast(
                 when {
                     count <= 0 -> "No se encontraron canciones nuevas en esa carpeta"
                     count == 1 -> "1 canción agregada a la biblioteca"
                     else -> "$count canciones agregadas a la biblioteca"
-                }
+                },
             )
             identifyImportedGaps(inserted)
         }
@@ -101,7 +103,7 @@ class LibraryScanCoordinator(
         if (seen > AppDatabase.VERSION) {
             toast(
                 "Instalaste una versión más vieja de BestiaPop: se reinició la base " +
-                        "(playlists y datos de álbumes). Tus archivos de música siguen en Music/BestiaPop."
+                    "(playlists y datos de álbumes). Tus archivos de música siguen en Music/BestiaPop.",
             )
         }
         if (seen < AppDatabase.VERSION) {
@@ -125,7 +127,7 @@ class LibraryScanCoordinator(
                     e.printStackTrace()
                     CrashReporter.recordNonFatal(
                         e,
-                        mapOf("phase" to "ensureInitialLibraryImport")
+                        mapOf("phase" to "ensureInitialLibraryImport"),
                     )
                 } finally {
                     libraryPreferences.setInitialScanCompleted(true)
@@ -135,33 +137,36 @@ class LibraryScanCoordinator(
     }
 
     private suspend fun runLibraryDiskImport(showRecoveryToast: Boolean) {
-        val (recovered, inserted) = try {
-            withContext(Dispatchers.IO) {
-                val fromManaged = repository.resyncAppManagedMusic(importScanProgress())
-                val fromMedia = repository.scanMediaStore(importScanProgress())
-                fromManaged to (fromManaged + fromMedia)
+        val (recovered, inserted) =
+            try {
+                withContext(Dispatchers.IO) {
+                    val fromManaged = repository.resyncAppManagedMusic(importScanProgress())
+                    val fromMedia = repository.scanMediaStore(importScanProgress())
+                    fromManaged to (fromManaged + fromMedia)
+                }
+            } finally {
+                clearLibraryProgress()
             }
-        } finally {
-            clearLibraryProgress()
-        }
         if (showRecoveryToast && recovered.isNotEmpty()) {
             toast(
-                if (recovered.size == 1) "Se recuperó 1 canción de Music/BestiaPop"
-                else "Se recuperaron ${recovered.size} canciones de Music/BestiaPop"
+                if (recovered.size == 1) {
+                    "Se recuperó 1 canción de Music/BestiaPop"
+                } else {
+                    "Se recuperaron ${recovered.size} canciones de Music/BestiaPop"
+                },
             )
         }
         identifyImportedGaps(inserted)
     }
 
-    fun hasAudioPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    fun hasAudioPermission(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) ==
-                    PackageManager.PERMISSION_GRANTED
+                PackageManager.PERMISSION_GRANTED
         } else {
             ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) ==
-                    PackageManager.PERMISSION_GRANTED
+                PackageManager.PERMISSION_GRANTED
         }
-    }
 
     fun syncLibraryTagsToFiles() {
         if (_localLibraryJobProgress.value != null || identifyProgress.value != null) {
@@ -169,31 +174,41 @@ class LibraryScanCoordinator(
             return
         }
         scope.launch {
-            val summary = withContext(Dispatchers.IO) {
-                repository.syncTagsToFiles { done, total, fileName ->
-                    reportLibraryProgress(LibraryJobKind.TAG_WRITE, done, total, fileName)
+            val summary =
+                withContext(Dispatchers.IO) {
+                    repository.syncTagsToFiles { done, total, fileName ->
+                        reportLibraryProgress(LibraryJobKind.TAG_WRITE, done, total, fileName)
+                    }
                 }
-            }
             clearLibraryProgress()
             toast(
                 buildString {
                     append(
-                        if (summary.updated == 1) "1 archivo actualizado"
-                        else "${summary.updated} archivos actualizados"
+                        if (summary.updated == 1) {
+                            "1 archivo actualizado"
+                        } else {
+                            "${summary.updated} archivos actualizados"
+                        },
                     )
                     if (summary.skipped > 0) {
                         append(
-                            if (summary.skipped == 1) ", 1 omitido"
-                            else ", ${summary.skipped} omitidos"
+                            if (summary.skipped == 1) {
+                                ", 1 omitido"
+                            } else {
+                                ", ${summary.skipped} omitidos"
+                            },
                         )
                     }
                     if (summary.errors > 0) {
                         append(
-                            if (summary.errors == 1) ", 1 error"
-                            else ", ${summary.errors} errores"
+                            if (summary.errors == 1) {
+                                ", 1 error"
+                            } else {
+                                ", ${summary.errors} errores"
+                            },
                         )
                     }
-                }
+                },
             )
         }
     }

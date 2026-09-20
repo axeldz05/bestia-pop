@@ -30,30 +30,50 @@ interface IMusicRepository {
     val playlistsFlow: Flow<List<Playlist>>
 
     fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>>
+
     fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?>
-    suspend fun getPlaylistSongsOrdered(playlistId: Long): List<Song> =
-        getPlaylistSongsFlow(playlistId).first()
+
+    suspend fun getPlaylistSongsOrdered(playlistId: Long): List<Song> = getPlaylistSongsFlow(playlistId).first()
 
     suspend fun scanMediaStore(onProgress: LibraryScanProgress? = null): List<Song>
+
     /** Indexes audio under public Music/BestiaPop after reinstall (Room wipe). */
     suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress? = null): List<Song>
+
     /** SAF folder import. Returns newly inserted songs (with ids). */
-    suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress? = null): List<Song>
+    suspend fun scanFolderUri(
+        treeUri: Uri,
+        onProgress: LibraryScanProgress? = null,
+    ): List<Song>
+
     /** Identity-slim library snapshot (no `lyrics`, no play stamps), same columns as [allSongsFlow]. */
     suspend fun getAllSongsSync(): List<Song>
+
     /** Lightweight path-only rows (uriString and folderPath), skipping Song entity allocations. */
     suspend fun getAllSongPathRefs(): List<SongPathRef>
+
     /** Identity-slim rows for [ids]. Empty [ids] → empty list. */
     suspend fun getSongsByIds(ids: List<Long>): List<Song>
+
     /** Full Room row including `lyrics`. The [allSongsFlow] list is identity-slim. */
     suspend fun getSongById(id: Long): Song?
-    suspend fun findSongByArtistTitle(artist: String, title: String): Song?
+
+    suspend fun findSongByArtistTitle(
+        artist: String,
+        title: String,
+    ): Song?
+
     suspend fun saveUploadedSong(song: Song): Long
+
     suspend fun deleteSongsFromApp(songs: List<Song>)
+
     suspend fun deleteSongsFromDevice(songs: List<Song>)
+
     /** Prunes corrupted or zero-duration songs from database. Returns deleted songs. */
     suspend fun pruneUnplayableCorruptSongs(): List<Song>
+
     suspend fun enhanceSongMetadataAndLyrics(song: Song)
+
     /**
      * Ranked online candidates for a library song.
      * May persist a soft cleanup of rip-style tags (`01` / `- Title`) before searching.
@@ -73,14 +93,14 @@ interface IMusicRepository {
         listenBrainzToken: String? = null,
         filters: IdentifySearchFilters = IdentifySearchFilters(),
         catalogIndex: Int = 0,
-        existingCandidates: List<IdentifyCandidate> = emptyList()
+        existingCandidates: List<IdentifyCandidate> = emptyList(),
     ): IdentifyProposal
 
     /** Persist one identify candidate onto [songId] with optional field selection. */
     suspend fun applySongIdentity(
         songId: Long,
         candidate: IdentifyCandidate,
-        fields: IdentifyApplyFields = IdentifyApplyFields.ALL
+        fields: IdentifyApplyFields = IdentifyApplyFields.ALL,
     ): IdentifyResult
 
     /**
@@ -91,7 +111,7 @@ interface IMusicRepository {
         val applied = LinkedHashSet<Long>()
         for (request in requests) {
             if (applySongIdentity(request.songId, request.candidate, request.fields) is
-                IdentifyResult.Updated
+                    IdentifyResult.Updated
             ) {
                 applied += request.songId
             }
@@ -106,8 +126,17 @@ interface IMusicRepository {
      * unchanged ([IdentifyResult.NoMatch]).
      */
     suspend fun identifySongMetadata(song: Song): IdentifyResult
-    suspend fun updateSongDuration(songId: Long, durationMs: Long)
-    suspend fun touchItemLastPlayed(item: PlayableItem, playedAt: Long = System.currentTimeMillis())
+
+    suspend fun updateSongDuration(
+        songId: Long,
+        durationMs: Long,
+    )
+
+    suspend fun touchItemLastPlayed(
+        item: PlayableItem,
+        playedAt: Long = System.currentTimeMillis(),
+    )
+
     suspend fun updateSongMetadata(
         songId: Long,
         title: String,
@@ -115,16 +144,22 @@ interface IMusicRepository {
         album: String,
         genre: String,
         year: Int = 0,
-        trackNumber: Int = 0
+        trackNumber: Int = 0,
     )
 
-    suspend fun updateSongLyrics(songId: Long, lyrics: String?)
+    suspend fun updateSongLyrics(
+        songId: Long,
+        lyrics: String?,
+    )
 
     /** Local lyrics lookup from Room or local file/companion .lrc. */
     suspend fun findLocalLyrics(song: Song): String?
 
     /** Save downloaded companion .lrc file next to local song file if possible. */
-    suspend fun saveCompanionLrc(song: Song, lyrics: String): Boolean
+    suspend fun saveCompanionLrc(
+        song: Song,
+        lyrics: String,
+    ): Boolean
 
     /** Online lyrics lookup; does not persist. Null if none found. */
     suspend fun fetchSongLyrics(song: Song): String?
@@ -142,43 +177,81 @@ interface IMusicRepository {
      * Cover-only change for [albumKey]: updates the override artwork and the songs' artwork,
      * leaving artist/genre/year untouched (a cover change is not a metadata edit).
      */
-    suspend fun setAlbumArtwork(albumKey: String, artworkUri: String?)
+    suspend fun setAlbumArtwork(
+        albumKey: String,
+        artworkUri: String?,
+    )
+
+    /**
+     * Search online albums (Deezer / iTunes) by query.
+     */
+    suspend fun searchAlbums(query: String): List<CatalogAlbum> = emptyList()
 
     /**
      * Move all songs under [sourceAlbumKey] into [targetAlbumKey], rewriting their
      * album/artist/genre/year/artwork to match the effective metadata of the target album.
      * Deletes the source album override; leaves the target override untouched.
      */
-    /**
-     * Search online albums (Deezer / iTunes) by query.
-     */
-    suspend fun searchAlbums(query: String): List<CatalogAlbum> = emptyList()
-
-    suspend fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String)
+    suspend fun mergeAlbumInto(
+        sourceAlbumKey: String,
+        targetAlbumKey: String,
+    )
 
     suspend fun loadKnownAlbumTracks(
         artist: String,
         album: String,
-        fetchCatalog: Boolean = true
+        fetchCatalog: Boolean = true,
     ): com.bestiapop.android.domain.util.KnownAlbumTracks?
 
     suspend fun loadLibraryKnownAlbums(): List<com.bestiapop.android.domain.util.KnownAlbumTracks> = emptyList()
 
     suspend fun getAlbumOverride(albumKey: String): AlbumOverride?
 
-    fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String?
+    fun extractAndSaveEmbeddedArtwork(
+        audioPathOrUri: String,
+        identifier: String,
+    ): String?
+
     fun savePlaylistCoverImage(sourceUriStr: String?): String?
+
     fun saveAlbumCoverImage(sourceUriStr: String?): String?
 
-    suspend fun createPlaylist(name: String, description: String? = null, coverUri: String? = null): Long
-    suspend fun updatePlaylist(id: Long, name: String, description: String? = null, coverUri: String? = null)
+    suspend fun createPlaylist(
+        name: String,
+        description: String? = null,
+        coverUri: String? = null,
+    ): Long
+
+    suspend fun updatePlaylist(
+        id: Long,
+        name: String,
+        description: String? = null,
+        coverUri: String? = null,
+    )
+
     suspend fun deletePlaylist(id: Long)
-    suspend fun addSongToPlaylist(playlistId: Long, songId: Long)
-    suspend fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) {
+
+    suspend fun addSongToPlaylist(
+        playlistId: Long,
+        songId: Long,
+    )
+
+    suspend fun addSongsToPlaylist(
+        playlistId: Long,
+        songIds: List<Long>,
+    ) {
         songIds.forEach { addSongToPlaylist(playlistId, it) }
     }
-    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long)
-    suspend fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) {}
+
+    suspend fun removeSongFromPlaylist(
+        playlistId: Long,
+        songId: Long,
+    )
+
+    suspend fun reorderPlaylistSongs(
+        playlistId: Long,
+        songIds: List<Long>,
+    ) {}
 
     /**
      * Level 2: Creates a playlist and populates it with mixed local and remote playables.
@@ -191,30 +264,38 @@ interface IMusicRepository {
         items: List<PlayableItem>,
         description: String? = null,
         coverUri: String? = null,
-        allowEmpty: Boolean = false
+        allowEmpty: Boolean = false,
     ): Long? {
         if (items.isEmpty() && !allowEmpty) return null
-        val effectiveCover = coverUri?.takeIf(String::isNotBlank)
-            ?: items.firstArtworkUri()
-        val playlistId = createPlaylist(
-            name = name,
-            description = description,
-            coverUri = effectiveCover
-        )
+        val effectiveCover =
+            coverUri?.takeIf(String::isNotBlank)
+                ?: items.firstArtworkUri()
+        val playlistId =
+            createPlaylist(
+                name = name,
+                description = description,
+                coverUri = effectiveCover,
+            )
         val pending = ArrayList<PlaylistPendingTrack>()
         items.forEachIndexed { index, item ->
             when (item) {
-                is PlayableItem.Local -> addSongToPlaylist(playlistId, item.song.id)
-                is PlayableItem.Remote -> pending.add(
-                    PlaylistPendingTrack(
-                        identity = item.identity.copy(
-                            artworkUri = item.artworkUri?.takeIf(String::isNotBlank) ?: item.identity.artworkUri
+                is PlayableItem.Local -> {
+                    addSongToPlaylist(playlistId, item.song.id)
+                }
+
+                is PlayableItem.Remote -> {
+                    pending.add(
+                        PlaylistPendingTrack(
+                            identity =
+                                item.identity.copy(
+                                    artworkUri = item.artworkUri?.takeIf(String::isNotBlank) ?: item.identity.artworkUri,
+                                ),
+                            playlistId = playlistId,
+                            recordingMbid = item.recordingMbid,
+                            position = index,
                         ),
-                        playlistId = playlistId,
-                        recordingMbid = item.recordingMbid,
-                        position = index
                     )
-                )
+                }
             }
         }
         if (pending.isNotEmpty()) {
@@ -230,16 +311,25 @@ interface IMusicRepository {
     suspend fun getCoPlaylistSongIds(songId: Long): Set<Long>
 
     fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>>
+
     suspend fun getPlaylistPendingTracks(playlistId: Long): List<PlaylistPendingTrack> = emptyList()
+
     suspend fun getPlaylistPlayables(playlistId: Long): List<PlayableItem> = emptyList()
+
     suspend fun addPlaylistPendingTracks(tracks: List<PlaylistPendingTrack>)
-    suspend fun removePlaylistPendingTrack(playlistId: Long, artist: String, title: String)
+
+    suspend fun removePlaylistPendingTrack(
+        playlistId: Long,
+        artist: String,
+        title: String,
+    )
+
     suspend fun enrichPlaylistPendingArtworks(playlistId: Long) {}
 
     suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,
         onProgress: ((com.bestiapop.android.data.model.DownloadPhase) -> Unit)? = null,
-        conflictPolicy: com.bestiapop.android.data.model.DownloadConflictPolicy? = null
+        conflictPolicy: com.bestiapop.android.data.model.DownloadConflictPolicy? = null,
     ): Song
 
     /**
@@ -254,12 +344,17 @@ interface IMusicRepository {
         coverUrl: String?,
         year: Int,
         genre: String,
-        tracks: List<com.bestiapop.android.data.model.CatalogTrackCandidate>
+        tracks: List<com.bestiapop.android.data.model.CatalogTrackCandidate>,
     ): List<Song>
 
-    suspend fun removeSavedAlbumFromLibrary(albumName: String, artistName: String): Int
+    suspend fun removeSavedAlbumFromLibrary(
+        albumName: String,
+        artistName: String,
+    ): Int
 
     suspend fun getSongsForArtist(artistName: String): List<Song> = emptyList()
+
     suspend fun getSongsForGenre(genreName: String): List<Song> = emptyList()
+
     suspend fun getAlbumsForArtist(artistName: String): List<String> = emptyList()
 }

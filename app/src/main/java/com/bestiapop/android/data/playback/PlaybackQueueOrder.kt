@@ -13,10 +13,13 @@ object PlaybackQueueOrder {
     data class TrimmedQueue<T>(
         val items: List<T>,
         val currentIndex: Int,
-        val shufflePlayOrder: List<Int>? = null
+        val shufflePlayOrder: List<Int>? = null,
     )
 
-    fun <T> rotateToStart(items: List<T>, startIndex: Int): List<T> {
+    fun <T> rotateToStart(
+        items: List<T>,
+        startIndex: Int,
+    ): List<T> {
         if (items.isEmpty()) return items
         val i = startIndex.coerceIn(0, items.lastIndex)
         if (i == 0) return items
@@ -27,7 +30,7 @@ object PlaybackQueueOrder {
         items: List<T>,
         currentIndex: Int,
         maxHistory: Int = MAX_QUEUE_HISTORY,
-        shufflePlayOrder: List<Int>? = null
+        shufflePlayOrder: List<Int>? = null,
     ): TrimmedQueue<T> {
         if (items.isEmpty()) return TrimmedQueue(emptyList(), 0, null)
         val idx = currentIndex.coerceIn(0, items.lastIndex)
@@ -37,15 +40,19 @@ object PlaybackQueueOrder {
         return TrimmedQueue(
             items = trimmedItems,
             currentIndex = newIndex,
-            shufflePlayOrder = dropPrefixFromPlayOrder(
-                shufflePlayOrder,
-                keepFrom,
-                trimmedItems.size
-            )
+            shufflePlayOrder =
+                dropPrefixFromPlayOrder(
+                    shufflePlayOrder,
+                    keepFrom,
+                    trimmedItems.size,
+                ),
         )
     }
 
-    fun isValidPlayOrder(playOrder: List<Int>?, size: Int): Boolean {
+    fun isValidPlayOrder(
+        playOrder: List<Int>?,
+        size: Int,
+    ): Boolean {
         if (playOrder == null) return false
         if (size <= 0) return playOrder.isEmpty()
         if (playOrder.size != size) return false
@@ -57,14 +64,16 @@ object PlaybackQueueOrder {
         return true
     }
 
-    fun validPlayOrderOrNull(playOrder: List<Int>?, size: Int): List<Int>? =
-        playOrder?.takeIf { isValidPlayOrder(it, size) }
+    fun validPlayOrderOrNull(
+        playOrder: List<Int>?,
+        size: Int,
+    ): List<Int>? = playOrder?.takeIf { isValidPlayOrder(it, size) }
 
     /** Current timeline index first; remaining indices shuffled. */
     fun shufflePlayOrder(
         size: Int,
         currentIndex: Int,
-        random: Random = Random.Default
+        random: Random = Random.Default,
     ): List<Int> {
         if (size <= 0) return emptyList()
         val current = currentIndex.coerceIn(0, size - 1)
@@ -77,7 +86,7 @@ object PlaybackQueueOrder {
     fun reshufflePlayOrder(
         size: Int,
         avoidStartingWith: Int? = null,
-        random: Random = Random.Default
+        random: Random = Random.Default,
     ): List<Int> {
         if (size <= 0) return emptyList()
         if (size == 1) return listOf(0)
@@ -95,7 +104,7 @@ object PlaybackQueueOrder {
     fun <T> reshuffleItemsAvoidingFirst(
         items: List<T>,
         avoidItem: T? = null,
-        random: Random = Random.Default
+        random: Random = Random.Default,
     ): List<T> {
         if (items.size <= 1) return items
         val reshuffled = items.shuffled(random).toMutableList()
@@ -115,7 +124,7 @@ object PlaybackQueueOrder {
         items: List<T>,
         avoidKey: K?,
         keySelector: (T) -> K,
-        random: Random = Random.Default
+        random: Random = Random.Default,
     ): List<T> {
         if (items.size <= 1) return items
         val reshuffled = items.shuffled(random).toMutableList()
@@ -128,18 +137,29 @@ object PlaybackQueueOrder {
         return reshuffled
     }
 
-    fun <T> applyPlayOrder(items: List<T>, playOrder: List<Int>?): List<T> {
+    fun <T> applyPlayOrder(
+        items: List<T>,
+        playOrder: List<Int>?,
+    ): List<T> {
         val order = validPlayOrderOrNull(playOrder, items.size) ?: return items
         return order.map { items[it] }
     }
 
-    fun toTimelineIndex(playOrder: List<Int>?, displayIndex: Int, size: Int): Int {
+    fun toTimelineIndex(
+        playOrder: List<Int>?,
+        displayIndex: Int,
+        size: Int,
+    ): Int {
         val order = validPlayOrderOrNull(playOrder, size) ?: return displayIndex
         if (displayIndex !in order.indices) return displayIndex
         return order[displayIndex]
     }
 
-    fun toDisplayIndex(playOrder: List<Int>?, timelineIndex: Int, size: Int): Int {
+    fun toDisplayIndex(
+        playOrder: List<Int>?,
+        timelineIndex: Int,
+        size: Int,
+    ): Int {
         val order = validPlayOrderOrNull(playOrder, size) ?: return timelineIndex
         val i = order.indexOf(timelineIndex)
         return if (i >= 0) i else timelineIndex
@@ -153,7 +173,7 @@ object PlaybackQueueOrder {
         playOrder: List<Int>,
         currentTimelineIndex: Int,
         insertAt: Int,
-        count: Int
+        count: Int,
     ): List<Int> {
         if (count <= 0) return playOrder
         val remapped = remapAfterTimelineInsert(playOrder, insertAt, count)
@@ -166,13 +186,20 @@ object PlaybackQueueOrder {
     }
 
     /** Append [count] new timeline indices starting at [firstNewIndex] (typically old size). */
-    fun appendToPlayOrder(playOrder: List<Int>, firstNewIndex: Int, count: Int): List<Int> {
+    fun appendToPlayOrder(
+        playOrder: List<Int>,
+        firstNewIndex: Int,
+        count: Int,
+    ): List<Int> {
         if (count <= 0) return playOrder
         val remapped = remapAfterTimelineInsert(playOrder, firstNewIndex, count)
         return remapped + List(count) { firstNewIndex + it }
     }
 
-    fun removeFromPlayOrder(playOrder: List<Int>, removedTimelineIndex: Int): List<Int> =
+    fun removeFromPlayOrder(
+        playOrder: List<Int>,
+        removedTimelineIndex: Int,
+    ): List<Int> =
         playOrder.mapNotNull { idx ->
             when {
                 idx == removedTimelineIndex -> null
@@ -181,7 +208,11 @@ object PlaybackQueueOrder {
             }
         }
 
-    fun moveInPlayOrder(playOrder: List<Int>, fromDisplay: Int, toDisplay: Int): List<Int> {
+    fun moveInPlayOrder(
+        playOrder: List<Int>,
+        fromDisplay: Int,
+        toDisplay: Int,
+    ): List<Int> {
         if (fromDisplay !in playOrder.indices || toDisplay !in playOrder.indices) return playOrder
         if (fromDisplay == toDisplay) return playOrder
         val list = playOrder.toMutableList()
@@ -197,7 +228,7 @@ object PlaybackQueueOrder {
     fun remapPlayOrder(
         playOrder: List<Int>?,
         oldToNew: Map<Int, Int>,
-        newSize: Int
+        newSize: Int,
     ): List<Int>? {
         if (playOrder == null) return null
         val remapped = playOrder.mapNotNull { oldToNew[it] }
@@ -207,20 +238,21 @@ object PlaybackQueueOrder {
     fun dropPrefixFromPlayOrder(
         playOrder: List<Int>?,
         keepFrom: Int,
-        newSize: Int
+        newSize: Int,
     ): List<Int>? {
         if (playOrder == null) return null
         if (keepFrom <= 0) return validPlayOrderOrNull(playOrder, newSize)
-        val remapped = playOrder.mapNotNull { idx ->
-            if (idx < keepFrom) null else idx - keepFrom
-        }
+        val remapped =
+            playOrder.mapNotNull { idx ->
+                if (idx < keepFrom) null else idx - keepFrom
+            }
         return validPlayOrderOrNull(remapped, newSize)
     }
 
     private fun remapAfterTimelineInsert(
         playOrder: List<Int>,
         insertAt: Int,
-        count: Int
+        count: Int,
     ): List<Int> {
         if (count <= 0) return playOrder
         return playOrder.map { idx -> if (idx >= insertAt) idx + count else idx }

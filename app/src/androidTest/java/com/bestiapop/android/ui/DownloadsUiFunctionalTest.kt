@@ -26,27 +26,31 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @SmallTest
 class DownloadsUiFunctionalTest {
-
     private val composeTestRule = createComposeRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeTestRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeTestRule)
 
-    private fun catalogTrack() = OnlineCatalogTrack(
-        identity = TrackIdentity(title = "Night Drive", artist = "Nova", album = "EP"),
-        id = "c1",
-        provider = "Deezer"
-    )
+    private fun catalogTrack() =
+        OnlineCatalogTrack(
+            identity = TrackIdentity(title = "Night Drive", artist = "Nova", album = "EP"),
+            id = "c1",
+            provider = "Deezer",
+        )
 
-    private fun download(state: CandidateDownloadState, percent: Int = 0) = ActiveDownload(
+    private fun download(
+        state: CandidateDownloadState,
+        percent: Int = 0,
+    ) = ActiveDownload(
         id = "nova|night drive",
         source = ActiveDownloadSource.CATALOG,
         candidates = listOf(catalogTrack()),
         state = state,
         progressPercent = percent,
-        errorMessage = if (state == CandidateDownloadState.ERROR) "Interrumpida" else null
+        errorMessage = if (state == CandidateDownloadState.ERROR) "Interrumpida" else null,
     )
 
     @Test
@@ -55,7 +59,7 @@ class DownloadsUiFunctionalTest {
         composeTestRule.setContent {
             DownloadStateTrailing(
                 state = CandidateDownloadState.QUEUED,
-                onDismiss = { dismissed = true }
+                onDismiss = { dismissed = true },
             )
         }
         composeTestRule.onNodeWithContentDescription("Cancelar descarga").performClick()
@@ -69,7 +73,7 @@ class DownloadsUiFunctionalTest {
             DownloadStateTrailing(
                 state = CandidateDownloadState.DOWNLOADING,
                 percent = 42,
-                onDismiss = { dismissed = true }
+                onDismiss = { dismissed = true },
             )
         }
         composeTestRule.onNodeWithText("42%").assertIsDisplayed()
@@ -90,7 +94,7 @@ class DownloadsUiFunctionalTest {
                 onPlay = {},
                 onRetry = { retried = true },
                 onCycle = {},
-                onDismiss = { dismissed = true }
+                onDismiss = { dismissed = true },
             )
         }
         composeTestRule.onNodeWithText("Night Drive").assertIsDisplayed()
@@ -105,7 +109,7 @@ class DownloadsUiFunctionalTest {
         composeTestRule.setContent {
             DownloadStateTrailing(
                 state = CandidateDownloadState.SUCCESS,
-                successLabel = DownloadMessages.inLibrary
+                successLabel = DownloadMessages.inLibrary,
             )
         }
         composeTestRule.onNodeWithText(DownloadMessages.inLibrary).assertIsDisplayed()
@@ -119,7 +123,7 @@ class DownloadsUiFunctionalTest {
             DownloadsHeader(
                 downloads = listOf(download(CandidateDownloadState.ERROR)),
                 onResumeAll = { resumed = true },
-                onClearAll = { cleared = true }
+                onClearAll = { cleared = true },
             )
         }
 
@@ -136,12 +140,11 @@ class DownloadsUiFunctionalTest {
             DownloadsHeader(
                 downloads = listOf(download(CandidateDownloadState.SUCCESS)),
                 onResumeAll = {},
-                onClearAll = {}
+                onClearAll = {},
             )
         }
 
         composeTestRule.onNodeWithText("Reanudar todo").assertDoesNotExist()
         composeTestRule.onNodeWithText("Limpiar todo").assertIsDisplayed()
     }
-
 }

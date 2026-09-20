@@ -12,7 +12,6 @@ import java.nio.ByteBuffer
  * into standard audio containers (e.g. M4A) via direct bitstream copy without re-encoding.
  */
 object MediaDemuxer {
-
     private const val DEFAULT_BUFFER_SIZE = 64 * 1024
 
     /**
@@ -22,7 +21,10 @@ object MediaDemuxer {
      * @param destinationFile Output audio container file (e.g. M4A).
      * @return true if an audio track was successfully found and demuxed, false otherwise.
      */
-    fun extractAudioTrack(sourceFile: File, destinationFile: File): Boolean {
+    fun extractAudioTrack(
+        sourceFile: File,
+        destinationFile: File,
+    ): Boolean {
         if (!sourceFile.exists() || sourceFile.length() == 0L) return false
 
         val extractor = MediaExtractor()
@@ -61,11 +63,12 @@ object MediaDemuxer {
             muxer.start()
             muxerStarted = true
 
-            val bufferSize = if (audioFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                audioFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE).coerceAtLeast(DEFAULT_BUFFER_SIZE)
-            } else {
-                DEFAULT_BUFFER_SIZE
-            }
+            val bufferSize =
+                if (audioFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                    audioFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE).coerceAtLeast(DEFAULT_BUFFER_SIZE)
+                } else {
+                    DEFAULT_BUFFER_SIZE
+                }
 
             val buffer = ByteBuffer.allocate(bufferSize)
             val bufferInfo = MediaCodec.BufferInfo()

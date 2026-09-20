@@ -5,7 +5,6 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class MediaLibraryIdsTest {
-
     @Test
     fun unicodeAlbumAndArtist_roundTripWithoutPathCharacters() {
         val albumId = MediaLibraryIds.album("Canción/Álbum: 2026")
@@ -13,11 +12,11 @@ class MediaLibraryIdsTest {
 
         assertEquals(
             MediaLibraryTarget.Album("Canción/Álbum: 2026"),
-            MediaLibraryIds.parse(albumId)
+            MediaLibraryIds.parse(albumId),
         )
         assertEquals(
             MediaLibraryTarget.Artist("Björk & compañía"),
-            MediaLibraryIds.parse(artistId)
+            MediaLibraryIds.parse(artistId),
         )
     }
 

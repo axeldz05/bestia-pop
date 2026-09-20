@@ -25,154 +25,190 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 @Category(MediumTest::class)
 class IdentifyReviewStoreIntegrationTest {
-
     @Test
-    fun pendingQueue_hydratesHiddenWithoutCdnAndPrunesOrphansAcrossColdStarts() = runTest {
-        val storage = TemporaryPreferencesDataStore(
-            ApplicationProvider.getApplicationContext(),
-            "identify-review"
-        )
-        try {
-            val repository = IdentifyReviewStore(storage.dataStore)
-            repository.save(
-                PersistedIdentifyReviewQueue(
-                    proposals = listOf(proposal(songId = 1L), proposal(songId = 2L)),
-                    phase = IdentifyReviewPhase.Overview.name
+    fun pendingQueue_hydratesHiddenWithoutCdnAndPrunesOrphansAcrossColdStarts() =
+        runTest {
+            val storage =
+                TemporaryPreferencesDataStore(
+                    ApplicationProvider.getApplicationContext(),
+                    "identify-review",
                 )
-            )
-            assertEquals(2, repository.queueFlow.first().proposals.size)
+            try {
+                val repository = IdentifyReviewStore(storage.dataStore)
+                repository.save(
+                    PersistedIdentifyReviewQueue(
+                        proposals = listOf(proposal(songId = 1L), proposal(songId = 2L)),
+                        phase = IdentifyReviewPhase.Overview.name,
+                    ),
+                )
+                assertEquals(
+                    2,
+                    repository.queueFlow
+                        .first()
+                        .proposals.size,
+                )
 
-            storage.restart()
+                storage.restart()
 
-            val coldQueue = IdentifyReviewStore(storage.dataStore).load()
-            val hydrated = identifyReviewFromPersisted(
-                proposals = coldQueue.proposals,
-                phaseName = coldQueue.phase,
-                songs = listOf(
-                    Song(
-                        id = 2L,
-                        uriString = "file:///library/hysteria.mp3",
-                        title = "Hysteria",
-                        artist = "Muse",
-                        album = "Absolution"
+                val coldQueue = IdentifyReviewStore(storage.dataStore).load()
+                val hydrated =
+                    identifyReviewFromPersisted(
+                        proposals = coldQueue.proposals,
+                        phaseName = coldQueue.phase,
+                        songs =
+                            listOf(
+                                Song(
+                                    id = 2L,
+                                    uriString = "file:///library/hysteria.mp3",
+                                    title = "Hysteria",
+                                    artist = "Muse",
+                                    album = "Absolution",
+                                ),
+                            ),
                     )
+                assertEquals(1, hydrated.pendingCount)
+                assertEquals(2L, hydrated.current?.song?.id)
+                assertEquals(IdentifyReviewPhase.Item, hydrated.phase)
+                assertFalse(hydrated.isVisible)
+                assertEquals(
+                    "",
+                    hydrated.current
+                        ?.proposal
+                        ?.suggested
+                        ?.track
+                        ?.audioUrl,
                 )
-            )
-            assertEquals(1, hydrated.pendingCount)
-            assertEquals(2L, hydrated.current?.song?.id)
-            assertEquals(IdentifyReviewPhase.Item, hydrated.phase)
-            assertFalse(hydrated.isVisible)
-            assertEquals("", hydrated.current?.proposal?.suggested?.track?.audioUrl)
 
-            val prunedQueue = PersistedIdentifyReviewQueue(
-                proposals = hydrated.remaining.map { it.proposal },
-                phase = hydrated.phase.name
-            )
-            val prunedRepository = IdentifyReviewStore(storage.dataStore)
-            prunedRepository.save(prunedQueue)
-            assertEquals(listOf(2L), prunedRepository.queueFlow.first().proposals.map { it.songId })
+                val prunedQueue =
+                    PersistedIdentifyReviewQueue(
+                        proposals = hydrated.remaining.map { it.proposal },
+                        phase = hydrated.phase.name,
+                    )
+                val prunedRepository = IdentifyReviewStore(storage.dataStore)
+                prunedRepository.save(prunedQueue)
+                assertEquals(
+                    listOf(2L),
+                    prunedRepository.queueFlow
+                        .first()
+                        .proposals
+                        .map { it.songId },
+                )
 
-            storage.restart()
+                storage.restart()
 
-            val restoredPruned = IdentifyReviewStore(storage.dataStore).queueFlow.first()
-            assertEquals(listOf(2L), restoredPruned.proposals.map { it.songId })
-            assertEquals("", restoredPruned.proposals.single().suggested?.track?.audioUrl)
-        } finally {
-            storage.close()
+                val restoredPruned = IdentifyReviewStore(storage.dataStore).queueFlow.first()
+                assertEquals(listOf(2L), restoredPruned.proposals.map { it.songId })
+                assertEquals(
+                    "",
+                    restoredPruned.proposals
+                        .single()
+                        .suggested
+                        ?.track
+                        ?.audioUrl,
+                )
+            } finally {
+                storage.close()
+            }
         }
-    }
 
     @Test
-    fun appendProposals_mergesBySongId_andMergeKeepsRuntimeExtras() = runTest {
-        val storage = TemporaryPreferencesDataStore(
-            ApplicationProvider.getApplicationContext(),
-            "identify-review-merge"
-        )
-        try {
-            val repository = IdentifyReviewStore(storage.dataStore)
-            repository.appendProposals(listOf(proposal(songId = 1L)))
-            repository.appendProposals(listOf(proposal(songId = 1L), proposal(songId = 2L)))
-            assertEquals(listOf(1L, 2L), repository.load().proposals.map { it.songId })
-            assertEquals(setOf(1L, 2L), repository.pendingSongIds())
+    fun appendProposals_mergesBySongId_andMergeKeepsRuntimeExtras() =
+        runTest {
+            val storage =
+                TemporaryPreferencesDataStore(
+                    ApplicationProvider.getApplicationContext(),
+                    "identify-review-merge",
+                )
+            try {
+                val repository = IdentifyReviewStore(storage.dataStore)
+                repository.appendProposals(listOf(proposal(songId = 1L)))
+                repository.appendProposals(listOf(proposal(songId = 1L), proposal(songId = 2L)))
+                assertEquals(listOf(1L, 2L), repository.load().proposals.map { it.songId })
+                assertEquals(setOf(1L, 2L), repository.pendingSongIds())
 
-            repository.mergeUiRemaining(
-                remaining = listOf(proposal(songId = 2L)),
-                knownSongIds = setOf(2L),
-                droppedIds = setOf(1L),
-                phase = IdentifyReviewPhase.Item.name,
-                applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL
-            )
-            repository.appendProposals(listOf(proposal(songId = 3L)))
-            repository.mergeUiRemaining(
-                remaining = listOf(proposal(songId = 2L)),
-                knownSongIds = setOf(2L),
-                droppedIds = setOf(1L),
-                phase = IdentifyReviewPhase.Item.name,
-                applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL
-            )
-            assertEquals(listOf(2L, 3L), repository.load().proposals.map { it.songId })
-            repository.mergeUiRemaining(
-                remaining = listOf(proposal(songId = 2L), proposal(songId = 3L)),
-                knownSongIds = setOf(2L, 3L),
-                droppedIds = setOf(1L),
-                phase = IdentifyReviewPhase.Item.name,
-                applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL
-            )
-            assertEquals(listOf(2L, 3L), repository.load().proposals.map { it.songId })
-        } finally {
-            storage.close()
+                repository.mergeUiRemaining(
+                    remaining = listOf(proposal(songId = 2L)),
+                    knownSongIds = setOf(2L),
+                    droppedIds = setOf(1L),
+                    phase = IdentifyReviewPhase.Item.name,
+                    applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL,
+                )
+                repository.appendProposals(listOf(proposal(songId = 3L)))
+                repository.mergeUiRemaining(
+                    remaining = listOf(proposal(songId = 2L)),
+                    knownSongIds = setOf(2L),
+                    droppedIds = setOf(1L),
+                    phase = IdentifyReviewPhase.Item.name,
+                    applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL,
+                )
+                assertEquals(listOf(2L, 3L), repository.load().proposals.map { it.songId })
+                repository.mergeUiRemaining(
+                    remaining = listOf(proposal(songId = 2L), proposal(songId = 3L)),
+                    knownSongIds = setOf(2L, 3L),
+                    droppedIds = setOf(1L),
+                    phase = IdentifyReviewPhase.Item.name,
+                    applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL,
+                )
+                assertEquals(listOf(2L, 3L), repository.load().proposals.map { it.songId })
+            } finally {
+                storage.close()
+            }
         }
-    }
 
     @Test
-    fun appendProposals_preservesExistingApplyFieldsWhenQueueNotEmpty() = runTest {
-        val storage = TemporaryPreferencesDataStore(
-            ApplicationProvider.getApplicationContext(),
-            "identify-review-apply-fields"
-        )
-        try {
-            val repository = IdentifyReviewStore(storage.dataStore)
-            val initialFields = com.bestiapop.android.data.model.IdentifyApplyFields(
-                artwork = true,
-                title = false,
-                artist = true,
-                album = false,
-                year = true,
-                trackNumber = false
-            )
-            repository.appendProposals(listOf(proposal(songId = 1L)), initialFields)
-            assertEquals(initialFields, repository.load().applyFields)
+    fun appendProposals_preservesExistingApplyFieldsWhenQueueNotEmpty() =
+        runTest {
+            val storage =
+                TemporaryPreferencesDataStore(
+                    ApplicationProvider.getApplicationContext(),
+                    "identify-review-apply-fields",
+                )
+            try {
+                val repository = IdentifyReviewStore(storage.dataStore)
+                val initialFields =
+                    com.bestiapop.android.data.model.IdentifyApplyFields(
+                        artwork = true,
+                        title = false,
+                        artist = true,
+                        album = false,
+                        year = true,
+                        trackNumber = false,
+                    )
+                repository.appendProposals(listOf(proposal(songId = 1L)), initialFields)
+                assertEquals(initialFields, repository.load().applyFields)
 
-            val incomingFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL
-            repository.appendProposals(listOf(proposal(songId = 2L)), incomingFields)
+                val incomingFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL
+                repository.appendProposals(listOf(proposal(songId = 2L)), incomingFields)
 
-            // Must preserve initialFields because the queue already had proposals
-            assertEquals(initialFields, repository.load().applyFields)
-        } finally {
-            storage.close()
+                // Must preserve initialFields because the queue already had proposals
+                assertEquals(initialFields, repository.load().applyFields)
+            } finally {
+                storage.close()
+            }
         }
-    }
 
     private fun proposal(songId: Long): IdentifyProposal {
-        val candidate = IdentifyCandidate(
-            track = OnlineCatalogTrack(
-                id = "deezer-$songId",
-                title = "Hysteria",
-                artist = "Muse",
-                album = "Absolution",
-                audioUrl = "https://cdn.example/ephemeral-$songId",
-                provider = "Deezer"
-            ),
-            score = 0.78f,
-            reasons = listOf("metadata match")
-        )
+        val candidate =
+            IdentifyCandidate(
+                track =
+                    OnlineCatalogTrack(
+                        id = "deezer-$songId",
+                        title = "Hysteria",
+                        artist = "Muse",
+                        album = "Absolution",
+                        audioUrl = "https://cdn.example/ephemeral-$songId",
+                        provider = "Deezer",
+                    ),
+                score = 0.78f,
+                reasons = listOf("metadata match"),
+            )
         return IdentifyProposal(
             songId = songId,
             queryArtist = "Muse",
             queryTitle = "Hysteria",
             candidates = listOf(candidate),
             confidence = IdentifyConfidence.MEDIUM,
-            suggested = candidate
+            suggested = candidate,
         )
     }
 }

@@ -10,5 +10,5 @@ data class IdentifySetupState(
     val songs: List<Song>,
     val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
     val contextTitle: String = "",
-    val onlyGaps: Boolean = false
+    val onlyGaps: Boolean = false,
 )

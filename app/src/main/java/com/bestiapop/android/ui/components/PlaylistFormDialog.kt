@@ -54,7 +54,7 @@ fun PlaylistFormDialog(
     confirmAndOpenText: String? = null,
     onDismiss: () -> Unit,
     onSave: (name: String, description: String?, coverUri: String?) -> Unit,
-    onSaveAndOpen: ((name: String, description: String?, coverUri: String?) -> Unit)? = null
+    onSaveAndOpen: ((name: String, description: String?, coverUri: String?) -> Unit)? = null,
 ) {
     var nameInput by remember { mutableStateOf(initialName) }
     var descInput by remember { mutableStateOf(initialDescription) }
@@ -67,36 +67,39 @@ fun PlaylistFormDialog(
         title = { Text(text = title, fontWeight = FontWeight.Bold) },
         text = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 ArtworkPickerBlock(
                     artworkUri = coverUriInput,
                     onPick = { imagePickerLauncher.launch("image/*") },
-                    buttonText = if (coverUriInput.isNullOrEmpty()) {
-                        "Seleccionar imagen"
-                    } else {
-                        "Cambiar imagen"
-                    },
+                    buttonText =
+                        if (coverUriInput.isNullOrEmpty()) {
+                            "Seleccionar imagen"
+                        } else {
+                            "Cambiar imagen"
+                        },
                     spacing = 12.dp,
                     preview = { uri ->
                         Box(
-                            modifier = Modifier
-                                .size(110.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { imagePickerLauncher.launch("image/*") },
-                            contentAlignment = Alignment.Center
+                            modifier =
+                                Modifier
+                                    .size(110.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { imagePickerLauncher.launch("image/*") },
+                            contentAlignment = Alignment.Center,
                         ) {
                             if (!uri.isNullOrEmpty()) {
                                 AsyncImage(
                                     model = uri,
                                     contentDescription = "Portada de Playlist",
                                     contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
+                                    modifier = Modifier.fillMaxSize(),
                                 )
                             } else {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -104,13 +107,13 @@ fun PlaylistFormDialog(
                                         imageVector = Icons.Default.AddPhotoAlternate,
                                         contentDescription = "Elegir Portada",
                                         tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(36.dp)
+                                        modifier = Modifier.size(36.dp),
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "Portada local",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
@@ -123,11 +126,11 @@ fun PlaylistFormDialog(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Quitar portada",
-                                    tint = MaterialTheme.colorScheme.error
+                                    tint = MaterialTheme.colorScheme.error,
                                 )
                             }
                         }
-                    }
+                    },
                 )
 
                 OutlinedTextField(
@@ -135,9 +138,10 @@ fun PlaylistFormDialog(
                     onValueChange = { nameInput = it },
                     label = { Text("Nombre de la playlist *") },
                     singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("playlist-name-input")
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag("playlist-name-input"),
                 )
 
                 OutlinedTextField(
@@ -145,16 +149,17 @@ fun PlaylistFormDialog(
                     onValueChange = { descInput = it },
                     label = { Text("Descripción (opcional)") },
                     maxLines = 3,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("playlist-description-input")
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag("playlist-description-input"),
                 )
             }
         },
         confirmButton = {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (onSaveAndOpen != null) {
                     OutlinedButton(
@@ -163,7 +168,7 @@ fun PlaylistFormDialog(
                                 onSave(nameInput.trim(), descInput.trim(), coverUriInput)
                             }
                         },
-                        enabled = nameInput.isNotBlank()
+                        enabled = nameInput.isNotBlank(),
                     ) {
                         Text(confirmText)
                     }
@@ -173,12 +178,12 @@ fun PlaylistFormDialog(
                                 onSaveAndOpen(nameInput.trim(), descInput.trim(), coverUriInput)
                             }
                         },
-                        enabled = nameInput.isNotBlank()
+                        enabled = nameInput.isNotBlank(),
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(confirmAndOpenText ?: "$confirmText y entrar")
@@ -190,7 +195,7 @@ fun PlaylistFormDialog(
                                 onSave(nameInput.trim(), descInput.trim(), coverUriInput)
                             }
                         },
-                        enabled = nameInput.isNotBlank()
+                        enabled = nameInput.isNotBlank(),
                     ) {
                         Text(confirmText)
                     }
@@ -201,6 +206,6 @@ fun PlaylistFormDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancelar")
             }
-        }
+        },
     )
 }

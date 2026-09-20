@@ -10,7 +10,7 @@ import androidx.media3.common.MediaItem
 data class StreamPlaybackTag(
     val userAgent: String,
     val videoId: String? = null,
-    val clientName: String? = null
+    val clientName: String? = null,
 )
 
 private const val EXTRA_USER_AGENT = "bestiapop.stream.userAgent"
@@ -24,15 +24,15 @@ private const val EXTRA_CLIENT_NAME = "bestiapop.stream.clientName"
  */
 fun MediaItem.Builder.setStreamPlaybackTag(tag: StreamPlaybackTag): MediaItem.Builder =
     setRequestMetadata(
-        MediaItem.RequestMetadata.Builder()
+        MediaItem.RequestMetadata
+            .Builder()
             .setExtras(
                 Bundle().apply {
                     putString(EXTRA_USER_AGENT, tag.userAgent)
                     tag.videoId?.let { putString(EXTRA_VIDEO_ID, it) }
                     tag.clientName?.let { putString(EXTRA_CLIENT_NAME, it) }
-                }
-            )
-            .build()
+                },
+            ).build(),
     )
 
 fun MediaItem.streamPlaybackTag(): StreamPlaybackTag? {
@@ -41,7 +41,6 @@ fun MediaItem.streamPlaybackTag(): StreamPlaybackTag? {
     return StreamPlaybackTag(
         userAgent = userAgent,
         videoId = extras.getString(EXTRA_VIDEO_ID),
-        clientName = extras.getString(EXTRA_CLIENT_NAME)
+        clientName = extras.getString(EXTRA_CLIENT_NAME),
     )
 }
-

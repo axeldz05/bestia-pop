@@ -12,45 +12,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class QueueSnapshotCodecTest {
-
-    private fun song(id: Long) = Song(
-        id = id,
-        uriString = "content://song/$id",
-        title = "Song $id",
-        artist = "Artist",
-        album = "Album",
-        durationMs = 180_000L,
-        artworkUri = "file:///art/$id.jpg",
-        trackNumber = id.toInt()
-    )
+    private fun song(id: Long) =
+        Song(
+            id = id,
+            uriString = "content://song/$id",
+            title = "Song $id",
+            artist = "Artist",
+            album = "Album",
+            durationMs = 180_000L,
+            artworkUri = "file:///art/$id.jpg",
+            trackNumber = id.toInt(),
+        )
 
     @Test
     fun roundTrip_localAndRemote_omitsCdnUrl() {
         val local = song(1).toPlayable()
-        val remote = PlayableItem.remoteFrom(
-            identity = TrackIdentity(
-                title = "Remote",
-                artist = "Band",
-                album = "LP",
-                artworkUri = "https://art.example/r.jpg",
-                durationMs = 200_000L,
-                trackNumber = 2
-            ),
-            recordingMbid = "mbid-1",
-            youtubeQueryOrId = "Band Remote",
-            resolved = ResolvedStream(
-                audioUrl = "https://googlevideo.com/expire/secret.m4a",
-                userAgent = "UA",
-                videoId = "dQw4w9WgXcQ",
-                resolvedAtEpochMs = 1L
+        val remote =
+            PlayableItem.remoteFrom(
+                identity =
+                    TrackIdentity(
+                        title = "Remote",
+                        artist = "Band",
+                        album = "LP",
+                        artworkUri = "https://art.example/r.jpg",
+                        durationMs = 200_000L,
+                        trackNumber = 2,
+                    ),
+                recordingMbid = "mbid-1",
+                youtubeQueryOrId = "Band Remote",
+                resolved =
+                    ResolvedStream(
+                        audioUrl = "https://googlevideo.com/expire/secret.m4a",
+                        userAgent = "UA",
+                        videoId = "dQw4w9WgXcQ",
+                        resolvedAtEpochMs = 1L,
+                    ),
             )
-        )
-        val snapshot = QueueSnapshotCodec.fromPlayable(
-            items = listOf(local, remote),
-            currentIndex = 1,
-            positionMs = 12_000L,
-            shufflePlayOrder = listOf(1, 0)
-        )
+        val snapshot =
+            QueueSnapshotCodec.fromPlayable(
+                items = listOf(local, remote),
+                currentIndex = 1,
+                positionMs = 12_000L,
+                shufflePlayOrder = listOf(1, 0),
+            )
         val encoded = QueueSnapshotCodec.encode(snapshot)
         assertFalse(encoded.contains("audioUrl"))
         assertFalse(encoded.contains("googlevideo"))
@@ -86,12 +90,13 @@ class QueueSnapshotCodecTest {
 
     @Test
     fun decode_ignoresInjectedAudioUrlAndBlankLocal() {
-        val json = """
+        val json =
+            """
             {"currentIndex":0,"positionMs":1,"items":[
               {"kind":"local","songId":0,"uriString":""},
               {"kind":"remote","title":"T","artist":"A","audioUrl":"https://cdn.example/x","youtubeQueryOrId":"q"}
             ]}
-        """.trimIndent()
+            """.trimIndent()
         val restored = QueueSnapshotCodec.decode(json)!!
         assertEquals(1, restored.items.size)
         val remote = restored.items[0] as PersistedQueueItem.Remote
@@ -113,12 +118,13 @@ class QueueSnapshotCodecTest {
 
     @Test
     fun fromPlayable_rejectsInvalidPlayOrder() {
-        val snapshot = QueueSnapshotCodec.fromPlayable(
-            items = listOf(song(1).toPlayable(), song(2).toPlayable()),
-            currentIndex = 0,
-            positionMs = 0L,
-            shufflePlayOrder = listOf(0, 0)
-        )
+        val snapshot =
+            QueueSnapshotCodec.fromPlayable(
+                items = listOf(song(1).toPlayable(), song(2).toPlayable()),
+                currentIndex = 0,
+                positionMs = 0L,
+                shufflePlayOrder = listOf(0, 0),
+            )
         assertNull(snapshot.shufflePlayOrder)
     }
 }

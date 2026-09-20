@@ -6,11 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CollectionUtilsTest {
-
     private fun testSong(
         id: Long,
         artist: String,
-        lastPlayedAt: Long = 0L
+        lastPlayedAt: Long = 0L,
     ) = Song(
         id = id,
         uriString = "file:///song$id.mp3",
@@ -18,7 +17,7 @@ class CollectionUtilsTest {
         artist = artist,
         album = "Album",
         durationMs = 180_000L,
-        lastPlayedAt = lastPlayedAt
+        lastPlayedAt = lastPlayedAt,
     )
 
     @Test
@@ -51,18 +50,20 @@ class CollectionUtilsTest {
 
     @Test
     fun calculateTopLocalArtists_ranksByPlayScoreAndFiltersPlaceholders() {
-        val songs = listOf(
-            testSong(1, "The Beatles", lastPlayedAt = 1000L),
-            testSong(2, "the beatles", lastPlayedAt = 0L), // case variation should combine!
-            testSong(3, "Queen", lastPlayedAt = 0L),
-            testSong(4, "Unknown Artist", lastPlayedAt = 5000L),
-            testSong(5, "", lastPlayedAt = 5000L),
-            testSong(6, "Pink Floyd", lastPlayedAt = 2000L)
-        )
-        val playStats = mapOf(
-            1L to 1000L,
-            6L to 2000L
-        )
+        val songs =
+            listOf(
+                testSong(1, "The Beatles", lastPlayedAt = 1000L),
+                testSong(2, "the beatles", lastPlayedAt = 0L), // case variation should combine!
+                testSong(3, "Queen", lastPlayedAt = 0L),
+                testSong(4, "Unknown Artist", lastPlayedAt = 5000L),
+                testSong(5, "", lastPlayedAt = 5000L),
+                testSong(6, "Pink Floyd", lastPlayedAt = 2000L),
+            )
+        val playStats =
+            mapOf(
+                1L to 1000L,
+                6L to 2000L,
+            )
 
         val top = CollectionUtils.calculateTopLocalArtists(songs, playStats)
 
@@ -75,36 +76,38 @@ class CollectionUtilsTest {
 
     @Test
     fun scoreLocalArtists_preservesArtworkAndScoresAccurately() {
-        val songs = listOf(
-            Song(
-                id = 1L,
-                uriString = "file:///song1.mp3",
-                title = "Track 1",
-                artist = "Daft Punk",
-                album = "Discovery",
-                durationMs = 200_000L,
-                artworkUri = "content://art1",
-                lastPlayedAt = 500L
-            ),
-            Song(
-                id = 2L,
-                uriString = "file:///song2.mp3",
-                title = "Track 2",
-                artist = "daft punk",
-                album = "Homework",
-                durationMs = 220_000L,
-                artworkUri = null,
-                lastPlayedAt = 0L
+        val songs =
+            listOf(
+                Song(
+                    id = 1L,
+                    uriString = "file:///song1.mp3",
+                    title = "Track 1",
+                    artist = "Daft Punk",
+                    album = "Discovery",
+                    durationMs = 200_000L,
+                    artworkUri = "content://art1",
+                    lastPlayedAt = 500L,
+                ),
+                Song(
+                    id = 2L,
+                    uriString = "file:///song2.mp3",
+                    title = "Track 2",
+                    artist = "daft punk",
+                    album = "Homework",
+                    durationMs = 220_000L,
+                    artworkUri = null,
+                    lastPlayedAt = 0L,
+                ),
             )
-        )
         val playStats = mapOf(1L to 500L)
 
-        val scores = CollectionUtils.scoreLocalArtists(
-            librarySongs = songs,
-            playStats = playStats,
-            playedWeight = 5L,
-            unplayedWeight = 1L
-        )
+        val scores =
+            CollectionUtils.scoreLocalArtists(
+                librarySongs = songs,
+                playStats = playStats,
+                playedWeight = 5L,
+                unplayedWeight = 1L,
+            )
 
         val key = TrackMatchKeys.normalize("Daft Punk")
         val daftPunk = scores[key]
@@ -115,37 +118,38 @@ class CollectionUtilsTest {
 
     @Test
     fun scoreLocalAlbums_scoresAndPreservesArtwork() {
-        val songs = listOf(
-            Song(
-                id = 1L,
-                uriString = "file:///song1.mp3",
-                title = "One More Time",
-                artist = "Daft Punk",
-                album = "Discovery",
-                durationMs = 200_000L,
-                artworkUri = "content://discovery_art",
-                lastPlayedAt = 500L
-            ),
-            Song(
-                id = 2L,
-                uriString = "file:///song2.mp3",
-                title = "Aerodynamic",
-                artist = "Daft Punk",
-                album = "Discovery",
-                durationMs = 220_000L,
-                artworkUri = null,
-                lastPlayedAt = 0L
-            ),
-            Song(
-                id = 3L,
-                uriString = "file:///song3.mp3",
-                title = "Around The World",
-                artist = "Daft Punk",
-                album = "Unknown Album", // Generic album filtered
-                durationMs = 240_000L,
-                lastPlayedAt = 500L
+        val songs =
+            listOf(
+                Song(
+                    id = 1L,
+                    uriString = "file:///song1.mp3",
+                    title = "One More Time",
+                    artist = "Daft Punk",
+                    album = "Discovery",
+                    durationMs = 200_000L,
+                    artworkUri = "content://discovery_art",
+                    lastPlayedAt = 500L,
+                ),
+                Song(
+                    id = 2L,
+                    uriString = "file:///song2.mp3",
+                    title = "Aerodynamic",
+                    artist = "Daft Punk",
+                    album = "Discovery",
+                    durationMs = 220_000L,
+                    artworkUri = null,
+                    lastPlayedAt = 0L,
+                ),
+                Song(
+                    id = 3L,
+                    uriString = "file:///song3.mp3",
+                    title = "Around The World",
+                    artist = "Daft Punk",
+                    album = "Unknown Album", // Generic album filtered
+                    durationMs = 240_000L,
+                    lastPlayedAt = 500L,
+                ),
             )
-        )
         val playStats = mapOf(1L to 500L)
         val albumScores = CollectionUtils.scoreLocalAlbums(songs, playStats, playedWeight = 5L, unplayedWeight = 1L)
 
@@ -159,26 +163,27 @@ class CollectionUtilsTest {
 
     @Test
     fun scoreLocalTracks_scoresAccurately() {
-        val songs = listOf(
-            Song(
-                id = 1L,
-                uriString = "file:///song1.mp3",
-                title = "One More Time",
-                artist = "Daft Punk",
-                album = "Discovery",
-                durationMs = 200_000L,
-                lastPlayedAt = 500L
-            ),
-            Song(
-                id = 2L,
-                uriString = "file:///song2.mp3",
-                title = "Aerodynamic",
-                artist = "Daft Punk",
-                album = "Discovery",
-                durationMs = 220_000L,
-                lastPlayedAt = 0L
+        val songs =
+            listOf(
+                Song(
+                    id = 1L,
+                    uriString = "file:///song1.mp3",
+                    title = "One More Time",
+                    artist = "Daft Punk",
+                    album = "Discovery",
+                    durationMs = 200_000L,
+                    lastPlayedAt = 500L,
+                ),
+                Song(
+                    id = 2L,
+                    uriString = "file:///song2.mp3",
+                    title = "Aerodynamic",
+                    artist = "Daft Punk",
+                    album = "Discovery",
+                    durationMs = 220_000L,
+                    lastPlayedAt = 0L,
+                ),
             )
-        )
         val playStats = mapOf(1L to 500L)
         val trackScores = CollectionUtils.scoreLocalTracks(songs, playStats, playedWeight = 10L, unplayedWeight = 1L)
 
@@ -202,10 +207,27 @@ class CollectionUtilsTest {
 
     @Test
     fun recommendLocalAlbums_ranksAndLimits() {
-        val songs = listOf(
-            Song(id = 1L, uriString = "file:///s1.mp3", title = "T1", artist = "Daft Punk", album = "Discovery", durationMs = 200_000L, lastPlayedAt = 500L),
-            Song(id = 2L, uriString = "file:///s2.mp3", title = "T2", artist = "The Beatles", album = "Abbey Road", durationMs = 180_000L, lastPlayedAt = 0L)
-        )
+        val songs =
+            listOf(
+                Song(
+                    id = 1L,
+                    uriString = "file:///s1.mp3",
+                    title = "T1",
+                    artist = "Daft Punk",
+                    album = "Discovery",
+                    durationMs = 200_000L,
+                    lastPlayedAt = 500L,
+                ),
+                Song(
+                    id = 2L,
+                    uriString = "file:///s2.mp3",
+                    title = "T2",
+                    artist = "The Beatles",
+                    album = "Abbey Road",
+                    durationMs = 180_000L,
+                    lastPlayedAt = 0L,
+                ),
+            )
         val playStats = mapOf(1L to 500L)
         val recs = CollectionUtils.recommendLocalAlbums(songs, playStats, limit = 1)
         assertEquals(1, recs.size)
@@ -214,10 +236,27 @@ class CollectionUtilsTest {
 
     @Test
     fun recommendLocalTracks_ranksAndLimits() {
-        val songs = listOf(
-            Song(id = 1L, uriString = "file:///s1.mp3", title = "Played Track", artist = "Daft Punk", album = "Discovery", durationMs = 200_000L, lastPlayedAt = 500L),
-            Song(id = 2L, uriString = "file:///s2.mp3", title = "Unplayed Track", artist = "Daft Punk", album = "Discovery", durationMs = 220_000L, lastPlayedAt = 0L)
-        )
+        val songs =
+            listOf(
+                Song(
+                    id = 1L,
+                    uriString = "file:///s1.mp3",
+                    title = "Played Track",
+                    artist = "Daft Punk",
+                    album = "Discovery",
+                    durationMs = 200_000L,
+                    lastPlayedAt = 500L,
+                ),
+                Song(
+                    id = 2L,
+                    uriString = "file:///s2.mp3",
+                    title = "Unplayed Track",
+                    artist = "Daft Punk",
+                    album = "Discovery",
+                    durationMs = 220_000L,
+                    lastPlayedAt = 0L,
+                ),
+            )
         val playStats = mapOf(1L to 500L)
         val recs = CollectionUtils.recommendLocalTracks(songs, playStats, limit = 1)
         assertEquals(1, recs.size)

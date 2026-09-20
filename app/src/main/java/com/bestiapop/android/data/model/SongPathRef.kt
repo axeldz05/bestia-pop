@@ -5,5 +5,5 @@ package com.bestiapop.android.data.model
  */
 data class SongPathRef(
     val uriString: String,
-    val folderPath: String = ""
+    val folderPath: String = "",
 )

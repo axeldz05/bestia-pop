@@ -77,23 +77,24 @@ fun IdentifyReviewHeader(
     onClose: () -> Unit,
     onApplyRemaining: () -> Unit,
     onSkipAll: () -> Unit,
-    onApplyFieldsChanged: (IdentifyApplyFields) -> Unit
+    onApplyFieldsChanged: (IdentifyApplyFields) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         ScreenBackHeader(
             title = "Revisar identidad",
             subtitle = state.headerSubtitle,
             onBack = onBack,
-            backContentDescription = if (state.phase == IdentifyReviewPhase.Item && state.openedFromOverview) {
-                "Volver"
-            } else {
-                "Cerrar"
-            },
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            backContentDescription =
+                if (state.phase == IdentifyReviewPhase.Item && state.openedFromOverview) {
+                    "Volver"
+                } else {
+                    "Cerrar"
+                },
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
         ) {
             IconButton(
                 onClick = onClose,
-                modifier = Modifier.testTag("identify-review-close")
+                modifier = Modifier.testTag("identify-review-close"),
             ) {
                 Icon(Icons.Default.Close, contentDescription = "Cerrar")
             }
@@ -101,29 +102,30 @@ fun IdentifyReviewHeader(
         IdentifyApplyFieldsChips(
             applyFields = state.applyFields,
             onApplyFieldsChanged = onApplyFieldsChanged,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
         if (state.pendingCount > 0) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 TextButton(
                     onClick = onApplyRemaining,
                     enabled = state.canApplyRemaining && !state.isSearching,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Text(
                         if (state.isApplying) "Aplicando…" else "Aplicar automático a restantes",
-                        maxLines = 2
+                        maxLines = 2,
                     )
                 }
                 TextButton(
                     onClick = onSkipAll,
                     enabled = !state.isSearching && !state.isApplying,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Text("Omitir todas", maxLines = 2)
                 }
@@ -137,18 +139,18 @@ fun IdentifyReviewHeader(
 fun IdentifyApplyFieldsChips(
     applyFields: IdentifyApplyFields,
     onApplyFieldsChanged: (IdentifyApplyFields) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = "Se aplicará",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             IdentifyApplyField.entries.forEach { field ->
                 val selected = applyFields.isEnabled(field)
@@ -156,10 +158,11 @@ fun IdentifyApplyFieldsChips(
                     selected = selected,
                     onClick = { onApplyFieldsChanged(applyFields.withField(field, !selected)) },
                     label = { Text(field.chipLabel) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                    colors =
+                        FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
                 )
             }
         }
@@ -171,19 +174,20 @@ fun IdentifySourcePlaying(
     viewModel: MusicPlayerViewModel,
     song: Song,
     sourceHints: String?,
-    confidence: IdentifyConfidence
+    confidence: IdentifyConfidence,
 ) {
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
-    val localPlaying = currentItem is PlayableItem.Local &&
-        (currentItem as PlayableItem.Local).song.id == song.id &&
-        isPlaying
+    val localPlaying =
+        currentItem is PlayableItem.Local &&
+            (currentItem as PlayableItem.Local).song.id == song.id &&
+            isPlaying
     IdentifySourceBlock(
         song = song,
         sourceHints = sourceHints,
         confidence = confidence,
         isPlaying = localPlaying,
-        onPreview = { viewModel.previewIdentifyLocalSong(song) }
+        onPreview = { viewModel.previewIdentifyLocalSong(song) },
     )
 }
 
@@ -195,7 +199,7 @@ fun IdentifyCandidateList(
     showSearch: Boolean,
     searchPlaceholder: String,
     state: IdentifyReviewState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     val resolvingRemote by viewModel.resolvingRemote.collectAsStateWithLifecycle()
@@ -203,20 +207,20 @@ fun IdentifyCandidateList(
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item(key = "source_header") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "Tu archivo",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 IdentifySourcePlaying(
                     viewModel = viewModel,
                     song = item.song,
                     sourceHints = item.proposal.sourceHints,
-                    confidence = item.proposal.confidence
+                    confidence = item.proposal.confidence,
                 )
             }
         }
@@ -234,20 +238,21 @@ fun IdentifyCandidateList(
                     onFilterArtistChange = viewModel::setIdentifySearchFilterArtist,
                     onFilterAlbumChange = viewModel::setIdentifySearchFilterAlbum,
                     onFilterYearChange = viewModel::setIdentifySearchFilterYear,
-                    onSearch = viewModel::searchIdentifyCandidates
+                    onSearch = viewModel::searchIdentifyCandidates,
                 )
             }
         }
         item(key = "candidates_header") {
             Text(
-                text = if (candidates.isEmpty()) {
-                    "Sin candidatos — buscá otro"
-                } else {
-                    "Candidatos"
-                },
+                text =
+                    if (candidates.isEmpty()) {
+                        "Sin candidatos — buscá otro"
+                    } else {
+                        "Candidatos"
+                    },
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 4.dp)
+                modifier = Modifier.padding(top = 4.dp),
             )
         }
         itemsIndexed(
@@ -255,14 +260,15 @@ fun IdentifyCandidateList(
             key = { index, c ->
                 val stableId = c.track.id.ifBlank { "${c.artist}|${c.title}|${c.album}" }
                 "${c.provider}|$stableId|$index"
-            }
+            },
         ) { index, candidate ->
-            val flags = previewFlags(
-                catalogPreviewKey,
-                viewModel.catalogPreviewKeyFor(candidate.track),
-                isPlaying,
-                resolvingRemote
-            )
+            val flags =
+                previewFlags(
+                    catalogPreviewKey,
+                    viewModel.catalogPreviewKeyFor(candidate.track),
+                    isPlaying,
+                    resolvingRemote,
+                )
             IdentifyCandidateRow(
                 candidate = candidate,
                 fileDurationMs = item.song.durationMs,
@@ -272,7 +278,7 @@ fun IdentifyCandidateList(
                 isPlaying = flags.isPlaying,
                 isResolving = flags.isResolving,
                 onClick = { viewModel.selectIdentifyCandidate(index) },
-                onPreview = { viewModel.previewIdentifyCandidate(candidate) }
+                onPreview = { viewModel.previewIdentifyCandidate(candidate) },
             )
         }
         if (state.canShowMoreCandidates) {
@@ -280,7 +286,7 @@ fun IdentifyCandidateList(
                 IdentifyLoadMoreButton(
                     isLoading = state.isLoadingMore,
                     enabled = !state.isSearching,
-                    onClick = viewModel::loadMoreIdentifyCandidates
+                    onClick = viewModel::loadMoreIdentifyCandidates,
                 )
             }
         }
@@ -293,16 +299,16 @@ fun IdentifySourceBlock(
     sourceHints: String?,
     confidence: IdentifyConfidence,
     isPlaying: Boolean,
-    onPreview: () -> Unit
+    onPreview: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         ArtworkThumbnail(
             artworkUri = song.artworkUri,
             size = 56.dp,
-            contentDescription = song.title
+            contentDescription = song.title,
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -310,35 +316,36 @@ fun IdentifySourceBlock(
                 title = song.title,
                 subtitle = joinMeta(song.artist, song.album, sep = " · "),
                 titleWeight = FontWeight.SemiBold,
-                maxTitleLines = 2
+                maxTitleLines = 2,
             )
-            val meta = buildList {
-                if (song.durationMs > 0) add(formatDuration(song.durationMs))
-                song.year.takeIf { it in 1000..9999 }?.let { add(it.toString()) }
-                albumTrackDisplayNumber(song.trackNumber).takeIf { it > 0 }?.let { add("Pista $it") }
-                if (!sourceHints.isNullOrBlank()) add("Origen: $sourceHints")
-                add(confidence.label)
-            }.joinToString(" · ")
+            val meta =
+                buildList {
+                    if (song.durationMs > 0) add(formatDuration(song.durationMs))
+                    song.year.takeIf { it in 1000..9999 }?.let { add(it.toString()) }
+                    albumTrackDisplayNumber(song.trackNumber).takeIf { it > 0 }?.let { add("Pista $it") }
+                    if (!sourceHints.isNullOrBlank()) add("Origen: $sourceHints")
+                    add(confidence.label)
+                }.joinToString(" · ")
             Text(
                 text = meta,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
             if (IdentifyRanking.titleCollidesWithArtistOrAlbum(song.title, song.artist, song.album)) {
                 Text(
                     text = "El título coincide con el artista/álbum — revisá por duración",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
-                    maxLines = 2
+                    maxLines = 2,
                 )
             }
         }
         PreviewPlayPauseButton(
             isResolving = false,
             isPlaying = isPlaying,
-            onClick = onPreview
+            onClick = onPreview,
         )
     }
 }
@@ -353,31 +360,35 @@ fun IdentifyCandidateRow(
     isPlaying: Boolean,
     isResolving: Boolean,
     onClick: () -> Unit,
-    onPreview: () -> Unit
+    onPreview: () -> Unit,
 ) {
     val shape = RoundedCornerShape(12.dp)
-    val borderColor = if (selected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
-    }
+    val borderColor =
+        if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+        }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .border(1.dp, borderColor, shape)
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-            )
-            .clickable(onClick = onClick)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .border(1.dp, borderColor, shape)
+                .background(
+                    if (selected) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    },
+                ).clickable(onClick = onClick)
+                .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         ArtworkThumbnail(
             artworkUri = candidate.artworkUri,
             size = 52.dp,
-            contentDescription = candidate.title
+            contentDescription = candidate.title,
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -385,31 +396,44 @@ fun IdentifyCandidateRow(
                 title = candidate.title,
                 subtitle = candidate.artist,
                 titleStyle = MaterialTheme.typography.titleSmall,
-                titleWeight = FontWeight.SemiBold
+                titleWeight = FontWeight.SemiBold,
             )
-            val albumLabel = when {
-                candidate.album.isBlank() || IdentifyRanking.isGenericAlbum(candidate.album) ->
-                    "Single / sin álbum"
-                else -> candidate.album
-            }
+            val albumLabel =
+                when {
+                    candidate.album.isBlank() || IdentifyRanking.isGenericAlbum(candidate.album) -> {
+                        "Single / sin álbum"
+                    }
+
+                    else -> {
+                        candidate.album
+                    }
+                }
             val yearPart = candidate.year.takeIf { it in 1000..9999 }?.toString()
-            val durationPart = when {
-                candidate.durationMs > 0 && fileDurationMs > 0 ->
-                    "${formatDuration(candidate.durationMs)} (archivo ${formatDuration(fileDurationMs)})"
-                candidate.durationMs > 0 -> formatDuration(candidate.durationMs)
-                else -> null
-            }
+            val durationPart =
+                when {
+                    candidate.durationMs > 0 && fileDurationMs > 0 -> {
+                        "${formatDuration(candidate.durationMs)} (archivo ${formatDuration(fileDurationMs)})"
+                    }
+
+                    candidate.durationMs > 0 -> {
+                        formatDuration(candidate.durationMs)
+                    }
+
+                    else -> {
+                        null
+                    }
+                }
             Text(
                 text = joinMeta(albumLabel, yearPart, durationPart, sep = " · "),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
             val reason = candidate.reasons.firstOrNull()
             Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 ConfidenceChip(score = candidate.score)
                 if (reason != null) {
@@ -418,29 +442,31 @@ fun IdentifyCandidateRow(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
-            val changes = remember(song.id, candidate.track.id, candidate.title, candidate.artist, candidate.album, applyFields) {
-                identifyApplyChanges(song, candidate, applyFields)
-            }
+            val changes =
+                remember(song.id, candidate.track.id, candidate.title, candidate.artist, candidate.album, applyFields) {
+                    identifyApplyChanges(song, candidate, applyFields)
+                }
             Text(
                 text = formatIdentifyApplyChanges(changes),
                 style = MaterialTheme.typography.labelSmall,
-                color = if (changes.isEmpty()) {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
+                color =
+                    if (changes.isEmpty()) {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
         }
         PreviewPlayPauseButton(
             isResolving = isResolving,
             isPlaying = isPlaying,
-            onClick = onPreview
+            onClick = onPreview,
         )
     }
 }
@@ -453,10 +479,11 @@ fun ConfidenceChip(score: Float) {
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Medium,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
 
@@ -473,13 +500,14 @@ fun IdentifySearchBlock(
     onFilterArtistChange: (String) -> Unit,
     onFilterAlbumChange: (String) -> Unit,
     onFilterYearChange: (String) -> Unit,
-    onSearch: () -> Unit
+    onSearch: () -> Unit,
 ) {
-    val searchActions = KeyboardActions(
-        onSearch = { onSearch() },
-        onDone = { onSearch() },
-        onGo = { onSearch() }
-    )
+    val searchActions =
+        KeyboardActions(
+            onSearch = { onSearch() },
+            onDone = { onSearch() },
+            onGo = { onSearch() },
+        )
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         OutlinedTextField(
             value = query,
@@ -491,17 +519,18 @@ fun IdentifySearchBlock(
                 Text(
                     text = placeholder,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
             },
             trailingIcon = {
                 if (isSearching) {
                     CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .height(24.dp)
-                            .width(24.dp),
-                        strokeWidth = 2.dp
+                        modifier =
+                            Modifier
+                                .padding(12.dp)
+                                .height(24.dp)
+                                .width(24.dp),
+                        strokeWidth = 2.dp,
                     )
                 } else {
                     IconButton(onClick = onSearch) {
@@ -511,12 +540,12 @@ fun IdentifySearchBlock(
             },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = searchActions,
-            enabled = !isSearching
+            enabled = !isSearching,
         )
         if (showFilters) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 OutlinedTextField(
                     value = filterArtist,
@@ -526,7 +555,7 @@ fun IdentifySearchBlock(
                     label = { Text("Artista") },
                     enabled = !isSearching,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = searchActions
+                    keyboardActions = searchActions,
                 )
                 OutlinedTextField(
                     value = filterYear,
@@ -535,11 +564,12 @@ fun IdentifySearchBlock(
                     singleLine = true,
                     label = { Text("Año") },
                     enabled = !isSearching,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Search
-                    ),
-                    keyboardActions = searchActions
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Search,
+                        ),
+                    keyboardActions = searchActions,
                 )
             }
             OutlinedTextField(
@@ -550,7 +580,7 @@ fun IdentifySearchBlock(
                 label = { Text("Álbum") },
                 enabled = !isSearching,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = searchActions
+                keyboardActions = searchActions,
             )
         }
     }
@@ -560,20 +590,21 @@ fun IdentifySearchBlock(
 fun IdentifyLoadMoreButton(
     isLoading: Boolean,
     enabled: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     OutlinedButton(
         onClick = onClick,
         enabled = enabled && !isLoading,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
     ) {
         if (isLoading) {
             CircularProgressIndicator(
-                modifier = Modifier
-                    .padding(end = 8.dp)
-                    .height(18.dp)
-                    .width(18.dp),
-                strokeWidth = 2.dp
+                modifier =
+                    Modifier
+                        .padding(end = 8.dp)
+                        .height(18.dp)
+                        .width(18.dp),
+                strokeWidth = 2.dp,
             )
         }
         Text(if (isLoading) "Cargando…" else "Mostrar más candidatos")
@@ -590,37 +621,38 @@ fun IdentifyReviewFooter(
     onUse: () -> Unit,
     onSkip: () -> Unit,
     onToggleSearch: () -> Unit,
-    onToggleFilters: () -> Unit
+    onToggleFilters: () -> Unit,
 ) {
     val actionsEnabled = !isSearching && !isApplying
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Button(
             onClick = onUse,
             enabled = canApply && actionsEnabled,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(if (isApplying) "Aplicando…" else "Usar este")
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedButton(
                 onClick = onSkip,
                 enabled = actionsEnabled,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) {
                 Text("Omitir")
             }
             TextButton(
                 onClick = onToggleSearch,
                 enabled = actionsEnabled,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) {
                 Text(if (showSearchField) "Ocultar búsqueda" else "Buscar otro…")
             }
@@ -629,7 +661,7 @@ fun IdentifyReviewFooter(
             TextButton(
                 onClick = onToggleFilters,
                 enabled = actionsEnabled,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(if (showSearchFilters) "Ocultar filtros" else "Filtros adicionales…")
             }

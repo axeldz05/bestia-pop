@@ -24,7 +24,6 @@ import com.bestiapop.android.service.PlaybackRuntime
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.PcmWavFixture
 import com.bestiapop.android.testutil.PlaybackDeviceProbe
-import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -33,6 +32,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /**
  * Real process-death E2E. Never run these methods in one instrumentation invocation: the host
@@ -42,7 +42,6 @@ import org.junit.runner.RunWith
 @LargeTest
 @HostOrchestratedProcessDeathTest
 class PlaybackProcessDeathE2ETest {
-
     @get:Rule
     val deviceAwakeRule = DeviceAwakeRule()
 
@@ -128,7 +127,7 @@ class PlaybackProcessDeathE2ETest {
                 runtime.playPlayableCollection(
                     items = songs.map { PlayableItem.Local(it) },
                     startIndex = EXPECTED_CURRENT_INDEX,
-                    rotate = false
+                    rotate = false,
                 )
             }
             await("the synthetic WAV queue reaches real ExoPlayer") {
@@ -154,7 +153,7 @@ class PlaybackProcessDeathE2ETest {
                 }
                 assertTrue(
                     "The representative shuffled physical queue must differ from source order",
-                    runtime.queue.value.map { it.title } != EXPECTED_TITLES
+                    runtime.queue.value.map { it.title } != EXPECTED_TITLES,
                 )
             }
             repeat(scenario.repeatToggles) {
@@ -179,17 +178,18 @@ class PlaybackProcessDeathE2ETest {
             await("the paused seek reaches Media3") {
                 onMain {
                     kotlin.math.abs(
-                        connectedController.currentPosition - EXPECTED_POSITION_MS
+                        connectedController.currentPosition - EXPECTED_POSITION_MS,
                     ) <=
                         POSITION_TOLERANCE_MS
                 }
             }
 
-            val persisted = awaitValue("queue, index, and paused position persisted") {
-                runBlocking { sessionStore.loadQueue() }?.takeIf {
-                    isExpectedSnapshot(it, scenario)
+            val persisted =
+                awaitValue("queue, index, and paused position persisted") {
+                    runBlocking { sessionStore.loadQueue() }?.takeIf {
+                        isExpectedSnapshot(it, scenario)
+                    }
                 }
-            }
             assertExpectedSnapshot(persisted, scenario)
             phaseMarker.writeText(
                 JSONObject()
@@ -199,7 +199,7 @@ class PlaybackProcessDeathE2ETest {
                     .put("previousShuffle", previousSettings.lastShuffleEnabled)
                     .put("previousRepeat", previousSettings.lastRepeatMode.name)
                     .put("snapshotJson", QueueSnapshotCodec.encode(persisted))
-                    .toString()
+                    .toString(),
             )
             phaseCompleted = true
         } finally {
@@ -216,18 +216,19 @@ class PlaybackProcessDeathE2ETest {
                     preferences = preferences,
                     previousAutoplay = previousSettings.autoplayOnLaunch,
                     previousShuffle = previousSettings.lastShuffleEnabled,
-                    previousRepeat = previousSettings.lastRepeatMode
+                    previousRepeat = previousSettings.lastRepeatMode,
                 )
             }
         }
     }
 
     private fun runPhaseTwo(scenario: ProcessDeathScenario) {
-        val marker = checkNotNull(
-            phaseMarker.takeIf(File::isFile)?.readText()?.let(::JSONObject)
-        ) {
-            "Missing phase-1 marker. Run the host script instead of this phase directly."
-        }
+        val marker =
+            checkNotNull(
+                phaseMarker.takeIf(File::isFile)?.readText()?.let(::JSONObject),
+            ) {
+                "Missing phase-1 marker. Run the host script instead of this phase directly."
+            }
         check(marker.getString("scenario") == scenario.markerName) {
             "Phase marker belongs to ${marker.getString("scenario")}, expected ${scenario.markerName}"
         }
@@ -246,13 +247,14 @@ class PlaybackProcessDeathE2ETest {
         try {
             assertTrue(
                 "Phase 2 must execute in a new target process",
-                Process.myPid() != phase1Pid
+                Process.myPid() != phase1Pid,
             )
             val restoredSettings = runBlocking { preferences.settingsFlow.first() }
             assertEquals(scenario.autoplay, restoredSettings.autoplayOnLaunch)
             assertEquals(scenario.shuffle, restoredSettings.lastShuffleEnabled)
             assertEquals(scenario.repeat, restoredSettings.lastRepeatMode)
-            val restoredSnapshot = checkNotNull(runBlocking { sessionStore.loadQueue() }) {
+            val restoredSnapshot =
+                checkNotNull(runBlocking { sessionStore.loadQueue() }) {
                     "The persisted phase-1 queue disappeared across process death"
                 }
             assertExpectedSnapshot(restoredSnapshot, scenario)
@@ -306,7 +308,7 @@ class PlaybackProcessDeathE2ETest {
                     val local = it as PlayableItem.Local
                     local.song.uriString.startsWith(fixtureDir.absolutePath) &&
                         !local.song.uriString.startsWith("http", ignoreCase = true)
-                }
+                },
             )
         } finally {
             runCleanupSteps(
@@ -319,12 +321,12 @@ class PlaybackProcessDeathE2ETest {
                         preferences = preferences,
                         autoplay = previousAutoplay,
                         shuffle = previousShuffle,
-                        repeat = previousRepeat
+                        repeat = previousRepeat,
                     )
                 },
                 {
                     if (runtimeAttached) onMain { runtime.detachUi() }
-                }
+                },
             )
         }
     }
@@ -335,18 +337,19 @@ class PlaybackProcessDeathE2ETest {
             PcmWavFixture.write(
                 file = file,
                 durationMs = WAV_DURATION_MS,
-                toneHz = 220.0 + index * 110.0
+                toneHz = 220.0 + index * 110.0,
             )
-            val draft = Song(
-                uriString = file.absolutePath,
-                title = title,
-                artist = FIXTURE_ARTIST,
-                album = FIXTURE_ALBUM,
-                durationMs = WAV_DURATION_MS.toLong(),
-                artworkUri = file.toURI().toString(),
-                lyrics = FIXTURE_LYRICS,
-                folderPath = fixtureDir.absolutePath
-            )
+            val draft =
+                Song(
+                    uriString = file.absolutePath,
+                    title = title,
+                    artist = FIXTURE_ARTIST,
+                    album = FIXTURE_ALBUM,
+                    durationMs = WAV_DURATION_MS.toLong(),
+                    artworkUri = file.toURI().toString(),
+                    lyrics = FIXTURE_LYRICS,
+                    folderPath = fixtureDir.absolutePath,
+                )
             val id = runBlocking { app.musicRepository.saveUploadedSong(draft) }
             check(id > 0L) { "Could not persist fixture song $title (id=$id)" }
             draft.copy(id = id)
@@ -354,7 +357,7 @@ class PlaybackProcessDeathE2ETest {
 
     private fun isExpectedSnapshot(
         snapshot: QueueSnapshot,
-        scenario: ProcessDeathScenario
+        scenario: ProcessDeathScenario,
     ): Boolean =
         snapshot.currentIndex == EXPECTED_CURRENT_INDEX &&
             snapshot.positionMs == EXPECTED_POSITION_MS &&
@@ -372,7 +375,7 @@ class PlaybackProcessDeathE2ETest {
 
     private fun assertExpectedSnapshot(
         snapshot: QueueSnapshot,
-        scenario: ProcessDeathScenario
+        scenario: ProcessDeathScenario,
     ) {
         assertEquals(EXPECTED_CURRENT_INDEX, snapshot.currentIndex)
         assertEquals(EXPECTED_POSITION_MS, snapshot.positionMs)
@@ -380,12 +383,13 @@ class PlaybackProcessDeathE2ETest {
         assertTrue(snapshot.items.all(::isFixturePersistedItem))
         assertEquals(
             EXPECTED_TITLES,
-            snapshot.items.map { (it as PersistedQueueItem.Local).title }
+            snapshot.items.map { (it as PersistedQueueItem.Local).title },
         )
         if (scenario.shuffle) {
-            val order = checkNotNull(snapshot.shufflePlayOrder) {
-                "Shuffled process-death snapshot lost its physical play order"
-            }
+            val order =
+                checkNotNull(snapshot.shufflePlayOrder) {
+                    "Shuffled process-death snapshot lost its physical play order"
+                }
             assertEquals(EXPECTED_TITLES.indices.toList(), order.sorted())
             assertTrue("Representative shuffle order must be non-identity", order != order.sorted())
         } else {
@@ -401,22 +405,25 @@ class PlaybackProcessDeathE2ETest {
     private fun isExpectedHydratedRuntime(
         runtime: PlaybackRuntime,
         snapshot: QueueSnapshot,
-        scenario: ProcessDeathScenario
+        scenario: ProcessDeathScenario,
     ): Boolean {
         val items = runtime.queue.value
         val current = runtime.currentItem.value
-        val expectedOrder = if (scenario.shuffle) {
-            requireNotNull(snapshot.shufflePlayOrder).map(EXPECTED_TITLES::get)
-        } else {
-            EXPECTED_TITLES
-        }
-        val expectedIndex = if (scenario.shuffle) {
-            requireNotNull(snapshot.shufflePlayOrder).indexOf(snapshot.currentIndex)
-        } else {
-            snapshot.currentIndex
-        }
-        val minimumPosition = EXPECTED_POSITION_MS -
-            (if (scenario.autoplay) POSITION_TOLERANCE_MS else 0L)
+        val expectedOrder =
+            if (scenario.shuffle) {
+                requireNotNull(snapshot.shufflePlayOrder).map(EXPECTED_TITLES::get)
+            } else {
+                EXPECTED_TITLES
+            }
+        val expectedIndex =
+            if (scenario.shuffle) {
+                requireNotNull(snapshot.shufflePlayOrder).indexOf(snapshot.currentIndex)
+            } else {
+                snapshot.currentIndex
+            }
+        val minimumPosition =
+            EXPECTED_POSITION_MS -
+                (if (scenario.autoplay) POSITION_TOLERANCE_MS else 0L)
         return items.map { it.title } == expectedOrder &&
             items.indexOfFirst { it.queueEntryId == current?.queueEntryId } ==
             expectedIndex &&
@@ -426,33 +433,34 @@ class PlaybackProcessDeathE2ETest {
             runtime.repeatMode.value == scenario.repeat
     }
 
-    private fun playerRepeatMode(mode: RepeatMode): Int = when (mode) {
-        RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-        RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-        RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-    }
+    private fun playerRepeatMode(mode: RepeatMode): Int =
+        when (mode) {
+            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        }
 
     private enum class ProcessDeathScenario(
         val markerName: String,
         val autoplay: Boolean,
         val shuffle: Boolean,
         val repeat: RepeatMode,
-        val repeatToggles: Int
+        val repeatToggles: Int,
     ) {
         AUTOPLAY_OFF_SHUFFLE_REPEAT_ALL(
             markerName = "autoplay-off-shuffle-repeat-all",
             autoplay = false,
             shuffle = true,
             repeat = RepeatMode.ALL,
-            repeatToggles = 1
+            repeatToggles = 1,
         ),
         AUTOPLAY_ON_REPEAT_ONE(
             markerName = "autoplay-on-repeat-one",
             autoplay = true,
             shuffle = false,
             repeat = RepeatMode.ONE,
-            repeatToggles = 2
-        )
+            repeatToggles = 2,
+        ),
     }
 
     private fun cleanupAfterFailedPhaseOne(
@@ -461,7 +469,7 @@ class PlaybackProcessDeathE2ETest {
         preferences: PlaybackPreferencesRepository,
         previousAutoplay: Boolean,
         previousShuffle: Boolean,
-        previousRepeat: RepeatMode
+        previousRepeat: RepeatMode,
     ) {
         runCleanupSteps(
             { cleanupRuntimeAndFixtures(runtime, sessionStore) },
@@ -470,9 +478,9 @@ class PlaybackProcessDeathE2ETest {
                     preferences = preferences,
                     autoplay = previousAutoplay,
                     shuffle = previousShuffle,
-                    repeat = previousRepeat
+                    repeat = previousRepeat,
                 )
-            }
+            },
         )
     }
 
@@ -480,18 +488,18 @@ class PlaybackProcessDeathE2ETest {
         preferences: PlaybackPreferencesRepository,
         autoplay: Boolean,
         shuffle: Boolean,
-        repeat: RepeatMode
+        repeat: RepeatMode,
     ) {
         runCleanupSteps(
             { runBlocking { preferences.setAutoplayOnLaunch(autoplay) } },
             { runBlocking { preferences.setLastShuffleEnabled(shuffle) } },
-            { runBlocking { preferences.setLastRepeatMode(repeat) } }
+            { runBlocking { preferences.setLastRepeatMode(repeat) } },
         )
     }
 
     private fun cleanupRuntimeAndFixtures(
         runtime: PlaybackRuntime,
-        sessionStore: PlaybackSessionStore
+        sessionStore: PlaybackSessionStore,
     ) {
         runCleanupSteps(
             {
@@ -505,9 +513,10 @@ class PlaybackProcessDeathE2ETest {
             { cleanupFixtureRowsAndFiles() },
             { context.stopService(Intent(context, MusicService::class.java)) },
             {
-                context.getSystemService(NotificationManager::class.java)
+                context
+                    .getSystemService(NotificationManager::class.java)
                     .cancel(MusicService.PLAYBACK_NOTIFICATION_ID)
-            }
+            },
         )
     }
 
@@ -515,9 +524,10 @@ class PlaybackProcessDeathE2ETest {
         runBlocking {
             val dao = AppDatabase.getDatabase(context).musicDao()
             val fixturePrefix = fixtureDir.absolutePath + File.separator
-            val fixtureSongs = dao.getAllSongs().filter {
-                it.uriString.startsWith(fixturePrefix)
-            }
+            val fixtureSongs =
+                dao.getAllSongs().filter {
+                    it.uriString.startsWith(fixturePrefix)
+                }
             val ids = fixtureSongs.map(Song::id)
             if (ids.isNotEmpty()) {
                 dao.deletePlaylistRefsForSongs(ids)
@@ -530,7 +540,10 @@ class PlaybackProcessDeathE2ETest {
 
     private fun connectController(): MediaController = deviceProbe.connectController()
 
-    private fun await(description: String, condition: () -> Boolean) {
+    private fun await(
+        description: String,
+        condition: () -> Boolean,
+    ) {
         val deadline = SystemClock.elapsedRealtime() + ASYNC_TIMEOUT_MS
         while (SystemClock.elapsedRealtime() < deadline) {
             if (condition()) return
@@ -540,10 +553,12 @@ class PlaybackProcessDeathE2ETest {
             "Timed out waiting for $description; " +
                 "pid=${Process.myPid()}, queueSize=${application.playbackRuntime.queue.value.size}, " +
                 "currentIndex=${application.playbackRuntime.queue.value.indexOfFirst { item ->
-                    item.queueEntryId == application.playbackRuntime.currentItem.value?.queueEntryId
+                    item.queueEntryId ==
+                        application.playbackRuntime.currentItem.value
+                            ?.queueEntryId
                 }}, " +
                 "position=${application.playbackRuntime.playbackPositionMs.value}, " +
-                "playing=${application.playbackRuntime.isPlaying.value}"
+                "playing=${application.playbackRuntime.isPlaying.value}",
         )
     }
 
@@ -551,14 +566,20 @@ class PlaybackProcessDeathE2ETest {
         var firstFailure: Throwable? = null
         steps.forEach { step ->
             runCatching(step).exceptionOrNull()?.let { failure ->
-                if (firstFailure == null) firstFailure = failure
-                else firstFailure?.addSuppressed(failure)
+                if (firstFailure == null) {
+                    firstFailure = failure
+                } else {
+                    firstFailure?.addSuppressed(failure)
+                }
             }
         }
         firstFailure?.let { throw it }
     }
 
-    private fun <T : Any> awaitValue(description: String, value: () -> T?): T {
+    private fun <T : Any> awaitValue(
+        description: String,
+        value: () -> T?,
+    ): T {
         var result: T? = null
         await(description) {
             value()?.also { result = it } != null
@@ -582,10 +603,11 @@ class PlaybackProcessDeathE2ETest {
         const val ASYNC_TIMEOUT_MS = 15_000L
         const val POLL_INTERVAL_MS = 25L
 
-        val EXPECTED_TITLES = listOf(
-            "Process death fixture A",
-            "Process death fixture B",
-            "Process death fixture C"
-        )
+        val EXPECTED_TITLES =
+            listOf(
+                "Process death fixture A",
+                "Process death fixture B",
+                "Process death fixture C",
+            )
     }
 }

@@ -11,13 +11,13 @@ import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 
 private val Context.searchHistoryDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "search_history"
+    name = "search_history",
 )
 
 private const val MAX_SEARCH_HISTORY_ITEMS = 100
 
 class SearchHistoryPreferencesRepository internal constructor(
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
 ) {
     constructor(context: Context) : this(context.searchHistoryDataStore)
 
@@ -25,10 +25,11 @@ class SearchHistoryPreferencesRepository internal constructor(
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches_json")
     }
 
-    val recentSearchesFlow: Flow<List<String>> = dataStore.data.map { prefs ->
-        val raw = prefs[Keys.RECENT_SEARCHES] ?: return@map emptyList()
-        parseJsonList(raw)
-    }
+    val recentSearchesFlow: Flow<List<String>> =
+        dataStore.data.map { prefs ->
+            val raw = prefs[Keys.RECENT_SEARCHES] ?: return@map emptyList()
+            parseJsonList(raw)
+        }
 
     private suspend fun editRecentSearches(transform: (MutableList<String>) -> Unit) {
         dataStore.edit { prefs ->

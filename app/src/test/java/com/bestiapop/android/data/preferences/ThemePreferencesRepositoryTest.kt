@@ -19,118 +19,128 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 @Category(MediumTest::class)
 class ThemePreferencesRepositoryTest {
+    @Test
+    fun selectedPreset_reappearsWithColorsAndLightModeAfterColdStart() =
+        runTest {
+            val storage = temporaryDataStore()
+            try {
+                val repository = ThemePreferencesRepository(storage.dataStore)
+                repository.selectPreset(ThemePresets.CleanLight.id)
+                assertEquals(ThemePresets.CleanLight, repository.selectedThemeFlow.first())
+
+                storage.restart()
+
+                val restored =
+                    ThemePreferencesRepository(storage.dataStore)
+                        .selectedThemeFlow
+                        .first()
+                assertEquals(ThemePresets.CleanLight.id, restored.id)
+                assertEquals(ThemePresets.CleanLight.colors, restored.colors)
+                assertEquals(false, restored.isDark)
+            } finally {
+                storage.close()
+            }
+        }
 
     @Test
-    fun selectedPreset_reappearsWithColorsAndLightModeAfterColdStart() = runTest {
-        val storage = temporaryDataStore()
-        try {
-            val repository = ThemePreferencesRepository(storage.dataStore)
-            repository.selectPreset(ThemePresets.CleanLight.id)
-            assertEquals(ThemePresets.CleanLight, repository.selectedThemeFlow.first())
+    fun customTheme_editsAreEmittedAndReappearAfterColdStart() =
+        runTest {
+            val storage = temporaryDataStore()
+            try {
+                val colors =
+                    ColorSchemeData(
+                        primary = 0xFF010203,
+                        onPrimary = 0xFFFAFAFA,
+                        secondary = 0xFF112233,
+                        background = 0xFF040506,
+                        surface = 0xFF070809,
+                        surfaceVariant = 0xFF0A0B0C,
+                        accent = 0xFF445566,
+                    )
+                val repository = ThemePreferencesRepository(storage.dataStore)
+                repository.saveCustomColors(colors)
+                assertEquals(colors, repository.selectedThemeFlow.first().colors)
 
-            storage.restart()
+                storage.restart()
 
-            val restored = ThemePreferencesRepository(storage.dataStore)
-                .selectedThemeFlow
-                .first()
-            assertEquals(ThemePresets.CleanLight.id, restored.id)
-            assertEquals(ThemePresets.CleanLight.colors, restored.colors)
-            assertEquals(false, restored.isDark)
-        } finally {
-            storage.close()
+                val restored =
+                    ThemePreferencesRepository(storage.dataStore)
+                        .selectedThemeFlow
+                        .first()
+                assertEquals("custom", restored.id)
+                assertEquals(colors, restored.colors)
+                assertEquals(true, restored.isDark)
+            } finally {
+                storage.close()
+            }
         }
-    }
 
     @Test
-    fun customTheme_editsAreEmittedAndReappearAfterColdStart() = runTest {
-        val storage = temporaryDataStore()
-        try {
-            val colors = ColorSchemeData(
-                primary = 0xFF010203,
-                onPrimary = 0xFFFAFAFA,
-                secondary = 0xFF112233,
-                background = 0xFF040506,
-                surface = 0xFF070809,
-                surfaceVariant = 0xFF0A0B0C,
-                accent = 0xFF445566
-            )
-            val repository = ThemePreferencesRepository(storage.dataStore)
-            repository.saveCustomColors(colors)
-            assertEquals(colors, repository.selectedThemeFlow.first().colors)
+    fun dynamicTheme_reappearsAfterColdStart() =
+        runTest {
+            val storage = temporaryDataStore()
+            try {
+                val repository = ThemePreferencesRepository(storage.dataStore)
+                repository.enableDynamicTheme()
+                assertEquals(ThemePresets.DYNAMIC_THEME_ID, repository.selectedThemeFlow.first().id)
 
-            storage.restart()
+                storage.restart()
 
-            val restored = ThemePreferencesRepository(storage.dataStore)
-                .selectedThemeFlow
-                .first()
-            assertEquals("custom", restored.id)
-            assertEquals(colors, restored.colors)
-            assertEquals(true, restored.isDark)
-        } finally {
-            storage.close()
+                val restored =
+                    ThemePreferencesRepository(storage.dataStore)
+                        .selectedThemeFlow
+                        .first()
+                assertEquals(ThemePresets.DYNAMIC_THEME_ID, restored.id)
+            } finally {
+                storage.close()
+            }
         }
-    }
 
     @Test
-    fun dynamicTheme_reappearsAfterColdStart() = runTest {
-        val storage = temporaryDataStore()
-        try {
-            val repository = ThemePreferencesRepository(storage.dataStore)
-            repository.enableDynamicTheme()
-            assertEquals(ThemePresets.DYNAMIC_THEME_ID, repository.selectedThemeFlow.first().id)
+    fun dynamicTheme_persistsColorsAndArtworkUriAfterColdStart() =
+        runTest {
+            val storage = temporaryDataStore()
+            try {
+                val colors =
+                    ColorSchemeData(
+                        primary = 0xFF556677,
+                        onPrimary = 0xFFFFFFFF,
+                        secondary = 0xFF8899AA,
+                        background = 0xFF101010,
+                        surface = 0xFF202020,
+                        surfaceVariant = 0xFF303030,
+                        accent = 0xFF00FFCC,
+                    )
+                val dynamicTheme =
+                    com.bestiapop.android.data.model.CustomTheme(
+                        id = ThemePresets.DYNAMIC_THEME_ID,
+                        name = "Dinámico por Canción",
+                        colors = colors,
+                        isDark = true,
+                    )
+                val repository = ThemePreferencesRepository(storage.dataStore)
+                repository.enableDynamicTheme()
+                repository.saveDynamicTheme(dynamicTheme, artworkUri = "content://media/art/123")
 
-            storage.restart()
+                val current = repository.selectedThemeFlow.first()
+                assertEquals(ThemePresets.DYNAMIC_THEME_ID, current.id)
+                assertEquals(colors, current.colors)
 
-            val restored = ThemePreferencesRepository(storage.dataStore)
-                .selectedThemeFlow
-                .first()
-            assertEquals(ThemePresets.DYNAMIC_THEME_ID, restored.id)
-        } finally {
-            storage.close()
+                storage.restart()
+
+                val restored = ThemePreferencesRepository(storage.dataStore)
+                val restoredTheme = restored.selectedThemeFlow.first()
+                assertEquals(ThemePresets.DYNAMIC_THEME_ID, restoredTheme.id)
+                assertEquals(colors, restoredTheme.colors)
+                assertEquals("content://media/art/123", restored.dynamicArtworkUriFlow.first())
+            } finally {
+                storage.close()
+            }
         }
-    }
 
-    @Test
-    fun dynamicTheme_persistsColorsAndArtworkUriAfterColdStart() = runTest {
-        val storage = temporaryDataStore()
-        try {
-            val colors = ColorSchemeData(
-                primary = 0xFF556677,
-                onPrimary = 0xFFFFFFFF,
-                secondary = 0xFF8899AA,
-                background = 0xFF101010,
-                surface = 0xFF202020,
-                surfaceVariant = 0xFF303030,
-                accent = 0xFF00FFCC
-            )
-            val dynamicTheme = com.bestiapop.android.data.model.CustomTheme(
-                id = ThemePresets.DYNAMIC_THEME_ID,
-                name = "Dinámico por Canción",
-                colors = colors,
-                isDark = true
-            )
-            val repository = ThemePreferencesRepository(storage.dataStore)
-            repository.enableDynamicTheme()
-            repository.saveDynamicTheme(dynamicTheme, artworkUri = "content://media/art/123")
-
-            val current = repository.selectedThemeFlow.first()
-            assertEquals(ThemePresets.DYNAMIC_THEME_ID, current.id)
-            assertEquals(colors, current.colors)
-
-            storage.restart()
-
-            val restored = ThemePreferencesRepository(storage.dataStore)
-            val restoredTheme = restored.selectedThemeFlow.first()
-            assertEquals(ThemePresets.DYNAMIC_THEME_ID, restoredTheme.id)
-            assertEquals(colors, restoredTheme.colors)
-            assertEquals("content://media/art/123", restored.dynamicArtworkUriFlow.first())
-        } finally {
-            storage.close()
-        }
-    }
-
-    private fun temporaryDataStore() = TemporaryPreferencesDataStore(
-        ApplicationProvider.getApplicationContext(),
-        "theme-preferences"
-    )
+    private fun temporaryDataStore() =
+        TemporaryPreferencesDataStore(
+            ApplicationProvider.getApplicationContext(),
+            "theme-preferences",
+        )
 }

@@ -13,7 +13,6 @@ import java.nio.ByteBuffer
  */
 @UnstableApi
 class StereoBalanceAudioProcessor : BaseAudioProcessor() {
-
     companion object {
         /**
          * Linear threshold for 16-bit PCM boost (~65% of full scale).
@@ -43,9 +42,7 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
-    override fun isActive(): Boolean {
-        return super.isActive()
-    }
+    override fun isActive(): Boolean = super.isActive()
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         val position = inputBuffer.position()
@@ -76,17 +73,19 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
                     i += 2
                 }
             }
+
             else -> {
                 // Interleaved L/R (and ignore extra channels beyond stereo pair).
                 var i = position
                 var channel = 0
                 while (i < limit) {
                     val sample = inputBuffer.getShort(i)
-                    val gain = when (channel % channels) {
-                        0 -> effLeft
-                        1 -> effRight
-                        else -> 1f
-                    }
+                    val gain =
+                        when (channel % channels) {
+                            0 -> effLeft
+                            1 -> effRight
+                            else -> 1f
+                        }
                     output.putShort(scaleSample(sample, gain))
                     i += 2
                     channel++
@@ -98,7 +97,10 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
         output.flip()
     }
 
-    internal fun scaleSample(sample: Short, gain: Float): Short {
+    internal fun scaleSample(
+        sample: Short,
+        gain: Float,
+    ): Short {
         if (gain in 0.999f..1.001f) return sample
         if (gain <= 0.001f) return 0
         if (gain < 1.0f) {
@@ -115,8 +117,9 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
         }
 
         val excess = absVal - SOFT_SATURATION_THRESHOLD
-        val compressed = SOFT_SATURATION_THRESHOLD +
-            (SOFT_SATURATION_CAPACITY * excess) / (SOFT_SATURATION_CAPACITY + excess)
+        val compressed =
+            SOFT_SATURATION_THRESHOLD +
+                (SOFT_SATURATION_CAPACITY * excess) / (SOFT_SATURATION_CAPACITY + excess)
         val result = if (multiplied < 0) -compressed else compressed
         return result.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
     }

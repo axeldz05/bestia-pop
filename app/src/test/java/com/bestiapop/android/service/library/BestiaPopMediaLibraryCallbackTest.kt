@@ -5,7 +5,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class BestiaPopMediaLibraryCallbackTest {
-
     @Test
     fun untrustedTransportPolicyOnlyAddsPlaybackAndSkipCommands() {
         assertEquals(
@@ -15,9 +14,9 @@ class BestiaPopMediaLibraryCallbackTest {
                 Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
                 Player.COMMAND_SEEK_TO_PREVIOUS,
                 Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-                Player.COMMAND_SEEK_TO_NEXT
+                Player.COMMAND_SEEK_TO_NEXT,
             ),
-            UNTRUSTED_TRANSPORT_PLAYER_COMMANDS
+            UNTRUSTED_TRANSPORT_PLAYER_COMMANDS,
         )
     }
 }

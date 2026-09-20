@@ -44,68 +44,73 @@ class MusicRepositoryScanIntegrationTest {
     }
 
     @Test
-    fun scanMediaStore_skipsBestiaPopAndKnownSafPath_thenRemainsIdempotent() = runTest {
-        val knownPath = "/storage/emulated/0/Music/Imported/known-through-saf.wav"
-        database.musicDao.insertSong(
-            Song(
-                uriString = "content://com.example.documents/document/known",
-                folderPath = knownPath,
-                title = "Different SAF title",
-                artist = "Different SAF artist",
-                durationMs = 31_000L
+    fun scanMediaStore_skipsBestiaPopAndKnownSafPath_thenRemainsIdempotent() =
+        runTest {
+            val knownPath = "/storage/emulated/0/Music/Imported/known-through-saf.wav"
+            database.musicDao.insertSong(
+                Song(
+                    uriString = "content://com.example.documents/document/known",
+                    folderPath = knownPath,
+                    title = "Different SAF title",
+                    artist = "Different SAF artist",
+                    durationMs = 31_000L,
+                ),
             )
-        )
-        ScanMediaStoreProvider.rows = listOf(
-            MediaRow(
-                id = 1L,
-                title = "Managed duplicate",
-                artist = "BestiaPop",
-                path = "/storage/emulated/0/Music/BestiaPop/managed.wav"
-            ),
-            MediaRow(
-                id = 2L,
-                title = "MediaStore alias",
-                artist = "Unrelated metadata",
-                path = knownPath
-            ),
-            MediaRow(
-                id = 3L,
-                title = "External song",
-                artist = "External artist",
-                path = "/storage/emulated/0/Music/Elsewhere/external.wav"
+            ScanMediaStoreProvider.rows =
+                listOf(
+                    MediaRow(
+                        id = 1L,
+                        title = "Managed duplicate",
+                        artist = "BestiaPop",
+                        path = "/storage/emulated/0/Music/BestiaPop/managed.wav",
+                    ),
+                    MediaRow(
+                        id = 2L,
+                        title = "MediaStore alias",
+                        artist = "Unrelated metadata",
+                        path = knownPath,
+                    ),
+                    MediaRow(
+                        id = 3L,
+                        title = "External song",
+                        artist = "External artist",
+                        path = "/storage/emulated/0/Music/Elsewhere/external.wav",
+                    ),
+                )
+            providerController =
+                Robolectric
+                    .buildContentProvider(ScanMediaStoreProvider::class.java)
+                    .create(MediaStore.AUTHORITY)
+            val repository =
+                MusicRepository(
+                    context = ApplicationProvider.getApplicationContext(),
+                    database = database.database,
+                    audioStore = TemporaryRepositoryFileStore(files.root),
+                    metadataSource = NoNetworkRepositoryMetadata,
+                    downloadRetryDelay = {},
+                )
+
+            repository.scanMediaStore()
+            repository.scanMediaStore()
+
+            val songs = database.musicDao.getAllSongs()
+            assertEquals(2, songs.size)
+            assertEquals(
+                setOf("Different SAF title", "External song"),
+                songs.map { it.title }.toSet(),
             )
-        )
-        providerController = Robolectric
-            .buildContentProvider(ScanMediaStoreProvider::class.java)
-            .create(MediaStore.AUTHORITY)
-        val repository = MusicRepository(
-            context = ApplicationProvider.getApplicationContext(),
-            database = database.database,
-            audioStore = TemporaryRepositoryFileStore(files.root),
-            metadataSource = NoNetworkRepositoryMetadata,
-            downloadRetryDelay = {}
-        )
-
-        repository.scanMediaStore()
-        repository.scanMediaStore()
-
-        val songs = database.musicDao.getAllSongs()
-        assertEquals(2, songs.size)
-        assertEquals(
-            setOf("Different SAF title", "External song"),
-            songs.map { it.title }.toSet()
-        )
-        assertEquals(
-            1,
-            songs.count {
-                it.uriString == MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-                    .buildUpon()
-                    .appendPath("3")
-                    .build()
-                    .toString()
-            }
-        )
-    }
+            assertEquals(
+                1,
+                songs.count {
+                    it.uriString ==
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                            .buildUpon()
+                            .appendPath("3")
+                            .build()
+                            .toString()
+                },
+            )
+        }
 }
 
 private data class MediaRow(
@@ -119,7 +124,7 @@ private data class MediaRow(
     val track: Int = 1,
     val albumId: Long = -1L,
     val dateAdded: Long = 0L,
-    val dateModified: Long = 0L
+    val dateModified: Long = 0L,
 )
 
 private class ScanMediaStoreProvider : ContentProvider() {
@@ -130,7 +135,7 @@ private class ScanMediaStoreProvider : ContentProvider() {
         projection: Array<out String>?,
         selection: String?,
         selectionArgs: Array<out String>?,
-        sortOrder: String?
+        sortOrder: String?,
     ): Cursor {
         val columns = requireNotNull(projection)
         return MatrixCursor(columns).apply {
@@ -151,7 +156,7 @@ private class ScanMediaStoreProvider : ContentProvider() {
                             MediaStore.Audio.Media.DATE_MODIFIED -> media.dateModified
                             else -> null
                         }
-                    }
+                    },
                 )
             }
         }
@@ -159,15 +164,22 @@ private class ScanMediaStoreProvider : ContentProvider() {
 
     override fun getType(uri: Uri): String = "vnd.android.cursor.dir/audio"
 
-    override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+    override fun insert(
+        uri: Uri,
+        values: ContentValues?,
+    ): Uri? = null
 
-    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
+    override fun delete(
+        uri: Uri,
+        selection: String?,
+        selectionArgs: Array<out String>?,
+    ): Int = 0
 
     override fun update(
         uri: Uri,
         values: ContentValues?,
         selection: String?,
-        selectionArgs: Array<out String>?
+        selectionArgs: Array<out String>?,
     ): Int = 0
 
     companion object {

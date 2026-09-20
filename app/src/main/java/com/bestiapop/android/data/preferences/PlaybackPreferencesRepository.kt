@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 private val Context.playbackDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "playback_settings"
+    name = "playback_settings",
 )
 
 /** Max LoudnessEnhancer target gain when slider is at 200% (+12 dB). */
@@ -47,7 +47,7 @@ data class PlaybackSettings(
     val streamSkipGraceSeconds: Int = DEFAULT_STREAM_SKIP_GRACE_SECONDS,
     val openNowPlayingOnPlay: Boolean = true,
     val crossfadeEnabled: Boolean = false,
-    val crossfadeDurationSeconds: Int = DEFAULT_CROSSFADE_DURATION_SECONDS
+    val crossfadeDurationSeconds: Int = DEFAULT_CROSSFADE_DURATION_SECONDS,
 )
 
 const val DEFAULT_STREAM_SKIP_GRACE_SECONDS = 3
@@ -56,16 +56,14 @@ const val DEFAULT_CROSSFADE_DURATION_SECONDS = 3
 const val MIN_CROSSFADE_DURATION_SECONDS = 1
 const val MAX_CROSSFADE_DURATION_SECONDS = 10
 
-fun clampStreamSkipGraceSeconds(seconds: Int): Int =
-    seconds.coerceIn(0, MAX_STREAM_SKIP_GRACE_SECONDS)
+fun clampStreamSkipGraceSeconds(seconds: Int): Int = seconds.coerceIn(0, MAX_STREAM_SKIP_GRACE_SECONDS)
 
-fun clampCrossfadeDurationSeconds(seconds: Int): Int =
-    seconds.coerceIn(MIN_CROSSFADE_DURATION_SECONDS, MAX_CROSSFADE_DURATION_SECONDS)
+fun clampCrossfadeDurationSeconds(seconds: Int): Int = seconds.coerceIn(MIN_CROSSFADE_DURATION_SECONDS, MAX_CROSSFADE_DURATION_SECONDS)
 
 data class PlaybackModesSnapshot(
     val shuffle: Boolean,
     val repeat: RepeatMode,
-    val applyRepeatToPlayer: Boolean
+    val applyRepeatToPlayer: Boolean,
 )
 
 /** Pure restore of Now Playing shuffle/repeat after MediaController connect. */
@@ -73,15 +71,16 @@ object PlaybackModeRestore {
     fun resolve(
         settings: PlaybackSettings,
         hasLiveSession: Boolean,
-        liveRepeat: RepeatMode
-    ): PlaybackModesSnapshot = resolve(
-        rememberShuffle = settings.rememberShuffleOnLaunch,
-        rememberRepeat = settings.rememberRepeatOnLaunch,
-        lastShuffle = settings.lastShuffleEnabled,
-        lastRepeat = settings.lastRepeatMode,
-        hasLiveSession = hasLiveSession,
-        liveRepeat = liveRepeat
-    )
+        liveRepeat: RepeatMode,
+    ): PlaybackModesSnapshot =
+        resolve(
+            rememberShuffle = settings.rememberShuffleOnLaunch,
+            rememberRepeat = settings.rememberRepeatOnLaunch,
+            lastShuffle = settings.lastShuffleEnabled,
+            lastRepeat = settings.lastRepeatMode,
+            hasLiveSession = hasLiveSession,
+            liveRepeat = liveRepeat,
+        )
 
     fun resolve(
         rememberShuffle: Boolean,
@@ -89,19 +88,19 @@ object PlaybackModeRestore {
         lastShuffle: Boolean,
         lastRepeat: RepeatMode,
         hasLiveSession: Boolean,
-        liveRepeat: RepeatMode
+        liveRepeat: RepeatMode,
     ): PlaybackModesSnapshot {
         if (hasLiveSession) {
             return PlaybackModesSnapshot(
                 shuffle = lastShuffle,
                 repeat = liveRepeat,
-                applyRepeatToPlayer = false
+                applyRepeatToPlayer = false,
             )
         }
         return PlaybackModesSnapshot(
             shuffle = rememberShuffle && lastShuffle,
             repeat = if (rememberRepeat) lastRepeat else RepeatMode.OFF,
-            applyRepeatToPlayer = true
+            applyRepeatToPlayer = true,
         )
     }
 }
@@ -112,28 +111,28 @@ object PlaybackModeClear {
     @Suppress("UNUSED_PARAMETER")
     fun afterRadioStart(
         shuffle: Boolean,
-        repeat: RepeatMode
-    ): Pair<Boolean, RepeatMode> =
-        false to if (repeat == RepeatMode.ONE) RepeatMode.OFF else repeat
+        repeat: RepeatMode,
+    ): Pair<Boolean, RepeatMode> = false to if (repeat == RepeatMode.ONE) RepeatMode.OFF else repeat
 
     fun afterManualPlay(
         shuffle: Boolean,
         repeat: RepeatMode,
-        settings: PlaybackSettings
+        settings: PlaybackSettings,
     ): Pair<Boolean, RepeatMode> {
         val nextShuffle = if (settings.clearShuffleOnManualPlay) false else shuffle
-        val nextRepeat = when (repeat) {
-            RepeatMode.ALL -> if (settings.clearRepeatAllOnManualPlay) RepeatMode.OFF else repeat
-            RepeatMode.ONE -> if (settings.clearRepeatOneOnManualPlay) RepeatMode.OFF else repeat
-            RepeatMode.OFF -> RepeatMode.OFF
-        }
+        val nextRepeat =
+            when (repeat) {
+                RepeatMode.ALL -> if (settings.clearRepeatAllOnManualPlay) RepeatMode.OFF else repeat
+                RepeatMode.ONE -> if (settings.clearRepeatOneOnManualPlay) RepeatMode.OFF else repeat
+                RepeatMode.OFF -> RepeatMode.OFF
+            }
         return nextShuffle to nextRepeat
     }
 
     fun afterSkip(
         shuffle: Boolean,
         repeat: RepeatMode,
-        settings: PlaybackSettings
+        settings: PlaybackSettings,
     ): Pair<Boolean, RepeatMode> {
         val nextShuffle = if (settings.clearShuffleOnSkip) false else shuffle
         val nextRepeat =
@@ -142,15 +141,14 @@ object PlaybackModeClear {
     }
 }
 
-fun parseRepeatModeName(name: String?): RepeatMode =
-    name?.let { runCatching { RepeatMode.valueOf(it) }.getOrNull() } ?: RepeatMode.OFF
+fun parseRepeatModeName(name: String?): RepeatMode = name?.let { runCatching { RepeatMode.valueOf(it) }.getOrNull() } ?: RepeatMode.OFF
 
 fun clampVolumeBoostAmount(amount: Float): Float = amount.coerceIn(0f, 1f)
 
 fun clampStereoGain(gain: Float): Float = gain.coerceIn(0f, 1f)
 
 class PlaybackPreferencesRepository internal constructor(
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
 ) {
     constructor(context: Context) : this(context.playbackDataStore)
 
@@ -177,36 +175,40 @@ class PlaybackPreferencesRepository internal constructor(
             booleanPreferencesKey("oem_screen_off_cleanup_hint_dismissed")
     }
 
-    val oemScreenOffCleanupHintDismissed: Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[Keys.OEM_SCREEN_OFF_CLEANUP_HINT_DISMISSED] ?: false
-    }
+    val oemScreenOffCleanupHintDismissed: Flow<Boolean> =
+        dataStore.data.map { prefs ->
+            prefs[Keys.OEM_SCREEN_OFF_CLEANUP_HINT_DISMISSED] ?: false
+        }
 
-    val settingsFlow: Flow<PlaybackSettings> = dataStore.data.map { prefs ->
-        PlaybackSettings(
-            volumeBoostEnabled = prefs[Keys.VOLUME_BOOST_ENABLED] ?: false,
-            volumeBoostAmount = clampVolumeBoostAmount(prefs[Keys.VOLUME_BOOST_AMOUNT] ?: 0f),
-            stereoLeftGain = clampStereoGain(prefs[Keys.STEREO_LEFT_GAIN] ?: 1f),
-            stereoRightGain = clampStereoGain(prefs[Keys.STEREO_RIGHT_GAIN] ?: 1f),
-            rememberShuffleOnLaunch = prefs[Keys.REMEMBER_SHUFFLE_ON_LAUNCH] ?: true,
-            rememberRepeatOnLaunch = prefs[Keys.REMEMBER_REPEAT_ON_LAUNCH] ?: true,
-            autoplayOnLaunch = prefs[Keys.AUTOPLAY_ON_LAUNCH] ?: false,
-            lastShuffleEnabled = prefs[Keys.LAST_SHUFFLE_ENABLED] ?: false,
-            lastRepeatMode = parseRepeatModeName(prefs[Keys.LAST_REPEAT_MODE]),
-            clearShuffleOnManualPlay = prefs[Keys.CLEAR_SHUFFLE_ON_MANUAL_PLAY] ?: true,
-            clearRepeatAllOnManualPlay = prefs[Keys.CLEAR_REPEAT_ALL_ON_MANUAL_PLAY] ?: false,
-            clearRepeatOneOnManualPlay = prefs[Keys.CLEAR_REPEAT_ONE_ON_MANUAL_PLAY] ?: true,
-            clearShuffleOnSkip = prefs[Keys.CLEAR_SHUFFLE_ON_SKIP] ?: false,
-            clearRepeatOneOnSkip = prefs[Keys.CLEAR_REPEAT_ONE_ON_SKIP] ?: true,
-            streamSkipGraceSeconds = clampStreamSkipGraceSeconds(
-                prefs[Keys.STREAM_SKIP_GRACE_SECONDS] ?: DEFAULT_STREAM_SKIP_GRACE_SECONDS
-            ),
-            openNowPlayingOnPlay = prefs[Keys.OPEN_NOW_PLAYING_ON_PLAY] ?: true,
-            crossfadeEnabled = prefs[Keys.CROSSFADE_ENABLED] ?: false,
-            crossfadeDurationSeconds = clampCrossfadeDurationSeconds(
-                prefs[Keys.CROSSFADE_DURATION_SECONDS] ?: DEFAULT_CROSSFADE_DURATION_SECONDS
+    val settingsFlow: Flow<PlaybackSettings> =
+        dataStore.data.map { prefs ->
+            PlaybackSettings(
+                volumeBoostEnabled = prefs[Keys.VOLUME_BOOST_ENABLED] ?: false,
+                volumeBoostAmount = clampVolumeBoostAmount(prefs[Keys.VOLUME_BOOST_AMOUNT] ?: 0f),
+                stereoLeftGain = clampStereoGain(prefs[Keys.STEREO_LEFT_GAIN] ?: 1f),
+                stereoRightGain = clampStereoGain(prefs[Keys.STEREO_RIGHT_GAIN] ?: 1f),
+                rememberShuffleOnLaunch = prefs[Keys.REMEMBER_SHUFFLE_ON_LAUNCH] ?: true,
+                rememberRepeatOnLaunch = prefs[Keys.REMEMBER_REPEAT_ON_LAUNCH] ?: true,
+                autoplayOnLaunch = prefs[Keys.AUTOPLAY_ON_LAUNCH] ?: false,
+                lastShuffleEnabled = prefs[Keys.LAST_SHUFFLE_ENABLED] ?: false,
+                lastRepeatMode = parseRepeatModeName(prefs[Keys.LAST_REPEAT_MODE]),
+                clearShuffleOnManualPlay = prefs[Keys.CLEAR_SHUFFLE_ON_MANUAL_PLAY] ?: true,
+                clearRepeatAllOnManualPlay = prefs[Keys.CLEAR_REPEAT_ALL_ON_MANUAL_PLAY] ?: false,
+                clearRepeatOneOnManualPlay = prefs[Keys.CLEAR_REPEAT_ONE_ON_MANUAL_PLAY] ?: true,
+                clearShuffleOnSkip = prefs[Keys.CLEAR_SHUFFLE_ON_SKIP] ?: false,
+                clearRepeatOneOnSkip = prefs[Keys.CLEAR_REPEAT_ONE_ON_SKIP] ?: true,
+                streamSkipGraceSeconds =
+                    clampStreamSkipGraceSeconds(
+                        prefs[Keys.STREAM_SKIP_GRACE_SECONDS] ?: DEFAULT_STREAM_SKIP_GRACE_SECONDS,
+                    ),
+                openNowPlayingOnPlay = prefs[Keys.OPEN_NOW_PLAYING_ON_PLAY] ?: true,
+                crossfadeEnabled = prefs[Keys.CROSSFADE_ENABLED] ?: false,
+                crossfadeDurationSeconds =
+                    clampCrossfadeDurationSeconds(
+                        prefs[Keys.CROSSFADE_DURATION_SECONDS] ?: DEFAULT_CROSSFADE_DURATION_SECONDS,
+                    ),
             )
-        )
-    }
+        }
 
     suspend fun setVolumeBoostEnabled(enabled: Boolean) {
         dataStore.put(Keys.VOLUME_BOOST_ENABLED, enabled)
@@ -274,7 +276,7 @@ class PlaybackPreferencesRepository internal constructor(
     suspend fun setStreamSkipGraceSeconds(seconds: Int) {
         dataStore.put(
             Keys.STREAM_SKIP_GRACE_SECONDS,
-            clampStreamSkipGraceSeconds(seconds)
+            clampStreamSkipGraceSeconds(seconds),
         )
     }
 
@@ -289,7 +291,7 @@ class PlaybackPreferencesRepository internal constructor(
     suspend fun setCrossfadeDurationSeconds(seconds: Int) {
         dataStore.put(
             Keys.CROSSFADE_DURATION_SECONDS,
-            clampCrossfadeDurationSeconds(seconds)
+            clampCrossfadeDurationSeconds(seconds),
         )
     }
 

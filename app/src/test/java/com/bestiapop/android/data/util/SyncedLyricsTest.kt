@@ -7,14 +7,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncedLyricsTest {
-
     @Test
     fun parse_lrcAndUntimed_roundTrip() {
-        val raw = """
+        val raw =
+            """
             [00:12.40]Hello
             plain line
             [01:03.5]World
-        """.trimIndent()
+            """.trimIndent()
         val lines = SyncedLyrics.parse(raw)
         assertEquals(3, lines.size)
         assertEquals(12400L, lines[0].timeMs)
@@ -55,12 +55,13 @@ class SyncedLyricsTest {
 
     @Test
     fun currentLineIndex_lastTimedAtOrBeforePosition() {
-        val lines = listOf(
-            SyncedLyricLine(1_000, "a"),
-            SyncedLyricLine(null, "skip"),
-            SyncedLyricLine(3_000, "b"),
-            SyncedLyricLine(5_000, "c")
-        )
+        val lines =
+            listOf(
+                SyncedLyricLine(1_000, "a"),
+                SyncedLyricLine(null, "skip"),
+                SyncedLyricLine(3_000, "b"),
+                SyncedLyricLine(5_000, "c"),
+            )
         assertEquals(-1, SyncedLyrics.currentLineIndex(lines, 0))
         assertEquals(0, SyncedLyrics.currentLineIndex(lines, 1_000))
         assertEquals(0, SyncedLyrics.currentLineIndex(lines, 2_999))
@@ -94,10 +95,11 @@ class SyncedLyricsTest {
 
     @Test
     fun realignByText_sameCount_keepsTimesByIndex() {
-        val old = listOf(
-            SyncedLyricLine(1_000, "Hello"),
-            SyncedLyricLine(2_000, "World")
-        )
+        val old =
+            listOf(
+                SyncedLyricLine(1_000, "Hello"),
+                SyncedLyricLine(2_000, "World"),
+            )
         val aligned = SyncedLyrics.realignByText(old, listOf("Hello!", "World?"))
         assertEquals(listOf(1_000L, 2_000L), aligned.map { it.timeMs })
         assertEquals(listOf("Hello!", "World?"), aligned.map { it.text })
@@ -105,10 +107,11 @@ class SyncedLyricsTest {
 
     @Test
     fun realignByText_insertAtStart_doesNotRecycleFirstStamp() {
-        val old = listOf(
-            SyncedLyricLine(1_000, "Hello"),
-            SyncedLyricLine(2_000, "World")
-        )
+        val old =
+            listOf(
+                SyncedLyricLine(1_000, "Hello"),
+                SyncedLyricLine(2_000, "World"),
+            )
         val aligned = SyncedLyrics.realignByText(old, listOf("Intro", "Hello", "World"))
         assertEquals(listOf(null, 1_000L, 2_000L), aligned.map { it.timeMs })
         assertEquals(listOf("Intro", "Hello", "World"), aligned.map { it.text })
@@ -116,11 +119,12 @@ class SyncedLyricsTest {
 
     @Test
     fun realignByText_removedLine_matchesRemainingByText() {
-        val old = listOf(
-            SyncedLyricLine(1_000, "A"),
-            SyncedLyricLine(2_000, "B"),
-            SyncedLyricLine(3_000, "C")
-        )
+        val old =
+            listOf(
+                SyncedLyricLine(1_000, "A"),
+                SyncedLyricLine(2_000, "B"),
+                SyncedLyricLine(3_000, "C"),
+            )
         val aligned = SyncedLyrics.realignByText(old, listOf("A", "C"))
         assertEquals(listOf(1_000L, 3_000L), aligned.map { it.timeMs })
     }

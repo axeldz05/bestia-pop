@@ -5,7 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class PlaybackSelectionIntentGateTest {
-
     @Test
     fun tapsAThenB_completingBThenA_appliesOnlyB() {
         val gate = PlaybackSelectionIntentGate()

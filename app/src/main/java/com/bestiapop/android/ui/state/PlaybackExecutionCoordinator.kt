@@ -52,7 +52,7 @@ class PlaybackExecutionCoordinator(
     private val playlistsFlow: Flow<List<Playlist>>,
     private val isOpenNowPlayingOnPlay: () -> Boolean,
     private val togglePlayPause: () -> Unit,
-    private val isPlaying: StateFlow<Boolean>
+    private val isPlaying: StateFlow<Boolean>,
 ) {
     /** Stable key of the catalog track being previewed inside Add Music (null = no catalog preview). */
     private val _catalogPreviewKey = MutableStateFlow<String?>(null)
@@ -61,7 +61,11 @@ class PlaybackExecutionCoordinator(
     private val _openNowPlayingEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val openNowPlayingEvents: SharedFlow<Unit> = _openNowPlayingEvents.asSharedFlow()
 
-    fun playCollection(songs: List<Song>, startIndex: Int = 0, startShuffled: Boolean = false) {
+    fun playCollection(
+        songs: List<Song>,
+        startIndex: Int = 0,
+        startShuffled: Boolean = false,
+    ) {
         if (songs.isEmpty()) return
         if (startShuffled) {
             shuffleCollection(songs)
@@ -71,18 +75,27 @@ class PlaybackExecutionCoordinator(
         }
     }
 
-    fun playCollection(songs: List<Song>, startShuffled: Boolean) {
+    fun playCollection(
+        songs: List<Song>,
+        startShuffled: Boolean,
+    ) {
         playCollection(songs, startIndex = 0, startShuffled = startShuffled)
     }
 
-    fun playCollection(songs: List<Song>, startSong: Song) {
+    fun playCollection(
+        songs: List<Song>,
+        startSong: Song,
+    ) {
         playSong(startSong, songs)
     }
 
     /**
      * Level 1: Core pipeline for executing playback actions on any collection of songs.
      */
-    fun executeGroupPlayback(songs: List<Song>, action: GroupPlaybackAction) {
+    fun executeGroupPlayback(
+        songs: List<Song>,
+        action: GroupPlaybackAction,
+    ) {
         if (songs.isEmpty()) return
         when (action) {
             GroupPlaybackAction.PLAY -> playCollection(songs, startShuffled = false)
@@ -92,7 +105,10 @@ class PlaybackExecutionCoordinator(
         }
     }
 
-    fun executeGroupPlaybackForPlayables(items: List<PlayableItem>, action: GroupPlaybackAction) {
+    fun executeGroupPlaybackForPlayables(
+        items: List<PlayableItem>,
+        action: GroupPlaybackAction,
+    ) {
         if (items.isEmpty()) return
         when (action) {
             GroupPlaybackAction.PLAY -> playPlayableCollection(items, startIndex = 0, rotate = false)
@@ -102,19 +118,25 @@ class PlaybackExecutionCoordinator(
         }
     }
 
-    fun playAlbum(albumName: String, startShuffled: Boolean = false) {
+    fun playAlbum(
+        albumName: String,
+        startShuffled: Boolean = false,
+    ) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsForAlbum(libraryProjection.songs.value, albumName),
-            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY
+            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY,
         )
     }
 
-    fun playAlbum(album: Album, startShuffled: Boolean = false) = playAlbum(album.name, startShuffled)
+    fun playAlbum(
+        album: Album,
+        startShuffled: Boolean = false,
+    ) = playAlbum(album.name, startShuffled)
 
     fun playAlbumNext(albumName: String) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsForAlbum(libraryProjection.songs.value, albumName),
-            GroupPlaybackAction.PLAY_NEXT
+            GroupPlaybackAction.PLAY_NEXT,
         )
     }
 
@@ -123,51 +145,57 @@ class PlaybackExecutionCoordinator(
     fun enqueueAlbum(albumName: String) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsForAlbum(libraryProjection.songs.value, albumName),
-            GroupPlaybackAction.ENQUEUE
+            GroupPlaybackAction.ENQUEUE,
         )
     }
 
     fun enqueueAlbum(album: Album) = enqueueAlbum(album.name)
 
-    fun playArtist(artistName: String, startShuffled: Boolean = false) {
+    fun playArtist(
+        artistName: String,
+        startShuffled: Boolean = false,
+    ) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsForArtist(libraryProjection.songs.value, artistName),
-            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY
+            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY,
         )
     }
 
     fun playArtistNext(artistName: String) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsForArtist(libraryProjection.songs.value, artistName),
-            GroupPlaybackAction.PLAY_NEXT
+            GroupPlaybackAction.PLAY_NEXT,
         )
     }
 
     fun enqueueArtist(artistName: String) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsForArtist(libraryProjection.songs.value, artistName),
-            GroupPlaybackAction.ENQUEUE
+            GroupPlaybackAction.ENQUEUE,
         )
     }
 
-    fun playGenre(genreName: String, startShuffled: Boolean = false) {
+    fun playGenre(
+        genreName: String,
+        startShuffled: Boolean = false,
+    ) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsMatchingGenre(libraryProjection.songs.value, genreName),
-            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY
+            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY,
         )
     }
 
     fun playGenreNext(genreName: String) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsMatchingGenre(libraryProjection.songs.value, genreName),
-            GroupPlaybackAction.PLAY_NEXT
+            GroupPlaybackAction.PLAY_NEXT,
         )
     }
 
     fun enqueueGenre(genreName: String) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsMatchingGenre(libraryProjection.songs.value, genreName),
-            GroupPlaybackAction.ENQUEUE
+            GroupPlaybackAction.ENQUEUE,
         )
     }
 
@@ -176,32 +204,48 @@ class PlaybackExecutionCoordinator(
         if (filter == LibraryBrowseFilter.PLAYLISTS) {
             scope.launch {
                 val detailId = (getPlaylistDetail() as? PlaylistDetailNav.Local)?.id
-                val playablesToPlay = if (detailId != null) {
-                    repository.getPlaylistPlayables(detailId)
-                } else {
-                    val currentPlaylists = playlistsFlow.first()
-                    currentPlaylists.flatMap { repository.getPlaylistPlayables(it.id) }
-                }
+                val playablesToPlay =
+                    if (detailId != null) {
+                        repository.getPlaylistPlayables(detailId)
+                    } else {
+                        val currentPlaylists = playlistsFlow.first()
+                        currentPlaylists.flatMap { repository.getPlaylistPlayables(it.id) }
+                    }
                 if (playablesToPlay.isEmpty()) return@launch
-                if (shuffle) shufflePlayableCollection(playablesToPlay) else playPlayableCollection(playablesToPlay, startIndex = 0, rotate = false)
+                if (shuffle) {
+                    shufflePlayableCollection(
+                        playablesToPlay,
+                    )
+                } else {
+                    playPlayableCollection(playablesToPlay, startIndex = 0, rotate = false)
+                }
             }
             return
         }
         val songs = libraryProjection.songs.value
-        val queue = when (filter) {
-            LibraryBrowseFilter.SONGS -> libraryProjection.songList.value.songsVisual
-            LibraryBrowseFilter.RECENT -> libraryProjection.recentSongs.value
-            else -> getLibrarySongsUseCase.songsForBrowseProjection(
-                filter = filter,
-                songs = songs,
-                viewMode = getLibraryViewMode(),
-                albums = libraryProjection.albums.value,
-                artists = libraryProjection.artists.value,
-                genres = libraryProjection.genres.value,
-                sortOption = getSortOption(),
-                sortDirection = getSortDirection()
-            )
-        }
+        val queue =
+            when (filter) {
+                LibraryBrowseFilter.SONGS -> {
+                    libraryProjection.songList.value.songsVisual
+                }
+
+                LibraryBrowseFilter.RECENT -> {
+                    libraryProjection.recentSongs.value
+                }
+
+                else -> {
+                    getLibrarySongsUseCase.songsForBrowseProjection(
+                        filter = filter,
+                        songs = songs,
+                        viewMode = getLibraryViewMode(),
+                        albums = libraryProjection.albums.value,
+                        artists = libraryProjection.artists.value,
+                        genres = libraryProjection.genres.value,
+                        sortOption = getSortOption(),
+                        sortDirection = getSortDirection(),
+                    )
+                }
+            }
         if (queue.isEmpty()) return
         if (shuffle) shuffleCollection(queue) else playCollection(queue)
     }
@@ -210,15 +254,21 @@ class PlaybackExecutionCoordinator(
         song: Song,
         playlistOrQueue: List<Song> = emptyList(),
         applyManualModes: Boolean = true,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) {
         _catalogPreviewKey.value = null
-        val baseList = when {
-            playlistOrQueue.isNotEmpty() -> playlistOrQueue
-            else -> libraryProjection.songList.value.songsVisual.ifEmpty {
-                libraryProjection.songs.value
+        val baseList =
+            when {
+                playlistOrQueue.isNotEmpty() -> {
+                    playlistOrQueue
+                }
+
+                else -> {
+                    libraryProjection.songList.value.songsVisual.ifEmpty {
+                        libraryProjection.songs.value
+                    }
+                }
             }
-        }
         val indexInBase = baseList.indexOfFirst { it.id == song.id || it.uriString == song.uriString }
 
         val targetQueue = if (indexInBase != -1) baseList else listOf(song)
@@ -227,7 +277,7 @@ class PlaybackExecutionCoordinator(
             targetQueue.toPlayableItemsWithFreshIds { libraryProjection.resolveAlbumArtwork(it) },
             index,
             applyManualModes = applyManualModes,
-            openNowPlaying = openNowPlaying
+            openNowPlaying = openNowPlaying,
         )
     }
 
@@ -240,7 +290,7 @@ class PlaybackExecutionCoordinator(
         startShuffled: Boolean = false,
         origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
         resumeAtMs: Long? = null,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) {
         playbackRuntime.playPlayableCollection(
             items = items,
@@ -250,19 +300,18 @@ class PlaybackExecutionCoordinator(
             applyManualModes = applyManualModes,
             startShuffled = startShuffled,
             origin = origin,
-            resumeAtMs = resumeAtMs
+            resumeAtMs = resumeAtMs,
         )
         if (openNowPlaying && items.isNotEmpty() && !fromRadio && isOpenNowPlayingOnPlay()) {
             _openNowPlayingEvents.tryEmit(Unit)
         }
     }
 
-    fun catalogPreviewKeyForTrack(track: OnlineCatalogTrack): String =
-        catalogPreviewKeyFor(track)
+    fun catalogPreviewKeyForTrack(track: OnlineCatalogTrack): String = catalogPreviewKeyFor(track)
 
     fun playOnlineCatalogTrackAsStream(
         track: OnlineCatalogTrack,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) {
         val key = catalogPreviewKeyForTrack(track)
         if (_catalogPreviewKey.value == key && playbackRuntime.currentItem.value != null) {
@@ -271,10 +320,11 @@ class PlaybackExecutionCoordinator(
         }
         _catalogPreviewKey.value = key
         val queryOrId = YouTubeExtractor.resolveYouTubeQueryOrId(track)
-        val remote = PlayableItem.remoteFrom(
-            identity = track.identity,
-            youtubeQueryOrId = queryOrId
-        )
+        val remote =
+            PlayableItem.remoteFrom(
+                identity = track.identity,
+                youtubeQueryOrId = queryOrId,
+            )
         playPlayableCollection(listOf(remote), 0, openNowPlaying = openNowPlaying)
     }
 
@@ -287,7 +337,7 @@ class PlaybackExecutionCoordinator(
     /** Plays local version if available in library; otherwise falls back to online stream. */
     fun playCatalogOrLocalTrack(
         track: OnlineCatalogTrack,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) {
         val local = findLocalSongFor(track.identity)
         if (local != null) {
@@ -302,7 +352,7 @@ class PlaybackExecutionCoordinator(
         candidates: List<CatalogTrackCandidate>,
         startIndex: Int = 0,
         startShuffled: Boolean = false,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) {
         _catalogPreviewKey.value = null
         val playables = candidates.toPlayableItems(getLocalSongsByMatchKey())
@@ -310,14 +360,14 @@ class PlaybackExecutionCoordinator(
             playables,
             startIndex = startIndex,
             startShuffled = startShuffled,
-            openNowPlaying = openNowPlaying
+            openNowPlaying = openNowPlaying,
         )
     }
 
     /** Plays a single catalog candidate using local file if present, or streaming. */
     fun playCatalogCandidate(
         candidate: CatalogTrackCandidate,
-        openNowPlaying: Boolean = true
+        openNowPlaying: Boolean = true,
     ) {
         playCatalogOrLocalTrack(candidate.effectiveTrack, openNowPlaying = openNowPlaying)
     }
@@ -330,15 +380,16 @@ class PlaybackExecutionCoordinator(
             togglePlayPause()
             return
         }
-        val local = PlayableItem.Local(
-            song = song,
-            resolvedArtworkUri = libraryProjection.resolveAlbumArtwork(song)
-        )
+        val local =
+            PlayableItem.Local(
+                song = song,
+                resolvedArtworkUri = libraryProjection.resolveAlbumArtwork(song),
+            )
         playPlayableCollection(
             items = listOf(local),
             startIndex = 0,
             rotate = false,
-            openNowPlaying = false
+            openNowPlaying = false,
         )
     }
 
@@ -367,7 +418,7 @@ class PlaybackExecutionCoordinator(
 
     fun shufflePlayableCollection(
         items: List<PlayableItem>,
-        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None
+        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
     ): Boolean {
         if (items.isEmpty()) return false
         playPlayableCollection(
@@ -376,7 +427,7 @@ class PlaybackExecutionCoordinator(
             rotate = false,
             applyManualModes = false,
             startShuffled = true,
-            origin = origin
+            origin = origin,
         )
         return true
     }
@@ -413,7 +464,7 @@ class PlaybackExecutionCoordinator(
     fun playMatchedCollection(
         items: List<PlayableItem>,
         startIndex: Int = 0,
-        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None
+        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
     ): Boolean {
         if (items.isEmpty() || startIndex !in items.indices) return false
         _catalogPreviewKey.value = null
@@ -425,14 +476,14 @@ class PlaybackExecutionCoordinator(
     fun playMatchedTracks(
         items: List<PlayableItem>,
         origin: DiscoverPlaybackOrigin,
-        startIndex: Int = 0
+        startIndex: Int = 0,
     ) {
         playMatchedCollection(items, startIndex = startIndex, origin = origin)
     }
 
     fun shuffleMatchedTracks(
         items: List<PlayableItem>,
-        origin: DiscoverPlaybackOrigin
+        origin: DiscoverPlaybackOrigin,
     ) {
         shufflePlayableCollection(items, origin = origin)
     }

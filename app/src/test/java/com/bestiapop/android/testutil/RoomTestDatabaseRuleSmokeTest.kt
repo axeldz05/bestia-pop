@@ -19,17 +19,21 @@ class RoomTestDatabaseRuleSmokeTest {
     val database = RoomTestDatabaseRule()
 
     @Test
-    fun freshDatabase_canWriteAndReadSong() = runTest {
-        database.musicDao.insertSong(
-            Song(
-                uriString = "file:///wave-zero-smoke.mp3",
-                title = "Wave zero smoke"
+    fun freshDatabase_canWriteAndReadSong() =
+        runTest {
+            database.musicDao.insertSong(
+                Song(
+                    uriString = "file:///wave-zero-smoke.mp3",
+                    title = "Wave zero smoke",
+                ),
             )
-        )
 
-        assertEquals(
-            "Wave zero smoke",
-            database.musicDao.getAllSongs().single().title
-        )
-    }
+            assertEquals(
+                "Wave zero smoke",
+                database.musicDao
+                    .getAllSongs()
+                    .single()
+                    .title,
+            )
+        }
 }

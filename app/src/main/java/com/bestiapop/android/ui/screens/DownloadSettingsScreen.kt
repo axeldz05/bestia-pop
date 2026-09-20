@@ -5,11 +5,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.util.StorageUtils
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SettingsScrollColumn
@@ -22,30 +22,31 @@ fun DownloadSettingsScreen(viewModel: MusicPlayerViewModel) {
     val absolutePath = StorageUtils.publicBestiaPopDir().absolutePath
 
     SettingsScrollColumn(
-        intro = "Dónde se guardan las canciones descargadas y si se pueden bajar con datos móviles."
+        intro = "Dónde se guardan las canciones descargadas y si se pueden bajar con datos móviles.",
     ) {
         SettingsSwitchRow(
             title = "Descargar con datos móviles",
-            subtitle = if (downloadSettings.downloadOnMeteredNetwork) {
-                "Activo — también descarga en redes metered (datos / hotspot)"
-            } else {
-                "Desactivado — solo descarga en Wi‑Fi u otras redes no metered"
-            },
+            subtitle =
+                if (downloadSettings.downloadOnMeteredNetwork) {
+                    "Activo — también descarga en redes metered (datos / hotspot)"
+                } else {
+                    "Desactivado — solo descarga en Wi‑Fi u otras redes no metered"
+                },
             checked = downloadSettings.downloadOnMeteredNetwork,
-            onCheckedChange = { viewModel.setDownloadOnMeteredNetwork(it) }
+            onCheckedChange = { viewModel.setDownloadOnMeteredNetwork(it) },
         )
 
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "Con límite de datos: ${StorageUtils.formatByteCount(downloadSettings.totalMeteredBytes)}",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = "Sin límite: ${StorageUtils.formatByteCount(downloadSettings.totalUnmeteredBytes)}",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -53,19 +54,19 @@ fun DownloadSettingsScreen(viewModel: MusicPlayerViewModel) {
         Text(
             text = "Ubicación",
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "Guardando en: $savePathLabel",
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = absolutePath,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

@@ -17,25 +17,27 @@ internal class SettingsStateRule : ExternalResource() {
     private lateinit var originalTheme: CustomTheme
     private lateinit var originalPlayback: PlaybackSettings
 
-    override fun before() = runBlocking {
-        originalTheme = themePreferences.selectedThemeFlow.first()
-        originalPlayback = playbackPreferences.settingsFlow.first()
-        themePreferences.selectPreset(ThemePresets.MidnightDark.id)
-        writePlayback(
-            PlaybackSettings(
-                volumeBoostAmount = TEST_BOOST_AMOUNT
+    override fun before() =
+        runBlocking {
+            originalTheme = themePreferences.selectedThemeFlow.first()
+            originalPlayback = playbackPreferences.settingsFlow.first()
+            themePreferences.selectPreset(ThemePresets.MidnightDark.id)
+            writePlayback(
+                PlaybackSettings(
+                    volumeBoostAmount = TEST_BOOST_AMOUNT,
+                ),
             )
-        )
-    }
-
-    override fun after() = runBlocking {
-        if (originalTheme.id == "custom") {
-            themePreferences.saveCustomColors(originalTheme.colors)
-        } else {
-            themePreferences.selectPreset(originalTheme.id)
         }
-        writePlayback(originalPlayback)
-    }
+
+    override fun after() =
+        runBlocking {
+            if (originalTheme.id == "custom") {
+                themePreferences.saveCustomColors(originalTheme.colors)
+            } else {
+                themePreferences.selectPreset(originalTheme.id)
+            }
+            writePlayback(originalPlayback)
+        }
 
     private suspend fun writePlayback(settings: PlaybackSettings) {
         playbackPreferences.setVolumeBoostEnabled(settings.volumeBoostEnabled)

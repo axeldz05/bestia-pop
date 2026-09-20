@@ -25,11 +25,12 @@ fun LibraryArtistList(
     sortOption: SortOption = SortOption.TITLE,
     fastScrollSettings: FastScrollSettings = FastScrollSettings(),
     listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val sections = remember(artists, sortOption) {
-        FastScrollSections.fromArtists(artists, sortOption)
-    }
+    val sections =
+        remember(artists, sortOption) {
+            FastScrollSections.fromArtists(artists, sortOption)
+        }
 
     FastScrollLazyColumn(
         items = artists,
@@ -38,7 +39,7 @@ fun LibraryArtistList(
         emptyText = "Ningún artista coincide",
         fastScrollSettings = fastScrollSettings,
         listState = listState,
-        modifier = modifier
+        modifier = modifier,
     ) { artist ->
         ArtistListItem(
             artist = artist,
@@ -46,7 +47,7 @@ fun LibraryArtistList(
             onClick = { actions.onClick(artist) },
             onPlay = { actions.onPlay(artist) },
             onShuffle = { actions.onShuffle(artist) },
-            onSwipeAction = actions.onSwipeAction?.let { cb -> { cb(artist) } }
+            onSwipeAction = actions.onSwipeAction?.let { cb -> { cb(artist) } },
         )
     }
 }
@@ -61,22 +62,23 @@ fun LibraryArtistList(
     onPlayArtist: (Artist) -> Unit,
     onShuffleArtist: (Artist) -> Unit,
     listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val actions = remember(onArtistClick, onPlayArtist, onShuffleArtist) {
-        AggregateBrowseActions(
-            onClick = onArtistClick,
-            onPlay = onPlayArtist,
-            onShuffle = onShuffleArtist
-        )
-    }
+    val actions =
+        remember(onArtistClick, onPlayArtist, onShuffleArtist) {
+            AggregateBrowseActions(
+                onClick = onArtistClick,
+                onPlay = onPlayArtist,
+                onShuffle = onShuffleArtist,
+            )
+        }
     LibraryArtistList(
         artists = artists,
         actions = actions,
         sortOption = sortOption,
         fastScrollSettings = fastScrollSettings,
         listState = listState,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -88,22 +90,24 @@ fun ArtistListItem(
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
-    onSwipeAction: (() -> Unit)? = null
+    onSwipeAction: (() -> Unit)? = null,
 ) {
-    val sortInfo = remember(artist.genre, artist.dateAdded, sortOption) {
-        formatSortRelevantInfo(
-            sortOption = sortOption,
-            genre = artist.genre,
-            dateAdded = artist.dateAdded,
-            alreadyShowsArtist = true,
-            alreadyShowsAlbum = false,
-            alreadyShowsTitle = false
-        )
-    }
-    val subtitle = remember(artist.albumCount, artist.songCount, sortInfo) {
-        val base = "${artist.albumCount} álbumes • ${artist.songCount} canciones"
-        if (sortInfo.isNullOrBlank()) base else "$base • $sortInfo"
-    }
+    val sortInfo =
+        remember(artist.genre, artist.dateAdded, sortOption) {
+            formatSortRelevantInfo(
+                sortOption = sortOption,
+                genre = artist.genre,
+                dateAdded = artist.dateAdded,
+                alreadyShowsArtist = true,
+                alreadyShowsAlbum = false,
+                alreadyShowsTitle = false,
+            )
+        }
+    val subtitle =
+        remember(artist.albumCount, artist.songCount, sortInfo) {
+            val base = "${artist.albumCount} álbumes • ${artist.songCount} canciones"
+            if (sortInfo.isNullOrBlank()) base else "$base • $sortInfo"
+        }
 
     LibraryAggregateListItem(
         title = artist.name,
@@ -117,6 +121,6 @@ fun ArtistListItem(
         onPlay = onPlay,
         onShuffle = onShuffle,
         swipeAction = swipeAction,
-        onSwipeAction = onSwipeAction
+        onSwipeAction = onSwipeAction,
     )
 }

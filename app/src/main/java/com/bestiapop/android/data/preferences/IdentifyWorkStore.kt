@@ -14,7 +14,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private val Context.identifyWorkDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "identify_work"
+    name = "identify_work",
 )
 
 /** In-flight user-requested identify batch. Remaining IDs survive process death. */
@@ -35,7 +35,7 @@ data class IdentifyWorkSnapshot(
     val reviewCount: Int = 0,
     val interrupted: Boolean = false,
     /** Song ids whose HIGH apply must only fill missing/placeholder fields. */
-    val fillGapsOnlySongIds: Set<Long> = emptySet()
+    val fillGapsOnlySongIds: Set<Long> = emptySet(),
 ) {
     val hasRemaining: Boolean get() = remainingSongIds.isNotEmpty()
 }
@@ -44,36 +44,37 @@ object IdentifyWorkCodec {
     fun encode(snapshot: IdentifyWorkSnapshot): String {
         val ids = JSONArray()
         for (id in snapshot.remainingSongIds) ids.put(id)
-        return JSONObject().apply {
-            put("remainingSongIds", ids)
-            put("force", snapshot.force)
-            put("showReview", snapshot.showReview)
-            put("processedCount", snapshot.processedCount)
-            put("totalCount", snapshot.totalCount)
-            put("updated", snapshot.updated)
-            put("skipped", snapshot.skipped)
-            put("medium", snapshot.medium)
-            put("low", snapshot.low)
-            put("none", snapshot.none)
-            put("lbHits", snapshot.lbHits)
-            put("alreadyQueued", snapshot.alreadyQueued)
-            put("reviewCount", snapshot.reviewCount)
-            put("interrupted", snapshot.interrupted)
-            val gapIds = JSONArray()
-            for (id in snapshot.fillGapsOnlySongIds) gapIds.put(id)
-            put("fillGapsOnlySongIds", gapIds)
-            put(
-                "applyFields",
-                JSONObject().apply {
-                    put("artwork", snapshot.applyFields.artwork)
-                    put("title", snapshot.applyFields.title)
-                    put("artist", snapshot.applyFields.artist)
-                    put("album", snapshot.applyFields.album)
-                    put("year", snapshot.applyFields.year)
-                    put("trackNumber", snapshot.applyFields.trackNumber)
-                }
-            )
-        }.toString()
+        return JSONObject()
+            .apply {
+                put("remainingSongIds", ids)
+                put("force", snapshot.force)
+                put("showReview", snapshot.showReview)
+                put("processedCount", snapshot.processedCount)
+                put("totalCount", snapshot.totalCount)
+                put("updated", snapshot.updated)
+                put("skipped", snapshot.skipped)
+                put("medium", snapshot.medium)
+                put("low", snapshot.low)
+                put("none", snapshot.none)
+                put("lbHits", snapshot.lbHits)
+                put("alreadyQueued", snapshot.alreadyQueued)
+                put("reviewCount", snapshot.reviewCount)
+                put("interrupted", snapshot.interrupted)
+                val gapIds = JSONArray()
+                for (id in snapshot.fillGapsOnlySongIds) gapIds.put(id)
+                put("fillGapsOnlySongIds", gapIds)
+                put(
+                    "applyFields",
+                    JSONObject().apply {
+                        put("artwork", snapshot.applyFields.artwork)
+                        put("title", snapshot.applyFields.title)
+                        put("artist", snapshot.applyFields.artist)
+                        put("album", snapshot.applyFields.album)
+                        put("year", snapshot.applyFields.year)
+                        put("trackNumber", snapshot.applyFields.trackNumber)
+                    },
+                )
+            }.toString()
     }
 
     fun decode(json: String): IdentifyWorkSnapshot? {
@@ -81,32 +82,35 @@ object IdentifyWorkCodec {
         return try {
             val obj = JSONObject(json)
             val idsArr = obj.optJSONArray("remainingSongIds") ?: JSONArray()
-            val ids = buildList {
-                for (i in 0 until idsArr.length()) {
-                    val id = idsArr.optLong(i, Long.MIN_VALUE)
-                    if (id != Long.MIN_VALUE) add(id)
+            val ids =
+                buildList {
+                    for (i in 0 until idsArr.length()) {
+                        val id = idsArr.optLong(i, Long.MIN_VALUE)
+                        if (id != Long.MIN_VALUE) add(id)
+                    }
                 }
-            }
             val fieldsObj = obj.optJSONObject("applyFields")
-            val applyFields = if (fieldsObj != null) {
-                IdentifyApplyFields(
-                    artwork = fieldsObj.optBoolean("artwork", true),
-                    title = fieldsObj.optBoolean("title", true),
-                    artist = fieldsObj.optBoolean("artist", true),
-                    album = fieldsObj.optBoolean("album", true),
-                    year = fieldsObj.optBoolean("year", true),
-                    trackNumber = fieldsObj.optBoolean("trackNumber", true)
-                )
-            } else {
-                IdentifyApplyFields.ALL
-            }
-            val gapIdsArr = obj.optJSONArray("fillGapsOnlySongIds") ?: JSONArray()
-            val gapIds = buildSet {
-                for (i in 0 until gapIdsArr.length()) {
-                    val id = gapIdsArr.optLong(i, Long.MIN_VALUE)
-                    if (id != Long.MIN_VALUE) add(id)
+            val applyFields =
+                if (fieldsObj != null) {
+                    IdentifyApplyFields(
+                        artwork = fieldsObj.optBoolean("artwork", true),
+                        title = fieldsObj.optBoolean("title", true),
+                        artist = fieldsObj.optBoolean("artist", true),
+                        album = fieldsObj.optBoolean("album", true),
+                        year = fieldsObj.optBoolean("year", true),
+                        trackNumber = fieldsObj.optBoolean("trackNumber", true),
+                    )
+                } else {
+                    IdentifyApplyFields.ALL
                 }
-            }
+            val gapIdsArr = obj.optJSONArray("fillGapsOnlySongIds") ?: JSONArray()
+            val gapIds =
+                buildSet {
+                    for (i in 0 until gapIdsArr.length()) {
+                        val id = gapIdsArr.optLong(i, Long.MIN_VALUE)
+                        if (id != Long.MIN_VALUE) add(id)
+                    }
+                }
             IdentifyWorkSnapshot(
                 remainingSongIds = ids,
                 force = obj.optBoolean("force", false),
@@ -123,7 +127,7 @@ object IdentifyWorkCodec {
                 alreadyQueued = obj.optInt("alreadyQueued", 0),
                 reviewCount = obj.optInt("reviewCount", 0),
                 interrupted = obj.optBoolean("interrupted", false),
-                fillGapsOnlySongIds = gapIds
+                fillGapsOnlySongIds = gapIds,
             )
         } catch (_: Exception) {
             null
@@ -132,7 +136,7 @@ object IdentifyWorkCodec {
 }
 
 class IdentifyWorkStore internal constructor(
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
 ) {
     constructor(context: Context) : this(context.identifyWorkDataStore)
 

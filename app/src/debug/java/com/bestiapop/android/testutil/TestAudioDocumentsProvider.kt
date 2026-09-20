@@ -31,31 +31,36 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
 
     override fun queryRoots(projection: Array<out String>?): Cursor =
         MatrixCursor(projection ?: ROOT_COLUMNS).apply {
-            addRow(columnNames.map { column ->
-                when (column) {
-                    DocumentsContract.Root.COLUMN_ROOT_ID -> ROOT_ID
-                    DocumentsContract.Root.COLUMN_DOCUMENT_ID -> ROOT_ID
-                    DocumentsContract.Root.COLUMN_TITLE -> "BestiaPop test audio"
-                    DocumentsContract.Root.COLUMN_FLAGS -> 0
-                    DocumentsContract.Root.COLUMN_MIME_TYPES -> "$AUDIO_MIME\n$IMAGE_MIME"
-                    DocumentsContract.Root.COLUMN_AVAILABLE_BYTES -> AVAILABLE_BYTES
-                    else -> null
-                }
-            })
+            addRow(
+                columnNames.map { column ->
+                    when (column) {
+                        DocumentsContract.Root.COLUMN_ROOT_ID -> ROOT_ID
+                        DocumentsContract.Root.COLUMN_DOCUMENT_ID -> ROOT_ID
+                        DocumentsContract.Root.COLUMN_TITLE -> "BestiaPop test audio"
+                        DocumentsContract.Root.COLUMN_FLAGS -> 0
+                        DocumentsContract.Root.COLUMN_MIME_TYPES -> "$AUDIO_MIME\n$IMAGE_MIME"
+                        DocumentsContract.Root.COLUMN_AVAILABLE_BYTES -> AVAILABLE_BYTES
+                        else -> null
+                    }
+                },
+            )
         }
 
-    override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor =
-        MatrixCursor(projection ?: DOCUMENT_COLUMNS).apply { addDocumentRow(documentId) }
+    override fun queryDocument(
+        documentId: String,
+        projection: Array<out String>?,
+    ): Cursor = MatrixCursor(projection ?: DOCUMENT_COLUMNS).apply { addDocumentRow(documentId) }
 
     override fun queryChildDocuments(
         parentDocumentId: String,
         projection: Array<out String>?,
-        sortOrder: String?
+        sortOrder: String?,
     ): Cursor {
         if (parentDocumentId == ROOT_ID) return MatrixCursor(projection ?: DOCUMENT_COLUMNS)
-        val namespace = requireNotNull(rootNamespace(parentDocumentId)) {
-            "Unknown parent document: $parentDocumentId"
-        }
+        val namespace =
+            requireNotNull(rootNamespace(parentDocumentId)) {
+                "Unknown parent document: $parentDocumentId"
+            }
         childQueryCounts.getOrPut(namespace) { AtomicInteger() }.incrementAndGet()
         return MatrixCursor(projection ?: DOCUMENT_COLUMNS).apply {
             addDocumentRow(audioDocumentId(parentDocumentId))
@@ -66,11 +71,12 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
     override fun openDocument(
         documentId: String,
         mode: String,
-        signal: CancellationSignal?
+        signal: CancellationSignal?,
     ): ParcelFileDescriptor {
         if (mode != "r") throw FileNotFoundException("Read-only test provider")
-        val namespace = documentNamespace(documentId)
-            ?: throw FileNotFoundException("Unknown document: $documentId")
+        val namespace =
+            documentNamespace(documentId)
+                ?: throw FileNotFoundException("Unknown document: $documentId")
         synchronized(invalidNamespaces) {
             if (namespace in invalidNamespaces) {
                 throw FileNotFoundException("Provider namespace invalidated: $namespace")
@@ -81,15 +87,22 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
         }
         return ParcelFileDescriptor.open(
             fixtureFile(namespace, documentId),
-            ParcelFileDescriptor.MODE_READ_ONLY
+            ParcelFileDescriptor.MODE_READ_ONLY,
         )
     }
 
-    override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean =
+    override fun isChildDocument(
+        parentDocumentId: String,
+        documentId: String,
+    ): Boolean =
         documentId == audioDocumentId(parentDocumentId) ||
             documentId == imageDocumentId(parentDocumentId)
 
-    override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
+    override fun call(
+        method: String,
+        arg: String?,
+        extras: Bundle?,
+    ): Bundle {
         val namespace = requireNotNull(arg) { "Namespace is required for $method" }
         when (method) {
             METHOD_ACTIVATE -> {
@@ -97,7 +110,11 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
                 childQueryCounts[namespace] = AtomicInteger(0)
                 audioOpenCounts[namespace] = AtomicInteger(0)
             }
-            METHOD_INVALIDATE -> synchronized(invalidNamespaces) { invalidNamespaces.add(namespace) }
+
+            METHOD_INVALIDATE -> {
+                synchronized(invalidNamespaces) { invalidNamespaces.add(namespace) }
+            }
+
             METHOD_DELETE -> {
                 synchronized(invalidNamespaces) { invalidNamespaces.remove(namespace) }
                 childQueryCounts.remove(namespace)
@@ -107,7 +124,10 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
                     "Could not delete provider namespace ${dir.absolutePath}"
                 }
             }
-            else -> return super.call(method, arg, extras) ?: Bundle.EMPTY
+
+            else -> {
+                return super.call(method, arg, extras) ?: Bundle.EMPTY
+            }
         }
         return Bundle.EMPTY
     }
@@ -117,42 +137,75 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
         if (documentId != ROOT_ID && namespace == null) {
             throw FileNotFoundException("Unknown document: $documentId")
         }
-        addRow(columnNames.map { column ->
-            when (column) {
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID -> documentId
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME -> documentDisplayName(documentId)
-                DocumentsContract.Document.COLUMN_MIME_TYPE -> documentMime(documentId)
-                DocumentsContract.Document.COLUMN_FLAGS -> 0
-                DocumentsContract.Document.COLUMN_SIZE ->
-                    if (documentId.endsWith(AUDIO_SUFFIX)) AUDIO_SIZE_BYTES else null
-                DocumentsContract.Document.COLUMN_LAST_MODIFIED -> FIXTURE_TIMESTAMP_MS
-                else -> null
-            }
-        })
+        addRow(
+            columnNames.map { column ->
+                when (column) {
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID -> {
+                        documentId
+                    }
+
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME -> {
+                        documentDisplayName(documentId)
+                    }
+
+                    DocumentsContract.Document.COLUMN_MIME_TYPE -> {
+                        documentMime(documentId)
+                    }
+
+                    DocumentsContract.Document.COLUMN_FLAGS -> {
+                        0
+                    }
+
+                    DocumentsContract.Document.COLUMN_SIZE -> {
+                        if (documentId.endsWith(AUDIO_SUFFIX)) AUDIO_SIZE_BYTES else null
+                    }
+
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED -> {
+                        FIXTURE_TIMESTAMP_MS
+                    }
+
+                    else -> {
+                        null
+                    }
+                }
+            },
+        )
     }
 
-    private fun fixtureFile(namespace: String, documentId: String): File {
+    private fun fixtureFile(
+        namespace: String,
+        documentId: String,
+    ): File {
         val dir = namespaceDir(namespace)
         check(dir.exists() || dir.mkdirs()) { "Could not create ${dir.absolutePath}" }
         return when (documentId) {
-            audioDocumentId(rootDocumentId(namespace)) -> File(dir, AUDIO_NAME).apply {
-                if (!isFile) writeBytes(generateSilentWav())
+            audioDocumentId(rootDocumentId(namespace)) -> {
+                File(dir, AUDIO_NAME).apply {
+                    if (!isFile) writeBytes(generateSilentWav())
+                }
             }
-            imageDocumentId(rootDocumentId(namespace)) -> File(dir, IMAGE_NAME).apply {
-                if (!isFile) {
-                    outputStream().use { output ->
-                        val bitmap = Bitmap.createBitmap(
-                            intArrayOf(0xff1b4965.toInt(), 0xffcae9ff.toInt()),
-                            2,
-                            1,
-                            Bitmap.Config.ARGB_8888
-                        )
-                        check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
-                        bitmap.recycle()
+
+            imageDocumentId(rootDocumentId(namespace)) -> {
+                File(dir, IMAGE_NAME).apply {
+                    if (!isFile) {
+                        outputStream().use { output ->
+                            val bitmap =
+                                Bitmap.createBitmap(
+                                    intArrayOf(0xff1b4965.toInt(), 0xffcae9ff.toInt()),
+                                    2,
+                                    1,
+                                    Bitmap.Config.ARGB_8888,
+                                )
+                            check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                            bitmap.recycle()
+                        }
                     }
                 }
             }
-            else -> throw FileNotFoundException("Document has no bytes: $documentId")
+
+            else -> {
+                throw FileNotFoundException("Document has no bytes: $documentId")
+            }
         }
     }
 
@@ -184,38 +237,56 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
         repeat(Short.SIZE_BYTES) { write(value ushr (it * Byte.SIZE_BITS) and 0xff) }
     }
 
-    private fun namespaceDir(namespace: String): File =
-        File(requireNotNull(context).cacheDir, "$CACHE_PREFIX$namespace")
+    private fun namespaceDir(namespace: String): File = File(requireNotNull(context).cacheDir, "$CACHE_PREFIX$namespace")
 
-    private fun documentDisplayName(documentId: String): String = when {
-        documentId == ROOT_ID || rootNamespace(documentId) != null -> "Fixture tree"
-        documentId.endsWith(AUDIO_SUFFIX) -> AUDIO_NAME
-        documentId.endsWith(IMAGE_SUFFIX) -> IMAGE_NAME
-        else -> throw FileNotFoundException("Unknown document: $documentId")
-    }
+    private fun documentDisplayName(documentId: String): String =
+        when {
+            documentId == ROOT_ID || rootNamespace(documentId) != null -> "Fixture tree"
+            documentId.endsWith(AUDIO_SUFFIX) -> AUDIO_NAME
+            documentId.endsWith(IMAGE_SUFFIX) -> IMAGE_NAME
+            else -> throw FileNotFoundException("Unknown document: $documentId")
+        }
 
-    private fun documentMime(documentId: String): String = when {
-        documentId == ROOT_ID || rootNamespace(documentId) != null ->
-            DocumentsContract.Document.MIME_TYPE_DIR
-        documentId.endsWith(AUDIO_SUFFIX) -> AUDIO_MIME
-        documentId.endsWith(IMAGE_SUFFIX) -> IMAGE_MIME
-        else -> throw FileNotFoundException("Unknown document: $documentId")
-    }
+    private fun documentMime(documentId: String): String =
+        when {
+            documentId == ROOT_ID || rootNamespace(documentId) != null -> {
+                DocumentsContract.Document.MIME_TYPE_DIR
+            }
+
+            documentId.endsWith(AUDIO_SUFFIX) -> {
+                AUDIO_MIME
+            }
+
+            documentId.endsWith(IMAGE_SUFFIX) -> {
+                IMAGE_MIME
+            }
+
+            else -> {
+                throw FileNotFoundException("Unknown document: $documentId")
+            }
+        }
 
     private fun documentNamespace(documentId: String): String? {
         rootNamespace(documentId)?.let { return it }
         return when {
-            documentId.endsWith(AUDIO_SUFFIX) ->
+            documentId.endsWith(AUDIO_SUFFIX) -> {
                 rootNamespace(documentId.removeSuffix(AUDIO_SUFFIX))
-            documentId.endsWith(IMAGE_SUFFIX) ->
+            }
+
+            documentId.endsWith(IMAGE_SUFFIX) -> {
                 rootNamespace(documentId.removeSuffix(IMAGE_SUFFIX))
-            else -> null
+            }
+
+            else -> {
+                null
+            }
         }
     }
 
     private fun rootNamespace(documentId: String): String? {
         if (!documentId.startsWith(ROOT_PREFIX)) return null
-        return documentId.removePrefix(ROOT_PREFIX)
+        return documentId
+            .removePrefix(ROOT_PREFIX)
             .takeIf { runCatching { UUID.fromString(it) }.isSuccess }
     }
 
@@ -246,68 +317,85 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
         private val childQueryCounts = ConcurrentHashMap<String, AtomicInteger>()
         private val audioOpenCounts = ConcurrentHashMap<String, AtomicInteger>()
 
-        private val ROOT_COLUMNS = arrayOf(
-            DocumentsContract.Root.COLUMN_ROOT_ID,
-            DocumentsContract.Root.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Root.COLUMN_TITLE,
-            DocumentsContract.Root.COLUMN_FLAGS,
-            DocumentsContract.Root.COLUMN_MIME_TYPES,
-            DocumentsContract.Root.COLUMN_AVAILABLE_BYTES
-        )
-        private val DOCUMENT_COLUMNS = arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE,
-            DocumentsContract.Document.COLUMN_FLAGS,
-            DocumentsContract.Document.COLUMN_SIZE,
-            DocumentsContract.Document.COLUMN_LAST_MODIFIED
-        )
+        private val ROOT_COLUMNS =
+            arrayOf(
+                DocumentsContract.Root.COLUMN_ROOT_ID,
+                DocumentsContract.Root.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Root.COLUMN_TITLE,
+                DocumentsContract.Root.COLUMN_FLAGS,
+                DocumentsContract.Root.COLUMN_MIME_TYPES,
+                DocumentsContract.Root.COLUMN_AVAILABLE_BYTES,
+            )
+        private val DOCUMENT_COLUMNS =
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_FLAGS,
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            )
 
-        fun treeUri(namespace: UUID): Uri = DocumentsContract.buildTreeDocumentUri(
-            AUTHORITY,
-            rootDocumentId(namespace.toString())
-        )
+        fun treeUri(namespace: UUID): Uri =
+            DocumentsContract.buildTreeDocumentUri(
+                AUTHORITY,
+                rootDocumentId(namespace.toString()),
+            )
 
-        fun audioUri(namespace: UUID): Uri = DocumentsContract.buildDocumentUriUsingTree(
-            treeUri(namespace),
-            audioDocumentId(rootDocumentId(namespace.toString()))
-        )
+        fun audioUri(namespace: UUID): Uri =
+            DocumentsContract.buildDocumentUriUsingTree(
+                treeUri(namespace),
+                audioDocumentId(rootDocumentId(namespace.toString())),
+            )
 
-        fun imageUri(namespace: UUID): Uri = DocumentsContract.buildDocumentUriUsingTree(
-            treeUri(namespace),
-            imageDocumentId(rootDocumentId(namespace.toString()))
-        )
+        fun imageUri(namespace: UUID): Uri =
+            DocumentsContract.buildDocumentUriUsingTree(
+                treeUri(namespace),
+                imageDocumentId(rootDocumentId(namespace.toString())),
+            )
 
-        fun activate(context: Context, namespace: UUID) =
-            call(context.contentResolver, namespace, METHOD_ACTIVATE)
+        fun activate(
+            context: Context,
+            namespace: UUID,
+        ) = call(context.contentResolver, namespace, METHOD_ACTIVATE)
 
-        fun invalidate(context: Context, namespace: UUID) =
-            call(context.contentResolver, namespace, METHOD_INVALIDATE)
+        fun invalidate(
+            context: Context,
+            namespace: UUID,
+        ) = call(context.contentResolver, namespace, METHOD_INVALIDATE)
 
-        fun delete(context: Context, namespace: UUID) =
-            call(context.contentResolver, namespace, METHOD_DELETE)
+        fun delete(
+            context: Context,
+            namespace: UUID,
+        ) = call(context.contentResolver, namespace, METHOD_DELETE)
 
-        fun childQueryCount(namespace: UUID): Int =
-            childQueryCounts[namespace.toString()]?.get() ?: 0
+        fun childQueryCount(namespace: UUID): Int = childQueryCounts[namespace.toString()]?.get() ?: 0
 
-        fun audioOpenCount(namespace: UUID): Int =
-            audioOpenCounts[namespace.toString()]?.get() ?: 0
+        fun audioOpenCount(namespace: UUID): Int = audioOpenCounts[namespace.toString()]?.get() ?: 0
 
-        private fun call(resolver: ContentResolver, namespace: UUID, method: String) {
+        private fun call(
+            resolver: ContentResolver,
+            namespace: UUID,
+            method: String,
+        ) {
             requireNotNull(
                 resolver.call(
-                    Uri.Builder().scheme(ContentResolver.SCHEME_CONTENT)
+                    Uri
+                        .Builder()
+                        .scheme(ContentResolver.SCHEME_CONTENT)
                         .authority(AUTHORITY)
                         .build(),
                     method,
                     namespace.toString(),
-                    null
-                )
+                    null,
+                ),
             )
         }
 
         private fun rootDocumentId(namespace: String) = "$ROOT_PREFIX$namespace"
+
         private fun audioDocumentId(rootDocumentId: String) = "$rootDocumentId$AUDIO_SUFFIX"
+
         private fun imageDocumentId(rootDocumentId: String) = "$rootDocumentId$IMAGE_SUFFIX"
     }
 }

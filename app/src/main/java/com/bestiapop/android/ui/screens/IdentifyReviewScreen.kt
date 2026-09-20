@@ -32,9 +32,7 @@ import com.bestiapop.android.ui.screens.identify.IdentifyReviewOverview
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
 
 @Composable
-fun IdentifyReviewScreen(
-    viewModel: MusicPlayerViewModel
-) {
+fun IdentifyReviewScreen(viewModel: MusicPlayerViewModel) {
     val state by viewModel.identifyReview.collectAsStateWithLifecycle()
     if (!state.isOpen) return
 
@@ -47,16 +45,18 @@ fun IdentifyReviewScreen(
     }
 
     Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag("identify-review"),
-        color = MaterialTheme.colorScheme.background
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .testTag("identify-review"),
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding(),
         ) {
             IdentifyReviewHeader(
                 state = state,
@@ -70,21 +70,22 @@ fun IdentifyReviewScreen(
                 onClose = { viewModel.dismissIdentifyReview() },
                 onApplyRemaining = { viewModel.applyRemainingIdentifySuggestions() },
                 onSkipAll = { viewModel.skipAllIdentifyReview() },
-                onApplyFieldsChanged = viewModel::setIdentifyReviewApplyFields
+                onApplyFieldsChanged = viewModel::setIdentifyReviewApplyFields,
             )
             HorizontalDivider()
 
             if (state.phase == IdentifyReviewPhase.Overview) {
                 IdentifyReviewOverview(
                     state = state,
-                    actions = IdentifyOverviewActions(
-                        onApplyGroup = viewModel::applyIdentifyAlbumGroup,
-                        onReviewGroup = { viewModel.startIdentifyItemReview(it) },
-                        onReviewAll = { viewModel.startIdentifyItemReview(null) },
-                        onSearchGroupCandidates = viewModel::searchAlbumCandidates,
-                        onSelectGroupCandidate = viewModel::selectAlbumCandidate
-                    ),
-                    modifier = Modifier.weight(1f)
+                    actions =
+                        IdentifyOverviewActions(
+                            onApplyGroup = viewModel::applyIdentifyAlbumGroup,
+                            onReviewGroup = { viewModel.startIdentifyItemReview(it) },
+                            onReviewAll = { viewModel.startIdentifyItemReview(null) },
+                            onSearchGroupCandidates = viewModel::searchAlbumCandidates,
+                            onSelectGroupCandidate = viewModel::selectAlbumCandidate,
+                        ),
+                    modifier = Modifier.weight(1f),
                 )
                 return@Column
             }
@@ -96,19 +97,23 @@ fun IdentifyReviewScreen(
                 }
             } else {
                 val showSearch = state.showSearchField || item.proposal.candidates.isEmpty()
-                val searchPlaceholder = item.proposal.queryTitle.trim()
-                    .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
-                    ?: item.song.title.trim()
+                val searchPlaceholder =
+                    item.proposal.queryTitle
+                        .trim()
                         .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
-                    ?: item.proposal.queryArtist.trim().takeUnless {
-                        it.isBlank() || looksLikeStoragePath(it) ||
-                            IdentifyRanking.isPlaceholderArtist(it)
+                        ?: item.song.title
+                            .trim()
+                            .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
+                        ?: item.proposal.queryArtist.trim().takeUnless {
+                            it.isBlank() || looksLikeStoragePath(it) ||
+                                IdentifyRanking.isPlaceholderArtist(it)
+                        }
+                        ?: "Título o artista"
+                val candidates =
+                    remember(item.proposal.candidates, state.visibleCandidateCount) {
+                        val all = item.proposal.candidates
+                        all.take(state.visibleCandidateCount.coerceIn(0, all.size))
                     }
-                    ?: "Título o artista"
-                val candidates = remember(item.proposal.candidates, state.visibleCandidateCount) {
-                    val all = item.proposal.candidates
-                    all.take(state.visibleCandidateCount.coerceIn(0, all.size))
-                }
 
                 IdentifyCandidateList(
                     viewModel = viewModel,
@@ -117,9 +122,10 @@ fun IdentifyReviewScreen(
                     showSearch = showSearch,
                     searchPlaceholder = searchPlaceholder,
                     state = state,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
                 )
 
                 IdentifyReviewFooter(
@@ -131,7 +137,7 @@ fun IdentifyReviewScreen(
                     onUse = viewModel::applySelectedIdentifyCandidate,
                     onSkip = viewModel::skipIdentifyReviewItem,
                     onToggleSearch = { viewModel.toggleIdentifySearchField() },
-                    onToggleFilters = { viewModel.toggleIdentifySearchFilters() }
+                    onToggleFilters = { viewModel.toggleIdentifySearchFilters() },
                 )
             }
         }
@@ -152,7 +158,7 @@ fun IdentifyCandidateRow(
     isPlaying: Boolean,
     isResolving: Boolean,
     onClick: () -> Unit,
-    onPreview: () -> Unit
+    onPreview: () -> Unit,
 ) = com.bestiapop.android.ui.screens.identify.IdentifyCandidateRow(
     candidate = candidate,
     fileDurationMs = fileDurationMs,
@@ -162,5 +168,5 @@ fun IdentifyCandidateRow(
     isPlaying = isPlaying,
     isResolving = isResolving,
     onClick = onClick,
-    onPreview = onPreview
+    onPreview = onPreview,
 )

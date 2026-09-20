@@ -7,11 +7,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AlbumNamesTest {
-
     /** Exact strings observed on device for Sigur Rós "Takk" variants. */
     private val takkPeriod = "Takk."
     private val takkAsciiDots = "Takk..."
     private val takkUnicodeEllipsis = "Takk\u2026" // Takk…
+
     // hex 54616B6BC3A2C280C2A6 from device DB
     private val takkMojibake = "Takk\u00E2\u0080\u00A6"
 
@@ -84,8 +84,8 @@ class AlbumNamesTest {
         assertEquals(
             "This Town Needs Guns",
             preferredAlbumDisplayName(
-                listOf("This Town Needs Guns") + List(5) { "Audiotree Live" }
-            )
+                listOf("This Town Needs Guns") + List(5) { "Audiotree Live" },
+            ),
         )
     }
 
@@ -93,36 +93,38 @@ class AlbumNamesTest {
     fun preferredDisplay_prefersPlainOverDeluxeWhenTied() {
         assertEquals(
             "Absolution",
-            preferredAlbumDisplayName(listOf("Absolution (Deluxe)", "Absolution"))
+            preferredAlbumDisplayName(listOf("Absolution (Deluxe)", "Absolution")),
         )
         assertEquals(
             "Absolution",
-            preferredAlbumDisplayName(listOf("Absolution (Deluxe)"))
+            preferredAlbumDisplayName(listOf("Absolution (Deluxe)")),
         )
     }
 
     @Test
     fun pickPersistedAlbum_reusesExistingPlainName() {
-        val library = listOf(
-            song(1, album = "Absolution", artist = "Muse"),
-            song(2, album = "Absolution", artist = "Muse")
-        )
+        val library =
+            listOf(
+                song(1, album = "Absolution", artist = "Muse"),
+                song(2, album = "Absolution", artist = "Muse"),
+            )
         assertEquals(
             "Absolution",
             pickPersistedAlbumName(
                 library,
                 proposedAlbum = "Absolution (Deluxe)",
                 proposedArtist = "Muse",
-                isGeneric = IdentifyRanking::isGenericAlbum
-            )
+                isGeneric = IdentifyRanking::isGenericAlbum,
+            ),
         )
     }
 
     @Test
     fun pickPersistedAlbum_keepsStudioWhenCandidateIsSession() {
-        val library = listOf(
-            song(1, album = "This Town Needs Guns", artist = "TTNG")
-        )
+        val library =
+            listOf(
+                song(1, album = "This Town Needs Guns", artist = "TTNG"),
+            )
         assertEquals(
             "This Town Needs Guns",
             pickPersistedAlbumName(
@@ -130,31 +132,35 @@ class AlbumNamesTest {
                 proposedAlbum = "Audiotree Live",
                 proposedArtist = "TTNG",
                 sourceAlbum = "This Town Needs Guns",
-                isGeneric = IdentifyRanking::isGenericAlbum
-            )
+                isGeneric = IdentifyRanking::isGenericAlbum,
+            ),
         )
     }
 
     @Test
     fun pickPersistedAlbum_sessionFoldsIntoSoleStudioWhenSourceGeneric() {
-        val library = listOf(
-            song(1, album = "This Town Needs Guns", artist = "TTNG"),
-            song(2, album = "Unknown Album", artist = "TTNG")
+        val library =
+            listOf(
+                song(1, album = "This Town Needs Guns", artist = "TTNG"),
+                song(2, album = "Unknown Album", artist = "TTNG"),
+            )
+        assertEquals(
+            "This Town Needs Guns",
+            pickPersistedAlbumName(
+                library,
+                proposedAlbum = "Audiotree Live",
+                proposedArtist = "TTNG",
+                sourceAlbum = "Unknown Album",
+                isGeneric = IdentifyRanking::isGenericAlbum,
+            ),
         )
-        assertEquals("This Town Needs Guns", pickPersistedAlbumName(
-            library,
-            proposedAlbum = "Audiotree Live",
-            proposedArtist = "TTNG",
-            sourceAlbum = "Unknown Album",
-            isGeneric = IdentifyRanking::isGenericAlbum
-        ))
         assertEquals(
             pickPersistedAlbumName(
                 library,
                 proposedAlbum = "Audiotree Live",
                 proposedArtist = "TTNG",
                 sourceAlbum = "Unknown Album",
-                isGeneric = IdentifyRanking::isGenericAlbum
+                isGeneric = IdentifyRanking::isGenericAlbum,
             ),
             pickPersistedAlbumName(
                 library,
@@ -162,11 +168,12 @@ class AlbumNamesTest {
                 proposedArtist = "TTNG",
                 sourceAlbum = "Unknown Album",
                 isGeneric = IdentifyRanking::isGenericAlbum,
-                studioKeysByArtist = studioAlbumKeysByArtist(
-                    library,
-                    IdentifyRanking::isGenericAlbum
-                )
-            )
+                studioKeysByArtist =
+                    studioAlbumKeysByArtist(
+                        library,
+                        IdentifyRanking::isGenericAlbum,
+                    ),
+            ),
         )
     }
 
@@ -176,8 +183,8 @@ class AlbumNamesTest {
             "Björk",
             pickPersistedArtistName(
                 listOf("Björk", "Björk Trió"),
-                "Björk Guðmundsdóttir & tríó Guðmundar Ingólfssonar"
-            )
+                "Björk Guðmundsdóttir & tríó Guðmundar Ingólfssonar",
+            ),
         )
         assertFalse(artistsCompatible("Simon", "Garfunkel"))
         assertTrue(artistsCompatible("Björk", "Björk Trió"))
@@ -185,27 +192,32 @@ class AlbumNamesTest {
 
     @Test
     fun songsMatchingAlbumBucket_sessionTrackStaysInStudioNotDuplicateLiveHeader() {
-        val library = listOf(
-            song(1, album = "This Town Needs Guns", artist = "TTNG"),
-            song(2, album = "Audiotree Live", artist = "TTNG"),
-            song(3, album = "Audiotree Live", artist = "Other")
-        )
+        val library =
+            listOf(
+                song(1, album = "This Town Needs Guns", artist = "TTNG"),
+                song(2, album = "Audiotree Live", artist = "TTNG"),
+                song(3, album = "Audiotree Live", artist = "Other"),
+            )
         val isGeneric = IdentifyRanking::isGenericAlbum
         assertEquals(
             listOf(1L, 2L),
-            songsMatchingAlbumBucket(library, "This Town Needs Guns", isGeneric).map { it.id }
+            songsMatchingAlbumBucket(library, "This Town Needs Guns", isGeneric).map { it.id },
         )
         assertEquals(
             listOf(3L),
-            songsMatchingAlbumBucket(library, "Audiotree Live", isGeneric).map { it.id }
+            songsMatchingAlbumBucket(library, "Audiotree Live", isGeneric).map { it.id },
         )
     }
 
-    private fun song(id: Long, album: String, artist: String) = Song(
+    private fun song(
+        id: Long,
+        album: String,
+        artist: String,
+    ) = Song(
         id = id,
         uriString = "file://$id",
         title = "T$id",
         artist = artist,
-        album = album
+        album = album,
     )
 }

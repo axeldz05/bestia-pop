@@ -12,22 +12,23 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class DiscoverSwipeActionsTest {
-
     @Test
     fun discoverSwipeActions_andContext_supportSwipeTrackAlbumAndArtistCallbacks() {
         var swipedTrack: TrackMeta? = null
         var swipedAlbum: CatalogAlbum? = null
         var swipedArtist: String? = null
 
-        val swipeActions = DiscoverSwipeActions(
-            onSwipeTrack = { swipedTrack = it },
-            onSwipeAlbum = { swipedAlbum = it },
-            onSwipeArtist = { swipedArtist = it }
-        )
+        val swipeActions =
+            DiscoverSwipeActions(
+                onSwipeTrack = { swipedTrack = it },
+                onSwipeAlbum = { swipedAlbum = it },
+                onSwipeArtist = { swipedArtist = it },
+            )
 
-        val context = DiscoverContext(
-            swipeActions = swipeActions
-        )
+        val context =
+            DiscoverContext(
+                swipeActions = swipeActions,
+            )
 
         val track = TrackIdentity(title = "Test Song", artist = "Test Artist", album = "Test Album")
         val album = CatalogAlbum(id = "123", title = "Test Album", artist = "Test Artist", coverUrl = null)
@@ -45,11 +46,12 @@ class DiscoverSwipeActionsTest {
 
     @Test
     fun discoverContext_withoutSwipeActions_clearsAllSwipeActionsForCarousels() {
-        val swipeActions = DiscoverSwipeActions(
-            onSwipeTrack = {},
-            onSwipeAlbum = {},
-            onSwipeArtist = {}
-        )
+        val swipeActions =
+            DiscoverSwipeActions(
+                onSwipeTrack = {},
+                onSwipeAlbum = {},
+                onSwipeArtist = {},
+            )
         val context = DiscoverContext(swipeActions = swipeActions)
         val carouselContext = context.withoutSwipeActions()
 
@@ -61,16 +63,18 @@ class DiscoverSwipeActionsTest {
     @Test
     fun catalogActions_focusedOnCatalogInteractions() {
         var playedTrack = false
-        val actions = DiscoverCatalogActions(
-            onPlayTrack = { playedTrack = true },
-            onDownloadTrack = {},
-            onSelectAlbum = {},
-            onSaveAlbum = {}
-        )
-        val track = OnlineCatalogTrack(
-            identity = TrackIdentity(title = "Song", artist = "Artist", album = "Album"),
-            id = "track-1"
-        )
+        val actions =
+            DiscoverCatalogActions(
+                onPlayTrack = { playedTrack = true },
+                onDownloadTrack = {},
+                onSelectAlbum = {},
+                onSaveAlbum = {},
+            )
+        val track =
+            OnlineCatalogTrack(
+                identity = TrackIdentity(title = "Song", artist = "Artist", album = "Album"),
+                id = "track-1",
+            )
         actions.onPlayTrack(track)
         assertEquals(true, playedTrack)
     }
@@ -78,15 +82,16 @@ class DiscoverSwipeActionsTest {
     @Test
     fun collectionActions_focusedOnCollectionInteractions() {
         var backPressed = false
-        val actions = DiscoverCollectionActions(
-            onBack = { backPressed = true },
-            onPlayAll = {},
-            onShuffle = {},
-            onSaveAlbum = {},
-            onDownloadAll = {},
-            onPlayCandidate = {},
-            onDownloadCandidate = {}
-        )
+        val actions =
+            DiscoverCollectionActions(
+                onBack = { backPressed = true },
+                onPlayAll = {},
+                onShuffle = {},
+                onSaveAlbum = {},
+                onDownloadAll = {},
+                onPlayCandidate = {},
+                onDownloadCandidate = {},
+            )
         actions.onBack()
         assertEquals(true, backPressed)
     }
@@ -94,31 +99,33 @@ class DiscoverSwipeActionsTest {
     @Test
     fun artistActions_focusedOnArtistInteractions() {
         var backPressed = false
-        val actions = DiscoverArtistActions(
-            onBack = { backPressed = true },
-            onPlayAll = {},
-            onShuffle = {},
-            onStartRadio = {},
-            onSelectAlbum = {},
-            onSaveAlbum = {},
-            onPlayTrack = {},
-            onDownloadTrack = {},
-            onPlayLocalSong = {}
-        )
+        val actions =
+            DiscoverArtistActions(
+                onBack = { backPressed = true },
+                onPlayAll = {},
+                onShuffle = {},
+                onStartRadio = {},
+                onSelectAlbum = {},
+                onSaveAlbum = {},
+                onPlayTrack = {},
+                onDownloadTrack = {},
+                onPlayLocalSong = {},
+            )
         actions.onBack()
         assertEquals(true, backPressed)
     }
 
     @Test
     fun trackMeta_toIdentity_preservesAllFields() {
-        val meta: TrackMeta = object : TrackMeta {
-            override val title: String = "My Title"
-            override val artist: String = "My Artist"
-            override val album: String = "My Album"
-            override val artworkUri: String = "content://art/1"
-            override val durationMs: Long = 180000L
-            override val trackNumber: Int = 3
-        }
+        val meta: TrackMeta =
+            object : TrackMeta {
+                override val title: String = "My Title"
+                override val artist: String = "My Artist"
+                override val album: String = "My Album"
+                override val artworkUri: String = "content://art/1"
+                override val durationMs: Long = 180000L
+                override val trackNumber: Int = 3
+            }
 
         val identity = meta.toIdentity()
 

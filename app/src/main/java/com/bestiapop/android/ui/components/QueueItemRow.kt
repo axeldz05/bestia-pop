@@ -38,31 +38,34 @@ fun PlayableItemRowContent(
     artworkSize: Dp = ListDensity.artworkSong,
     appendRemoteSuffix: Boolean = true,
     boldWhenCurrent: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val titleColor = when {
-        boldWhenCurrent && isCurrentPlaying -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    val titleWeight = when {
-        boldWhenCurrent && isCurrentPlaying -> FontWeight.Bold
-        boldWhenCurrent -> FontWeight.Normal
-        else -> FontWeight.SemiBold
-    }
-    val subtitle = joinMeta(
-        item.artist,
-        if (appendRemoteSuffix && item is PlayableItem.Remote) "stream" else null,
-        sep = " · "
-    )
+    val titleColor =
+        when {
+            boldWhenCurrent && isCurrentPlaying -> MaterialTheme.colorScheme.primary
+            else -> MaterialTheme.colorScheme.onSurface
+        }
+    val titleWeight =
+        when {
+            boldWhenCurrent && isCurrentPlaying -> FontWeight.Bold
+            boldWhenCurrent -> FontWeight.Normal
+            else -> FontWeight.SemiBold
+        }
+    val subtitle =
+        joinMeta(
+            item.artist,
+            if (appendRemoteSuffix && item is PlayableItem.Remote) "stream" else null,
+            sep = " · ",
+        )
     Row(
         modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         ArtworkThumbnail(
             artworkUri = item.artworkUri,
             size = artworkSize,
             cornerRadius = ListDensity.corner,
-            contentDescription = item.title
+            contentDescription = item.title,
         )
         Spacer(modifier = Modifier.width(if (artworkSize <= ListDensity.artworkSong) 10.dp else 12.dp))
         TrackTextColumn(
@@ -71,14 +74,16 @@ fun PlayableItemRowContent(
             modifier = Modifier.weight(1f),
             titleColor = titleColor,
             titleWeight = titleWeight,
-            titleStyle = if (boldWhenCurrent) {
-                MaterialTheme.typography.bodyMedium
-            } else {
-                MaterialTheme.typography.titleMedium
-            },
-            subtitleColor = MaterialTheme.colorScheme.onSurface.copy(
-                alpha = if (boldWhenCurrent) 0.55f else 0.7f
-            )
+            titleStyle =
+                if (boldWhenCurrent) {
+                    MaterialTheme.typography.bodyMedium
+                } else {
+                    MaterialTheme.typography.titleMedium
+                },
+            subtitleColor =
+                MaterialTheme.colorScheme.onSurface.copy(
+                    alpha = if (boldWhenCurrent) 0.55f else 0.7f,
+                ),
         )
     }
 }
@@ -99,52 +104,55 @@ fun QueueItemRow(
     trailingDuration: String? = null,
     compact: Boolean = false,
     reorderCount: Int = 0,
-    onReorder: ((from: Int, to: Int) -> Unit)? = null
+    onReorder: ((from: Int, to: Int) -> Unit)? = null,
 ) {
-    val drag = rememberVerticalReorderDrag(
-        index = index,
-        reorderCount = reorderCount,
-        enabled = onReorder != null && reorderCount > 1,
-        onReorder = onReorder
-    )
+    val drag =
+        rememberVerticalReorderDrag(
+            index = index,
+            reorderCount = reorderCount,
+            enabled = onReorder != null && reorderCount > 1,
+            onReorder = onReorder,
+        )
     val rowModifier = drag.rowModifier
     val handleModifier = drag.handleModifier
 
     if (compact) {
-        val bgColor = if (isCurrentPlaying) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-        } else {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0f)
-        }
+        val bgColor =
+            if (isCurrentPlaying) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+            } else {
+                MaterialTheme.colorScheme.surface.copy(alpha = 0f)
+            }
         Row(
-            modifier = rowModifier
-                .fillMaxWidth()
-                .background(bgColor)
-                .clickable(onClick = onClick)
-                .padding(
-                    horizontal = ListDensity.rowHorizontalPadding,
-                    vertical = ListDensity.rowVerticalPadding
-                ),
-            verticalAlignment = Alignment.CenterVertically
+            modifier =
+                rowModifier
+                    .fillMaxWidth()
+                    .background(bgColor)
+                    .clickable(onClick = onClick)
+                    .padding(
+                        horizontal = ListDensity.rowHorizontalPadding,
+                        vertical = ListDensity.rowVerticalPadding,
+                    ),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             QueueDragHandle(handleModifier)
             if (showIndex) {
                 Box(
                     modifier = Modifier.width(28.dp),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.Center,
                 ) {
                     if (isCurrentPlaying) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = "Reproduciendo",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(18.dp),
                         )
                     } else {
                         Text(
                             text = "${index + 1}",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         )
                     }
                 }
@@ -155,11 +163,11 @@ fun QueueItemRow(
                 artworkSize = ListDensity.artworkSong,
                 appendRemoteSuffix = false,
                 boldWhenCurrent = true,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 4.dp)
+                modifier = Modifier.padding(horizontal = 4.dp),
             ) {
                 TrackStorageIcon(item = item)
                 if (trailingDuration != null) {
@@ -167,7 +175,7 @@ fun QueueItemRow(
                     Text(
                         text = trailingDuration,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     )
                 }
             }
@@ -177,7 +185,7 @@ fun QueueItemRow(
                         imageVector = removeIcon,
                         contentDescription = removeContentDescription,
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(16.dp),
                     )
                 }
             }
@@ -185,25 +193,27 @@ fun QueueItemRow(
     } else {
         Row(
             modifier = rowModifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             QueueDragHandle(handleModifier)
             Surface(
                 onClick = onClick,
-                color = if (isCurrentPlaying) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-                } else {
-                    MaterialTheme.colorScheme.surface
-                },
+                color =
+                    if (isCurrentPlaying) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
                 shape = RoundedCornerShape(ListDensity.corner),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(vertical = ListDensity.rowVerticalPadding)
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .padding(vertical = ListDensity.rowVerticalPadding),
             ) {
                 PlayableItemRowContent(
                     item = item,
                     isCurrentPlaying = isCurrentPlaying,
-                    modifier = Modifier.padding(ListDensity.rowInnerPadding)
+                    modifier = Modifier.padding(ListDensity.rowInnerPadding),
                 )
             }
             if (onRemove != null) {
@@ -211,7 +221,7 @@ fun QueueItemRow(
                     Icon(
                         imageVector = removeIcon,
                         contentDescription = removeContentDescription,
-                        tint = MaterialTheme.colorScheme.error
+                        tint = MaterialTheme.colorScheme.error,
                     )
                 }
             }
@@ -226,8 +236,9 @@ private fun QueueDragHandle(handleModifier: Modifier?) {
         imageVector = Icons.Default.DragHandle,
         contentDescription = "Reordenar",
         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-        modifier = handleModifier
-            .size(28.dp)
-            .padding(end = 2.dp)
+        modifier =
+            handleModifier
+                .size(28.dp)
+                .padding(end = 2.dp),
     )
 }

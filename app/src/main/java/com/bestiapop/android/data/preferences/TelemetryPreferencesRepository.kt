@@ -13,11 +13,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 private val Context.telemetryDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "telemetry_settings"
+    name = "telemetry_settings",
 )
 
-class TelemetryPreferencesRepository(private val context: Context) {
-
+class TelemetryPreferencesRepository(
+    private val context: Context,
+) {
     private val syncPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private object Keys {

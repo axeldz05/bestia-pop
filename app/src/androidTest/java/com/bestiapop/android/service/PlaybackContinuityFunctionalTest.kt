@@ -15,10 +15,6 @@ import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.QueueSnapshot
 import com.bestiapop.android.domain.radio.RadioSuggestResult
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -38,6 +34,10 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Instrumented continuity flows for process-owned playback (not pure policy unit tests).
@@ -45,223 +45,231 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class PlaybackContinuityFunctionalTest {
-
     private val context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
-    fun liveSessionReconnect_keepsShuffleFromPrefs_andPersistsPlayOrder() = runBlocking {
-        val settings = MutableStateFlow(PlaybackSettings(lastShuffleEnabled = false))
-        val persistence = RecordingPersistence()
-        val first = FakeController()
-        val second = FakeController()
-        val fixture = fixture(
-            attachController = false,
-            playbackSettings = settings,
-            persistence = persistence,
-            persistShuffle = { enabled ->
-                settings.value = settings.value.copy(lastShuffleEnabled = enabled)
-            }
-        )
-        val connector = SequencedConnector(
-            listOf(Result.success(first), Result.success(second))
-        )
-        try {
-            fixture.runtime.attachUi()
-            fixture.runtime.connectForTest(connector)
-            withTimeout(2_000L) {
-                while (!first.listenerAttached) delay(10L)
-            }
-
-            fixture.runtime.playPlayableCollection(
-                listOf(
-                    PlayableItem.Local(song(1, "One")),
-                    PlayableItem.Local(song(2, "Two")),
-                    PlayableItem.Local(song(3, "Three"))
-                ),
-                rotate = false,
-                startShuffled = true
-            )
-            assertTrue(fixture.runtime.isShuffle.value)
-            assertTrue(settings.value.lastShuffleEnabled)
-
-            val liveQueue = fixture.runtime.queue.value
-            val liveIndex = first.currentMediaItemIndex
-            val livePosition = first.currentPosition
-            second.seedTimeline(
-                items = liveQueue,
-                currentIndex = liveIndex,
-                positionMs = livePosition,
-                playWhenReady = true,
-                playbackState = Player.STATE_READY,
-                isPlaying = true
-            )
-            second.shuffleModeEnabled = false
-            assertFalse(second.shuffleModeEnabled)
-
-            persistence.savedQueues.clear()
-            first.disconnect()
-            withTimeout(2_000L) {
-                while (!second.listenerAttached || second.mediaItemCount == 0) delay(10L)
-            }
-
-            assertTrue(
-                "reconnect must restore shuffle from prefs, not Media3 flag",
-                fixture.runtime.isShuffle.value
-            )
-            assertTrue(second.shuffleModeEnabled)
-
-            fixture.runtime.togglePlayPause()
-            withTimeout(2_000L) {
-                while (persistence.savedQueues.isEmpty()) delay(10L)
-            }
-            val persisted = persistence.savedQueues.last()
-            assertNotNull(persisted.shufflePlayOrder)
-            assertEquals(liveQueue.size, persisted.shufflePlayOrder!!.size)
-        } finally {
-            fixture.close()
-        }
-    }
-
-    @Test
-    fun autosaveInFlight_allowsRetryWhenManualOwnerReleasesClaim() = runBlocking {
-        val results = AtomicReference(
-            ArrayDeque(
-                listOf(
-                    SaveWhileListeningDownloadResult.InFlight("manual-owner"),
-                    SaveWhileListeningDownloadResult.Saved(
-                        Song(
-                            id = 99L,
-                            uriString = "/saved/retry.m4a",
-                            title = "Retry me",
-                            artist = "Artist"
-                        )
-                    )
+    fun liveSessionReconnect_keepsShuffleFromPrefs_andPersistsPlayOrder() =
+        runBlocking {
+            val settings = MutableStateFlow(PlaybackSettings(lastShuffleEnabled = false))
+            val persistence = RecordingPersistence()
+            val first = FakeController()
+            val second = FakeController()
+            val fixture =
+                fixture(
+                    attachController = false,
+                    playbackSettings = settings,
+                    persistence = persistence,
+                    persistShuffle = { enabled ->
+                        settings.value = settings.value.copy(lastShuffleEnabled = enabled)
+                    },
                 )
-            )
-        )
-        val saver = FakeSaveDownloads { results.get().removeFirst() }
-        val listenSettings = MutableStateFlow(
-            ListenBrainzSettings(
-                saveWhileListening = true,
-                saveWhileListeningPercent = 25
-            )
-        )
-        val fixture = fixture(
-            listenSettings = listenSettings,
-            saveDownloads = saver
-        )
-        val events = CopyOnWriteArrayList<String>()
-        val eventsJob = launch(start = CoroutineStart.UNDISPATCHED) {
-            fixture.runtime.events.collect(events::add)
-        }
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(remote("retry-q", "Retry me", durationMs = 100_000L)),
-                rotate = false
-            )
-            fixture.controller.positionMs = 30_000L
-            fixture.controller.durationMs = 100_000L
-            fixture.controller.playing = true
-            fixture.controller.wantsPlay = true
-            fixture.clock.set(30_000L)
-
-            fixture.runtime.tickForTest()
-            yield()
-            assertEquals(1, saver.saveCount.get())
-            assertTrue(events.none { it.startsWith("No se pudo guardar") })
-
-            withTimeout(2_000L) {
-                while (
-                    saver.saveCount.get() < 2 ||
-                    events.none { it.contains("guardada en la biblioteca") }
-                ) {
-                    delay(10L)
-                    fixture.runtime.tickForTest()
-                    yield()
+            val connector =
+                SequencedConnector(
+                    listOf(Result.success(first), Result.success(second)),
+                )
+            try {
+                fixture.runtime.attachUi()
+                fixture.runtime.connectForTest(connector)
+                withTimeout(2_000L) {
+                    while (!first.listenerAttached) delay(10L)
                 }
+
+                fixture.runtime.playPlayableCollection(
+                    listOf(
+                        PlayableItem.Local(song(1, "One")),
+                        PlayableItem.Local(song(2, "Two")),
+                        PlayableItem.Local(song(3, "Three")),
+                    ),
+                    rotate = false,
+                    startShuffled = true,
+                )
+                assertTrue(fixture.runtime.isShuffle.value)
+                assertTrue(settings.value.lastShuffleEnabled)
+
+                val liveQueue = fixture.runtime.queue.value
+                val liveIndex = first.currentMediaItemIndex
+                val livePosition = first.currentPosition
+                second.seedTimeline(
+                    items = liveQueue,
+                    currentIndex = liveIndex,
+                    positionMs = livePosition,
+                    playWhenReady = true,
+                    playbackState = Player.STATE_READY,
+                    isPlaying = true,
+                )
+                second.shuffleModeEnabled = false
+                assertFalse(second.shuffleModeEnabled)
+
+                persistence.savedQueues.clear()
+                first.disconnect()
+                withTimeout(2_000L) {
+                    while (!second.listenerAttached || second.mediaItemCount == 0) delay(10L)
+                }
+
+                assertTrue(
+                    "reconnect must restore shuffle from prefs, not Media3 flag",
+                    fixture.runtime.isShuffle.value,
+                )
+                assertTrue(second.shuffleModeEnabled)
+
+                fixture.runtime.togglePlayPause()
+                withTimeout(2_000L) {
+                    while (persistence.savedQueues.isEmpty()) delay(10L)
+                }
+                val persisted = persistence.savedQueues.last()
+                assertNotNull(persisted.shufflePlayOrder)
+                assertEquals(liveQueue.size, persisted.shufflePlayOrder!!.size)
+            } finally {
+                fixture.close()
             }
-            assertEquals(2, saver.saveCount.get())
-            assertTrue(events.none { it.startsWith("No se pudo guardar") })
-        } finally {
-            eventsJob.cancel()
-            fixture.close()
         }
-    }
 
     @Test
-    fun pauseDuringRemoteResolve_cancelsReplaceAndPrepare() = runBlocking {
-        val delayed = DelayedStreamAccess("slow")
-        val fixture = fixture(streamAccess = delayed)
-        try {
-            fixture.runtime.playPlayableCollection(
-                listOf(remote("slow", "Slow remote")),
-                rotate = false
-            )
-            delayed.started.await()
+    fun autosaveInFlight_allowsRetryWhenManualOwnerReleasesClaim() =
+        runBlocking {
+            val results =
+                AtomicReference(
+                    ArrayDeque(
+                        listOf(
+                            SaveWhileListeningDownloadResult.InFlight("manual-owner"),
+                            SaveWhileListeningDownloadResult.Saved(
+                                Song(
+                                    id = 99L,
+                                    uriString = "/saved/retry.m4a",
+                                    title = "Retry me",
+                                    artist = "Artist",
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+            val saver = FakeSaveDownloads { results.get().removeFirst() }
+            val listenSettings =
+                MutableStateFlow(
+                    ListenBrainzSettings(
+                        saveWhileListening = true,
+                        saveWhileListeningPercent = 25,
+                    ),
+                )
+            val fixture =
+                fixture(
+                    listenSettings = listenSettings,
+                    saveDownloads = saver,
+                )
+            val events = CopyOnWriteArrayList<String>()
+            val eventsJob =
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    fixture.runtime.events.collect(events::add)
+                }
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(remote("retry-q", "Retry me", durationMs = 100_000L)),
+                    rotate = false,
+                )
+                fixture.controller.positionMs = 30_000L
+                fixture.controller.durationMs = 100_000L
+                fixture.controller.playing = true
+                fixture.controller.wantsPlay = true
+                fixture.clock.set(30_000L)
 
-            fixture.runtime.togglePlayPause()
-            assertFalse(fixture.controller.wantsPlay)
+                fixture.runtime.tickForTest()
+                yield()
+                assertEquals(1, saver.saveCount.get())
+                assertTrue(events.none { it.startsWith("No se pudo guardar") })
 
-            val replaceAfterPause = fixture.controller.replaceCount
-            val prepareAfterPause = fixture.controller.prepareCount
-            delayed.allowResolution.complete(Unit)
-
-            withTimeout(2_000L) {
-                while (fixture.runtime.resolvingRemote.value) delay(10L)
+                withTimeout(2_000L) {
+                    while (
+                        saver.saveCount.get() < 2 ||
+                        events.none { it.contains("guardada en la biblioteca") }
+                    ) {
+                        delay(10L)
+                        fixture.runtime.tickForTest()
+                        yield()
+                    }
+                }
+                assertEquals(2, saver.saveCount.get())
+                assertTrue(events.none { it.startsWith("No se pudo guardar") })
+            } finally {
+                eventsJob.cancel()
+                fixture.close()
             }
-            assertEquals(replaceAfterPause, fixture.controller.replaceCount)
-            assertEquals(prepareAfterPause, fixture.controller.prepareCount)
-            assertFalse(fixture.controller.wantsPlay)
-            assertFalse(fixture.controller.playing)
-        } finally {
-            fixture.close()
         }
-    }
+
+    @Test
+    fun pauseDuringRemoteResolve_cancelsReplaceAndPrepare() =
+        runBlocking {
+            val delayed = DelayedStreamAccess("slow")
+            val fixture = fixture(streamAccess = delayed)
+            try {
+                fixture.runtime.playPlayableCollection(
+                    listOf(remote("slow", "Slow remote")),
+                    rotate = false,
+                )
+                delayed.started.await()
+
+                fixture.runtime.togglePlayPause()
+                assertFalse(fixture.controller.wantsPlay)
+
+                val replaceAfterPause = fixture.controller.replaceCount
+                val prepareAfterPause = fixture.controller.prepareCount
+                delayed.allowResolution.complete(Unit)
+
+                withTimeout(2_000L) {
+                    while (fixture.runtime.resolvingRemote.value) delay(10L)
+                }
+                assertEquals(replaceAfterPause, fixture.controller.replaceCount)
+                assertEquals(prepareAfterPause, fixture.controller.prepareCount)
+                assertFalse(fixture.controller.wantsPlay)
+                assertFalse(fixture.controller.playing)
+            } finally {
+                fixture.close()
+            }
+        }
 
     @Test
     fun remoteIdle_keepsNotificationAndForegroundPolicy() {
         assertTrue(
             PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
                 mediaItemCount = 1,
-                playbackState = Player.STATE_IDLE
-            )
+                playbackState = Player.STATE_IDLE,
+            ),
         )
         assertFalse(
             PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
                 mediaItemCount = 1,
-                playbackState = Player.STATE_ENDED
-            )
+                playbackState = Player.STATE_ENDED,
+            ),
         )
         assertFalse(
             PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
                 mediaItemCount = 0,
-                playbackState = Player.STATE_IDLE
-            )
+                playbackState = Player.STATE_IDLE,
+            ),
         )
         assertTrue(
             playbackForegroundRequired(
                 startInForegroundRequired = false,
                 playWhenReady = true,
                 mediaItemCount = 1,
-                playbackState = Player.STATE_IDLE
-            )
+                playbackState = Player.STATE_IDLE,
+            ),
         )
         assertTrue(
             playbackForegroundRequired(
                 startInForegroundRequired = false,
                 playWhenReady = false,
                 mediaItemCount = 1,
-                playbackState = Player.STATE_IDLE
-            )
+                playbackState = Player.STATE_IDLE,
+            ),
         )
         assertFalse(
             playbackForegroundRequired(
                 startInForegroundRequired = false,
                 playWhenReady = false,
                 mediaItemCount = 0,
-                playbackState = Player.STATE_IDLE
-            )
+                playbackState = Player.STATE_IDLE,
+            ),
         )
     }
 
@@ -277,33 +285,35 @@ class PlaybackContinuityFunctionalTest {
         saveDownloads: PlaybackRuntimeSaveDownloads = FakeSaveDownloads(),
         persistShuffle: suspend (Boolean) -> Unit = {},
         controller: FakeController = FakeController(),
-        attachController: Boolean = true
+        attachController: Boolean = true,
     ): Fixture {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val clock = AtomicLong(10_000L)
-        val runtime = PlaybackRuntime(
-            PlaybackRuntimeDependencies(
-                scope = scope,
-                libraryUpdates = libraryUpdates,
-                playbackSettings = playbackSettings,
-                playbackSettingsReady = playbackSettingsReady,
-                listenSettings = listenSettings,
-                listenSettingsReady = listenSettingsReady,
-                persistence = persistence,
-                listenTracker = NoopListenTracker,
-                streamAccess = streamAccess,
-                saveDownloads = saveDownloads,
-                radioSuggester = PlaybackRuntimeRadioSuggester {
-                    RadioSuggestResult(emptyList(), false, false)
-                },
-                isOnline = { true },
-                persistShuffle = persistShuffle,
-                clockMs = clock::get,
-                elapsedRealtimeMs = clock::get,
-                controllerReconnectBackoffMs = { 0L },
-                startTicker = false
+        val runtime =
+            PlaybackRuntime(
+                PlaybackRuntimeDependencies(
+                    scope = scope,
+                    libraryUpdates = libraryUpdates,
+                    playbackSettings = playbackSettings,
+                    playbackSettingsReady = playbackSettingsReady,
+                    listenSettings = listenSettings,
+                    listenSettingsReady = listenSettingsReady,
+                    persistence = persistence,
+                    listenTracker = NoopListenTracker,
+                    streamAccess = streamAccess,
+                    saveDownloads = saveDownloads,
+                    radioSuggester =
+                        PlaybackRuntimeRadioSuggester {
+                            RadioSuggestResult(emptyList(), false, false)
+                        },
+                    isOnline = { true },
+                    persistShuffle = persistShuffle,
+                    clockMs = clock::get,
+                    elapsedRealtimeMs = clock::get,
+                    controllerReconnectBackoffMs = { 0L },
+                    startTicker = false,
+                ),
             )
-        )
         if (attachController) runtime.attachControllerForTest(controller)
         return Fixture(runtime, controller, scope, clock)
     }
@@ -312,7 +322,7 @@ class PlaybackContinuityFunctionalTest {
         val runtime: PlaybackRuntime,
         val controller: FakeController,
         val scope: CoroutineScope,
-        val clock: AtomicLong
+        val clock: AtomicLong,
     ) {
         fun close() = scope.cancel()
     }
@@ -326,14 +336,23 @@ class PlaybackContinuityFunctionalTest {
         var replaceCount = 0
             private set
         val listenerAttached: Boolean get() = listener != null
+
         @Volatile var positionMs = 0L
+
         @Volatile var durationMs = 180_000L
+
         @Volatile var playing = false
+
         @Volatile var wantsPlay = false
+
         @Volatile var state = Player.STATE_IDLE
+
         @Volatile private var index = 0
+
         @Volatile private var valid = true
+
         @Volatile private var repeatModeValue = Player.REPEAT_MODE_OFF
+
         @Volatile private var shuffle = false
 
         override val mediaItemCount: Int get() = checked { timeline.size }
@@ -368,7 +387,7 @@ class PlaybackContinuityFunctionalTest {
         override fun setMediaItems(
             items: List<PlayableItem>,
             startIndex: Int,
-            startPositionMs: Long
+            startPositionMs: Long,
         ) {
             checkValid()
             timeline.clear()
@@ -381,7 +400,10 @@ class PlaybackContinuityFunctionalTest {
         }
 
         @Synchronized
-        override fun replaceMediaItem(index: Int, item: PlayableItem) {
+        override fun replaceMediaItem(
+            index: Int,
+            item: PlayableItem,
+        ) {
             checkValid()
             if (index !in timeline.indices) return
             replaceCount++
@@ -397,7 +419,10 @@ class PlaybackContinuityFunctionalTest {
         }
 
         @Synchronized
-        override fun addMediaItems(index: Int, items: List<PlayableItem>) {
+        override fun addMediaItems(
+            index: Int,
+            items: List<PlayableItem>,
+        ) {
             checkValid()
             val safeIndex = index.coerceIn(0, timeline.size)
             timeline.addAll(safeIndex, items)
@@ -414,7 +439,10 @@ class PlaybackContinuityFunctionalTest {
         }
 
         @Synchronized
-        override fun removeMediaItems(fromIndex: Int, toIndex: Int) {
+        override fun removeMediaItems(
+            fromIndex: Int,
+            toIndex: Int,
+        ) {
             checkValid()
             val safeFrom = fromIndex.coerceIn(0, timeline.size)
             val safeTo = toIndex.coerceIn(safeFrom, timeline.size)
@@ -426,7 +454,10 @@ class PlaybackContinuityFunctionalTest {
         }
 
         @Synchronized
-        override fun moveMediaItem(fromIndex: Int, toIndex: Int) {
+        override fun moveMediaItem(
+            fromIndex: Int,
+            toIndex: Int,
+        ) {
             checkValid()
             if (fromIndex !in timeline.indices) return
             val item = timeline.removeAt(fromIndex)
@@ -460,21 +491,28 @@ class PlaybackContinuityFunctionalTest {
             listener?.onPositionDiscontinuity(positionMs)
         }
 
-        override fun seekTo(index: Int, positionMs: Long) {
+        override fun seekTo(
+            index: Int,
+            positionMs: Long,
+        ) {
             checkValid()
             this.index = index
             this.positionMs = positionMs
             listener?.onPositionDiscontinuity(positionMs)
             listener?.onMediaItemTransition(
                 timeline.getOrNull(index),
-                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK
+                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK,
             )
         }
 
         override fun seekToNextMediaItem() = Unit
+
         override fun seekToPreviousMediaItem() = Unit
+
         override fun hasNextMediaItem(): Boolean = checked { index < timeline.lastIndex }
+
         override fun hasPreviousMediaItem(): Boolean = checked { index > 0 }
+
         override fun release() {
             releaseCount.incrementAndGet()
             listener = null
@@ -493,7 +531,7 @@ class PlaybackContinuityFunctionalTest {
             positionMs: Long,
             playWhenReady: Boolean,
             playbackState: Int,
-            isPlaying: Boolean = false
+            isPlaying: Boolean = false,
         ) {
             checkValid()
             timeline.clear()
@@ -537,7 +575,7 @@ class PlaybackContinuityFunctionalTest {
                 listener?.onIsPlayingChanged(true)
             }
         }
-		
+
         private fun updatePlaying(next: Boolean) {
             if (playing == next) return
             playing = next
@@ -561,23 +599,20 @@ class PlaybackContinuityFunctionalTest {
     }
 
     internal class InstantStreamAccess : PlaybackRuntimeStreamAccess {
-        override fun needsResolve(item: PlayableItem.Remote): Boolean =
-            item.resolved?.audioUrl.isNullOrBlank()
+        override fun needsResolve(item: PlayableItem.Remote): Boolean = item.resolved?.audioUrl.isNullOrBlank()
 
-        override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote =
-            resolvedRemote(item, item.youtubeQueryOrId.orEmpty())
+        override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote = resolvedRemote(item, item.youtubeQueryOrId.orEmpty())
 
         override suspend fun invalidate(item: PlayableItem.Remote) = Unit
     }
 
     internal class DelayedStreamAccess(
-        private val delayedQuery: String
+        private val delayedQuery: String,
     ) : PlaybackRuntimeStreamAccess {
         val started = CompletableDeferred<Unit>()
         val allowResolution = CompletableDeferred<Unit>()
 
-        override fun needsResolve(item: PlayableItem.Remote): Boolean =
-            item.resolved?.audioUrl.isNullOrBlank()
+        override fun needsResolve(item: PlayableItem.Remote): Boolean = item.resolved?.audioUrl.isNullOrBlank()
 
         override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote {
             val query = item.youtubeQueryOrId.orEmpty()
@@ -595,19 +630,20 @@ class PlaybackContinuityFunctionalTest {
         val savedQueues = CopyOnWriteArrayList<QueueSnapshot>()
 
         override suspend fun loadLastPlayed(): LastPlayedSnapshot? = null
+
         override suspend fun loadQueue(): QueueSnapshot? = null
 
         override suspend fun saveSession(
             lastPlayed: LastPlayedSnapshot?,
             queue: QueueSnapshot?,
-            clearQueue: Boolean
+            clearQueue: Boolean,
         ) {
             if (queue != null) savedQueues += queue
         }
     }
 
     private class SequencedConnector(
-        results: List<Result<PlaybackControllerFacade>>
+        results: List<Result<PlaybackControllerFacade>>,
     ) : PlaybackControllerConnector {
         private val remaining = ArrayDeque(results)
         val attemptCount = AtomicInteger(0)
@@ -617,23 +653,37 @@ class PlaybackContinuityFunctionalTest {
             return ImmediateConnection(
                 checkNotNull(remaining.removeFirstOrNull()) {
                     "No fake controller result left"
-                }
+                },
             )
         }
     }
 
     private class ImmediateConnection(
-        private val result: Result<PlaybackControllerFacade>
+        private val result: Result<PlaybackControllerFacade>,
     ) : PlaybackControllerConnection {
         override fun addListener(listener: () -> Unit) = listener()
+
         override fun get(): PlaybackControllerFacade = result.getOrThrow()
+
         override fun cancel() = Unit
     }
 
     internal object NoopListenTracker : PlaybackRuntimeListenTracker {
-        override fun onTrackChanged(song: Song?, hint: PlaybackChangeHint) = Unit
-        override fun onDurationKnown(songId: Long, durationMs: Long) = Unit
-        override fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long) = Unit
+        override fun onTrackChanged(
+            song: Song?,
+            hint: PlaybackChangeHint,
+        ) = Unit
+
+        override fun onDurationKnown(
+            songId: Long,
+            durationMs: Long,
+        ) = Unit
+
+        override fun onPlaybackTick(
+            isPlaying: Boolean,
+            elapsedRealtimeMs: Long,
+        ) = Unit
+
         override fun onStopped() = Unit
     }
 
@@ -644,17 +694,15 @@ class PlaybackContinuityFunctionalTest {
                     id = 99L,
                     uriString = "/saved/${remote.title}.m4a",
                     title = remote.title,
-                    artist = remote.artist
-                )
+                    artist = remote.artist,
+                ),
             )
-        }
+        },
     ) : PlaybackRuntimeSaveDownloads {
         override val downloads = MutableStateFlow<List<ActiveDownload>>(emptyList())
         val saveCount = AtomicInteger(0)
 
-        override suspend fun save(
-            remote: PlayableItem.Remote
-        ): SaveWhileListeningDownloadResult {
+        override suspend fun save(remote: PlayableItem.Remote): SaveWhileListeningDownloadResult {
             saveCount.incrementAndGet()
             return resultFor(remote)
         }
@@ -665,35 +713,43 @@ class PlaybackContinuityFunctionalTest {
     companion object {
         private fun resolvedRemote(
             item: PlayableItem.Remote,
-            query: String
-        ): PlayableItem.Remote = item.copy(
-            resolved = ResolvedStream(
-                audioUrl = "https://cdn.example/$query",
-                userAgent = "fake-UA",
-                videoId = "video-$query",
-                resolvedAtEpochMs = 10_000L
+            query: String,
+        ): PlayableItem.Remote =
+            item.copy(
+                resolved =
+                    ResolvedStream(
+                        audioUrl = "https://cdn.example/$query",
+                        userAgent = "fake-UA",
+                        videoId = "video-$query",
+                        resolvedAtEpochMs = 10_000L,
+                    ),
             )
-        )
 
         private fun remote(
             query: String,
             title: String,
-            durationMs: Long = 180_000L
-        ): PlayableItem.Remote = PlayableItem.remoteFrom(
-            identity = TrackIdentity(
+            durationMs: Long = 180_000L,
+        ): PlayableItem.Remote =
+            PlayableItem.remoteFrom(
+                identity =
+                    TrackIdentity(
+                        title = title,
+                        artist = "Artist",
+                        durationMs = durationMs,
+                    ),
+                youtubeQueryOrId = query,
+            )
+
+        private fun song(
+            id: Long,
+            title: String,
+        ): Song =
+            Song(
+                id = id,
+                uriString = "/music/$id.mp3",
                 title = title,
                 artist = "Artist",
-                durationMs = durationMs
-            ),
-            youtubeQueryOrId = query
-        )
-
-        private fun song(id: Long, title: String): Song = Song(
-            id = id,
-            uriString = "/music/$id.mp3",
-            title = title,
-            artist = "Artist",
-            durationMs = 180_000L
-        )
+                durationMs = 180_000L,
+            )
     }
 }

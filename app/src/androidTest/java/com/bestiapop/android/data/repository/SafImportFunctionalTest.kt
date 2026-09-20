@@ -10,9 +10,6 @@ import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.RoomTestDatabaseRule
 import com.bestiapop.android.testutil.TestAudioDocumentsProvider
-import java.io.File
-import java.io.FileNotFoundException
-import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -23,6 +20,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
+import java.io.File
+import java.io.FileNotFoundException
+import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 @LargeTest
@@ -30,9 +30,10 @@ class SafImportFunctionalTest {
     private val database = RoomTestDatabaseRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(database)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(database)
 
     private val instrumentation
         get() = InstrumentationRegistry.getInstrumentation()
@@ -50,7 +51,7 @@ class SafImportFunctionalTest {
         providerContext.grantUriPermission(
             targetContext.packageName,
             TestAudioDocumentsProvider.treeUri(namespace),
-            TREE_GRANT_FLAGS
+            TREE_GRANT_FLAGS,
         )
     }
 
@@ -62,7 +63,7 @@ class SafImportFunctionalTest {
                 runCatching {
                     targetContext.contentResolver.releasePersistableUriPermission(
                         permission.uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
                     )
                 }
             }
@@ -70,60 +71,63 @@ class SafImportFunctionalTest {
             providerContext.revokeUriPermission(
                 targetContext.packageName,
                 TestAudioDocumentsProvider.treeUri(namespace),
-                TREE_GRANT_FLAGS
+                TREE_GRANT_FLAGS,
             )
         }
         TestAudioDocumentsProvider.delete(providerContext, namespace)
     }
 
     @Test
-    fun scanFolderUri_importsOnce_andStoredContentUriReallyPlays() = runBlocking {
-        val progress = mutableListOf<Triple<Int, Int, String>>()
-        val repository = MusicRepository(targetContext, database.database)
+    fun scanFolderUri_importsOnce_andStoredContentUriReallyPlays() =
+        runBlocking {
+            val progress = mutableListOf<Triple<Int, Int, String>>()
+            val repository = MusicRepository(targetContext, database.database)
 
-        val firstCount = repository.scanFolderUri(TestAudioDocumentsProvider.treeUri(namespace)) {
-                done,
-                total,
-                label ->
-            progress += Triple(done, total, label)
+            val firstCount =
+                repository.scanFolderUri(TestAudioDocumentsProvider.treeUri(namespace)) {
+                    done,
+                    total,
+                    label,
+                    ->
+                    progress += Triple(done, total, label)
+                }
+            val secondCount = repository.scanFolderUri(TestAudioDocumentsProvider.treeUri(namespace))
+
+            val song = database.musicDao.getAllSongs().single()
+            assertEquals(1, firstCount.size)
+            assertEquals(0, secondCount.size)
+            assertEquals(TestAudioDocumentsProvider.audioUri(namespace).toString(), song.uriString)
+            assertTrue(song.durationMs >= 31_000L)
+            assertTrue(progress.any { it.second == 0 })
+            assertEquals(
+                listOf(Triple(1, 1, "BestiaPop SAF fixture.wav")),
+                progress.filter { it.second > 0 },
+            )
+            assertEquals(
+                "Each import must enumerate the SAF tree once",
+                2,
+                TestAudioDocumentsProvider.childQueryCount(namespace),
+            )
+            assertEquals(
+                "Tag and artwork extraction must share one audio descriptor",
+                1,
+                TestAudioDocumentsProvider.audioOpenCount(namespace),
+            )
+
+            val player = MediaPlayer()
+            try {
+                player.setVolume(0f, 0f)
+                val store = MusicFileStore(targetContext)
+                store.applyDataSource(player, store.canonicalize(song.uriString, song.folderPath))
+                player.prepare()
+                assertTrue(player.duration >= 31_000)
+                player.start()
+                assertTrue(player.isPlaying)
+            } finally {
+                runCatching { player.stop() }
+                player.release()
+            }
         }
-        val secondCount = repository.scanFolderUri(TestAudioDocumentsProvider.treeUri(namespace))
-
-        val song = database.musicDao.getAllSongs().single()
-        assertEquals(1, firstCount.size)
-        assertEquals(0, secondCount.size)
-        assertEquals(TestAudioDocumentsProvider.audioUri(namespace).toString(), song.uriString)
-        assertTrue(song.durationMs >= 31_000L)
-        assertTrue(progress.any { it.second == 0 })
-        assertEquals(
-            listOf(Triple(1, 1, "BestiaPop SAF fixture.wav")),
-            progress.filter { it.second > 0 }
-        )
-        assertEquals(
-            "Each import must enumerate the SAF tree once",
-            2,
-            TestAudioDocumentsProvider.childQueryCount(namespace)
-        )
-        assertEquals(
-            "Tag and artwork extraction must share one audio descriptor",
-            1,
-            TestAudioDocumentsProvider.audioOpenCount(namespace)
-        )
-
-        val player = MediaPlayer()
-        try {
-            player.setVolume(0f, 0f)
-            val store = MusicFileStore(targetContext)
-            store.applyDataSource(player, store.canonicalize(song.uriString, song.folderPath))
-            player.prepare()
-            assertTrue(player.duration >= 31_000)
-            player.start()
-            assertTrue(player.isPlaying)
-        } finally {
-            runCatching { player.stop() }
-            player.release()
-        }
-    }
 
     @Test
     fun userCover_isCopiedToFilesDir_andSurvivesProviderInvalidation() {
@@ -131,9 +135,10 @@ class SafImportFunctionalTest {
         var copied: File? = null
 
         try {
-            val storedUri = repository.saveAlbumCoverImage(
-                TestAudioDocumentsProvider.imageUri(namespace).toString()
-            )
+            val storedUri =
+                repository.saveAlbumCoverImage(
+                    TestAudioDocumentsProvider.imageUri(namespace).toString(),
+                )
             val persistedFile = checkNotNull(storedUri).let { File(java.net.URI(it)) }
             copied = persistedFile
             assertTrue(persistedFile.isFile)
@@ -145,11 +150,12 @@ class SafImportFunctionalTest {
                 runCatching {
                     targetContext.contentResolver
                         .openInputStream(TestAudioDocumentsProvider.imageUri(namespace))
-                }.exceptionOrNull() is FileNotFoundException
+                }.exceptionOrNull() is FileNotFoundException,
             )
-            val decoded = checkNotNull(
-                android.graphics.BitmapFactory.decodeFile(persistedFile.absolutePath)
-            )
+            val decoded =
+                checkNotNull(
+                    android.graphics.BitmapFactory.decodeFile(persistedFile.absolutePath),
+                )
             assertEquals(2, decoded.width)
             assertEquals(1, decoded.height)
             decoded.recycle()

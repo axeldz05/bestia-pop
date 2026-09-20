@@ -16,21 +16,22 @@ internal fun copyTransferToFile(
     syncToDisk: Boolean = false,
     checkCancelled: () -> Unit = {},
     onChunk: ((position: Long, buffer: ByteArray, count: Int) -> Unit)? = null,
-    onBytesCopied: (Long) -> Unit = {}
-): Long = FileOutputStream(destination, append).use { output ->
-    val buffer = ByteArray(bufferSize)
-    var copied = 0L
-    while (true) {
-        checkCancelled()
-        val count = input.read(buffer)
-        if (count < 0) break
-        checkCancelled()
-        output.write(buffer, 0, count)
-        onChunk?.invoke(copied, buffer, count)
-        copied += count
-        onBytesCopied(copied)
+    onBytesCopied: (Long) -> Unit = {},
+): Long =
+    FileOutputStream(destination, append).use { output ->
+        val buffer = ByteArray(bufferSize)
+        var copied = 0L
+        while (true) {
+            checkCancelled()
+            val count = input.read(buffer)
+            if (count < 0) break
+            checkCancelled()
+            output.write(buffer, 0, count)
+            onChunk?.invoke(copied, buffer, count)
+            copied += count
+            onBytesCopied(copied)
+        }
+        output.flush()
+        if (syncToDisk) output.fd.sync()
+        copied
     }
-    output.flush()
-    if (syncToDisk) output.fd.sync()
-    copied
-}

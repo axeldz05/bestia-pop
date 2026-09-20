@@ -58,30 +58,31 @@ fun LibraryBrowseSortSheet(
     onBrowseFilterChange: (LibraryBrowseFilter) -> Unit,
     onSortOptionChange: (SortOption) -> Unit,
     onToggleSortDirection: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState
+        sheetState = sheetState,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp),
         ) {
             Text(
                 text = "Vista y orden",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Ver como cambia la lista; ordenar solo reordena lo que estás viendo.",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -89,26 +90,28 @@ fun LibraryBrowseSortSheet(
                 text = "Ver como",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.semantics {
-                    contentDescription = "Ver como — forma de la lista"
-                }
+                modifier =
+                    Modifier.semantics {
+                        contentDescription = "Ver como — forma de la lista"
+                    },
             )
             Spacer(modifier = Modifier.height(8.dp))
             filters.chunked(3).forEach { rowFilters ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     rowFilters.forEach { filter ->
                         FilterChip(
                             selected = browseFilter == filter,
                             onClick = { onBrowseFilterChange(filter) },
                             label = { Text(filter.chipLabel()) },
-                            modifier = Modifier
-                                .height(ListDensity.filterChipHeight)
-                                .semantics {
-                                    contentDescription = "Ver como ${filter.chipLabel()}"
-                                }
+                            modifier =
+                                Modifier
+                                    .height(ListDensity.filterChipHeight)
+                                    .semantics {
+                                        contentDescription = "Ver como ${filter.chipLabel()}"
+                                    },
                         )
                     }
                 }
@@ -120,22 +123,23 @@ fun LibraryBrowseSortSheet(
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                val labelFilter = if (albumHeadersActive) {
-                    LibraryBrowseFilter.ALBUMS
-                } else {
-                    browseFilter
-                }
+                val labelFilter =
+                    if (albumHeadersActive) {
+                        LibraryBrowseFilter.ALBUMS
+                    } else {
+                        browseFilter
+                    }
                 val sectionTitle = sortSectionTitle(browseFilter, albumHeadersActive)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (albumHeadersActive) {
                         Icon(
                             imageVector = Icons.Default.ViewAgenda,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     }
@@ -143,20 +147,22 @@ fun LibraryBrowseSortSheet(
                         text = sectionTitle,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .weight(1f)
-                            .semantics {
-                                contentDescription = sectionTitle
-                            }
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .semantics {
+                                    contentDescription = sectionTitle
+                                },
                     )
                     TextButton(onClick = onToggleSortDirection) {
                         Icon(
-                            imageVector = if (sortDirection == SortDirection.ASC) {
-                                Icons.Default.ArrowDownward
-                            } else {
-                                Icons.Default.ArrowUpward
-                            },
-                            contentDescription = sortDirection.sortDirectionLabel(sortOption)
+                            imageVector =
+                                if (sortDirection == SortDirection.ASC) {
+                                    Icons.Default.ArrowDownward
+                                } else {
+                                    Icons.Default.ArrowUpward
+                                },
+                            contentDescription = sortDirection.sortDirectionLabel(sortOption),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(sortDirection.sortDirectionLabel(sortOption))
@@ -167,7 +173,7 @@ fun LibraryBrowseSortSheet(
                     Text(
                         text = "El orden aplica a los álbumes; dentro de cada uno se usa el número de pista.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -175,26 +181,27 @@ fun LibraryBrowseSortSheet(
                     val selected = sortOption == option
                     val label = option.sortLabel(labelFilter)
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSortOptionChange(option) }
-                            .padding(vertical = 10.dp)
-                            .semantics {
-                                contentDescription = "Ordenar por $label"
-                            },
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { onSortOptionChange(option) }
+                                .padding(vertical = 10.dp)
+                                .semantics {
+                                    contentDescription = "Ordenar por $label"
+                                },
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = label,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
                         )
                         if (selected) {
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = "Seleccionado",
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.primary,
                             )
                         }
                     }
@@ -204,7 +211,7 @@ fun LibraryBrowseSortSheet(
                 Text(
                     text = "Recientes usa la fecha de última reproducción (más recientes primero).",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -213,48 +220,61 @@ fun LibraryBrowseSortSheet(
 
 fun SortOption.sortLabel(browseFilter: LibraryBrowseFilter = LibraryBrowseFilter.SONGS): String =
     when (browseFilter) {
-        LibraryBrowseFilter.ALBUMS -> when (this) {
-            SortOption.TITLE, SortOption.ALBUM -> "Nombre del álbum"
-            SortOption.ARTIST -> "Artista del álbum"
-            SortOption.GENRE -> "Género"
-            SortOption.DATE_ADDED -> "Fecha de adición"
+        LibraryBrowseFilter.ALBUMS -> {
+            when (this) {
+                SortOption.TITLE, SortOption.ALBUM -> "Nombre del álbum"
+                SortOption.ARTIST -> "Artista del álbum"
+                SortOption.GENRE -> "Género"
+                SortOption.DATE_ADDED -> "Fecha de adición"
+            }
         }
-        LibraryBrowseFilter.ARTISTS -> when (this) {
-            SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM -> "Nombre del artista"
-            SortOption.GENRE -> "Género"
-            SortOption.DATE_ADDED -> "Fecha de adición"
+
+        LibraryBrowseFilter.ARTISTS -> {
+            when (this) {
+                SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM -> "Nombre del artista"
+                SortOption.GENRE -> "Género"
+                SortOption.DATE_ADDED -> "Fecha de adición"
+            }
         }
-        LibraryBrowseFilter.GENRES -> when (this) {
-            SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM, SortOption.GENRE -> "Nombre del género"
-            SortOption.DATE_ADDED -> "Fecha de adición"
+
+        LibraryBrowseFilter.GENRES -> {
+            when (this) {
+                SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM, SortOption.GENRE -> "Nombre del género"
+                SortOption.DATE_ADDED -> "Fecha de adición"
+            }
         }
-        else -> when (this) {
-            SortOption.TITLE -> "Título"
-            SortOption.ARTIST -> "Artista"
-            SortOption.ALBUM -> "Álbum"
-            SortOption.GENRE -> "Género"
-            SortOption.DATE_ADDED -> "Fecha de adición"
+
+        else -> {
+            when (this) {
+                SortOption.TITLE -> "Título"
+                SortOption.ARTIST -> "Artista"
+                SortOption.ALBUM -> "Álbum"
+                SortOption.GENRE -> "Género"
+                SortOption.DATE_ADDED -> "Fecha de adición"
+            }
         }
     }
 
-fun SortOption.shortSortLabel(): String = when (this) {
-    SortOption.TITLE -> "título"
-    SortOption.ARTIST -> "artista"
-    SortOption.ALBUM -> "álbum"
-    SortOption.GENRE -> "género"
-    SortOption.DATE_ADDED -> "fecha"
-}
+fun SortOption.shortSortLabel(): String =
+    when (this) {
+        SortOption.TITLE -> "título"
+        SortOption.ARTIST -> "artista"
+        SortOption.ALBUM -> "álbum"
+        SortOption.GENRE -> "género"
+        SortOption.DATE_ADDED -> "fecha"
+    }
 
-fun SortDirection.sortDirectionLabel(sortOption: SortOption): String = when (sortOption) {
-    SortOption.DATE_ADDED -> if (this == SortDirection.ASC) "Antiguo → reciente" else "Reciente → antiguo"
-    else -> if (this == SortDirection.ASC) "A–Z" else "Z–A"
-}
+fun SortDirection.sortDirectionLabel(sortOption: SortOption): String =
+    when (sortOption) {
+        SortOption.DATE_ADDED -> if (this == SortDirection.ASC) "Antiguo → reciente" else "Reciente → antiguo"
+        else -> if (this == SortDirection.ASC) "A–Z" else "Z–A"
+    }
 
 fun libraryOrderSummary(
     browseFilter: LibraryBrowseFilter,
     sortOption: SortOption,
     sortDirection: SortDirection,
-    albumHeadersActive: Boolean = false
+    albumHeadersActive: Boolean = false,
 ): String {
     val shape = browseFilter.chipLabel()
     if (browseFilter == LibraryBrowseFilter.RECENT) return shape
@@ -265,35 +285,36 @@ fun libraryOrderSummary(
 
 private fun sortSectionTitle(
     browseFilter: LibraryBrowseFilter,
-    albumHeadersActive: Boolean = false
-): String = when {
-    albumHeadersActive -> "Ordenar álbumes por"
-    browseFilter == LibraryBrowseFilter.ALBUMS -> "Ordenar álbumes por"
-    browseFilter == LibraryBrowseFilter.ARTISTS -> "Ordenar artistas por"
-    browseFilter == LibraryBrowseFilter.GENRES -> "Ordenar géneros por"
-    else -> "Ordenar canciones por"
-}
+    albumHeadersActive: Boolean = false,
+): String =
+    when {
+        albumHeadersActive -> "Ordenar álbumes por"
+        browseFilter == LibraryBrowseFilter.ALBUMS -> "Ordenar álbumes por"
+        browseFilter == LibraryBrowseFilter.ARTISTS -> "Ordenar artistas por"
+        browseFilter == LibraryBrowseFilter.GENRES -> "Ordenar géneros por"
+        else -> "Ordenar canciones por"
+    }
 
 /** Compact contentDescription / a11y for the Tune header button. */
-fun libraryTuneContentDescription(summary: String): String =
-    "Vista y orden. $summary"
+fun libraryTuneContentDescription(summary: String): String = "Vista y orden. $summary"
 
 /** Compact label for the extended library filter/sort button in the header. */
 fun libraryFilterButtonLabel(
     browseFilter: LibraryBrowseFilter,
     sortOption: SortOption,
     sortDirection: SortDirection,
-    albumHeadersActive: Boolean = false
+    albumHeadersActive: Boolean = false,
 ): String {
     if (browseFilter == LibraryBrowseFilter.RECENT) return "Recientes"
     val arrow = if (sortDirection == SortDirection.ASC) "↓" else "↑"
-    val sortLabel = when (sortOption) {
-        SortOption.TITLE -> "Título"
-        SortOption.ARTIST -> "Artista"
-        SortOption.ALBUM -> "Álbum"
-        SortOption.GENRE -> "Género"
-        SortOption.DATE_ADDED -> "Fecha"
-    }
+    val sortLabel =
+        when (sortOption) {
+            SortOption.TITLE -> "Título"
+            SortOption.ARTIST -> "Artista"
+            SortOption.ALBUM -> "Álbum"
+            SortOption.GENRE -> "Género"
+            SortOption.DATE_ADDED -> "Fecha"
+        }
     return if (albumHeadersActive) {
         "Álbum · $sortLabel $arrow"
     } else {
@@ -307,36 +328,37 @@ fun LibraryFilterButton(
     label: String,
     contentDescription: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier
-            .height(34.dp)
-            .semantics {
-                this.contentDescription = contentDescription
-            }
+        modifier =
+            modifier
+                .height(34.dp)
+                .semantics {
+                    this.contentDescription = contentDescription
+                },
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.Tune,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(16.dp),
             )
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

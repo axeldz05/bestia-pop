@@ -8,13 +8,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IdentifyCatalogQueryTest {
-
     @Test
     fun build_advancedArtistAlbumAndYear() {
-        val q = IdentifyCatalogQuery.build(
-            freeText = "Creep",
-            filters = IdentifySearchFilters(artist = "Radiohead", album = "Pablo Honey", year = 1992)
-        )
+        val q =
+            IdentifyCatalogQuery.build(
+                freeText = "Creep",
+                filters = IdentifySearchFilters(artist = "Radiohead", album = "Pablo Honey", year = 1992),
+            )
         assertTrue(q.contains("artist:\"Radiohead\""))
         assertTrue(q.contains("album:\"Pablo Honey\""))
         assertTrue(q.contains("Creep"))
@@ -23,10 +23,11 @@ class IdentifyCatalogQueryTest {
 
     @Test
     fun build_filtersOnly() {
-        val q = IdentifyCatalogQuery.build(
-            freeText = null,
-            filters = IdentifySearchFilters(artist = "Muse", album = "Absolution")
-        )
+        val q =
+            IdentifyCatalogQuery.build(
+                freeText = null,
+                filters = IdentifySearchFilters(artist = "Muse", album = "Absolution"),
+            )
         assertEquals("artist:\"Muse\" album:\"Absolution\"", q)
     }
 

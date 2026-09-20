@@ -18,61 +18,67 @@ data class TrackIdentity(
     override val album: String = "",
     override val artworkUri: String? = null,
     override val durationMs: Long = 0L,
-    override val trackNumber: Int = 0
+    override val trackNumber: Int = 0,
 ) : TrackMeta
 
 const val DEFAULT_CATALOG_USER_AGENT =
     "Mozilla/5.0 (SmartHub; SMART-TV; U; Linux/SmartTV) AppleWebKit/538.1 (KHTML, like Gecko) TV Safari/538.1"
 
 /** Prefer non-blank / positive fields from this identity; fill gaps from [other]. */
-fun TrackIdentity.mergePreferring(other: TrackIdentity): TrackIdentity = copy(
-    title = title.ifBlank { other.title },
-    artist = artist.ifBlank { other.artist },
-    album = album.ifBlank { other.album },
-    artworkUri = artworkUri?.takeIf { it.isNotBlank() } ?: other.artworkUri,
-    durationMs = if (durationMs > 0L) durationMs else other.durationMs,
-    trackNumber = if (trackNumber > 0) trackNumber else other.trackNumber
-)
+fun TrackIdentity.mergePreferring(other: TrackIdentity): TrackIdentity =
+    copy(
+        title = title.ifBlank { other.title },
+        artist = artist.ifBlank { other.artist },
+        album = album.ifBlank { other.album },
+        artworkUri = artworkUri?.takeIf { it.isNotBlank() } ?: other.artworkUri,
+        durationMs = if (durationMs > 0L) durationMs else other.durationMs,
+        trackNumber = if (trackNumber > 0) trackNumber else other.trackNumber,
+    )
 
-fun TrackMeta.toIdentity(): TrackIdentity = (this as? TrackIdentity) ?: TrackIdentity(
-    title = title,
-    artist = artist,
-    album = album,
-    artworkUri = artworkUri,
-    durationMs = durationMs,
-    trackNumber = trackNumber
-)
+fun TrackMeta.toIdentity(): TrackIdentity =
+    (this as? TrackIdentity) ?: TrackIdentity(
+        title = title,
+        artist = artist,
+        album = album,
+        artworkUri = artworkUri,
+        durationMs = durationMs,
+        trackNumber = trackNumber,
+    )
 
 fun Song.toIdentity(): TrackIdentity = (this as TrackMeta).toIdentity()
 
 /** Apply shared identity fields; leaves genre/year/lyrics/uri/folder untouched. */
-fun Song.withIdentity(identity: TrackIdentity): Song = copy(
-    title = identity.title,
-    artist = identity.artist,
-    album = identity.album,
-    artworkUri = identity.artworkUri,
-    durationMs = identity.durationMs,
-    trackNumber = identity.trackNumber
-)
+fun Song.withIdentity(identity: TrackIdentity): Song =
+    copy(
+        title = identity.title,
+        artist = identity.artist,
+        album = identity.album,
+        artworkUri = identity.artworkUri,
+        durationMs = identity.durationMs,
+        trackNumber = identity.trackNumber,
+    )
 
-fun OnlineCatalogTrack.withIdentity(
-    transform: TrackIdentity.() -> TrackIdentity
-): OnlineCatalogTrack = copy(identity = identity.transform())
+fun OnlineCatalogTrack.withIdentity(transform: TrackIdentity.() -> TrackIdentity): OnlineCatalogTrack =
+    copy(identity = identity.transform())
 
 /**
  * When cycling YouTube matches ("Buscar otro"), keep useful album/art/title/artist from [previous].
  */
-fun OnlineCatalogTrack.preferMetaFrom(previous: TrackMeta): OnlineCatalogTrack = withIdentity {
-    copy(
-        album = previous.album.takeIf { it.isNotBlank() && !IdentifyRanking.isGenericAlbum(it) } ?: album,
-        artworkUri = artworkUri ?: previous.artworkUri,
-        title = title.ifBlank { previous.title },
-        artist = artist.ifBlank { previous.artist }
-    )
-}
+fun OnlineCatalogTrack.preferMetaFrom(previous: TrackMeta): OnlineCatalogTrack =
+    withIdentity {
+        copy(
+            album = previous.album.takeIf { it.isNotBlank() && !IdentifyRanking.isGenericAlbum(it) } ?: album,
+            artworkUri = artworkUri ?: previous.artworkUri,
+            title = title.ifBlank { previous.title },
+            artist = artist.ifBlank { previous.artist },
+        )
+    }
 
 /** Default YouTube / catalog search string from artist + title. */
-fun youtubeSearchQuery(artist: String, title: String): String = "$artist $title".trim()
+fun youtubeSearchQuery(
+    artist: String,
+    title: String,
+): String = "$artist $title".trim()
 
 fun TrackMeta.youtubeSearchQuery(): String = youtubeSearchQuery(artist, title)
 
@@ -83,21 +89,21 @@ fun TrackMeta.youtubeSearchQuery(): String = youtubeSearchQuery(artist, title)
 fun TrackIdentity.toCatalogTrack(
     id: String? = null,
     provider: String,
-    audioUrl: String = ""
-): OnlineCatalogTrack = OnlineCatalogTrack(
-    identity = this,
-    id = id?.takeIf { it.isNotBlank() } ?: youtubeSearchQuery(),
-    audioUrl = audioUrl,
-    provider = provider
-)
+    audioUrl: String = "",
+): OnlineCatalogTrack =
+    OnlineCatalogTrack(
+        identity = this,
+        id = id?.takeIf { it.isNotBlank() } ?: youtubeSearchQuery(),
+        audioUrl = audioUrl,
+        provider = provider,
+    )
 
 /** Catalog download input for ListenBrainz rows (pending / unmatched discover). */
 fun TrackIdentity.toListenBrainzCatalogTrack(mbid: String?): OnlineCatalogTrack =
     toCatalogTrack(
         id = mbid?.takeIf { it.isNotBlank() },
-        provider = "ListenBrainz"
+        provider = "ListenBrainz",
     )
 
 /** First usable artwork URI across tracks/items implementing [TrackMeta]. */
-fun Iterable<TrackMeta>.firstArtworkUri(): String? =
-    firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
+fun Iterable<TrackMeta>.firstArtworkUri(): String? = firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }

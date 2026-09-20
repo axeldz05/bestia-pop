@@ -24,37 +24,41 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @SmallTest
 class IdentifyReviewFunctionalTest {
-
     private val composeTestRule = createComposeRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeTestRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeTestRule)
 
-    private val candidate = IdentifyCandidate(
-        track = OnlineCatalogTrack(
-            identity = TrackIdentity(
-                title = "Catalog match",
-                artist = "Matched artist",
-                album = "Matched album",
-                durationMs = 181_000L
-            ),
-            id = "catalog-1",
-            provider = "Deezer"
-        ),
-        score = 0.82f,
-        reasons = listOf("Artista y título coinciden")
-    )
+    private val candidate =
+        IdentifyCandidate(
+            track =
+                OnlineCatalogTrack(
+                    identity =
+                        TrackIdentity(
+                            title = "Catalog match",
+                            artist = "Matched artist",
+                            album = "Matched album",
+                            durationMs = 181_000L,
+                        ),
+                    id = "catalog-1",
+                    provider = "Deezer",
+                ),
+            score = 0.82f,
+            reasons = listOf("Artista y título coinciden"),
+        )
 
-    private val localSong = Song(
-        id = 1L,
-        uriString = "file:///tmp/local.mp3",
-        title = "Local title",
-        artist = "Local artist",
-        album = "Local album",
-        durationMs = 180_000L
-    )
+    private val localSong =
+        Song(
+            id = 1L,
+            uriString = "file:///tmp/local.mp3",
+            title = "Local title",
+            artist = "Local artist",
+            album = "Local album",
+            durationMs = 180_000L,
+        )
 
     @Test
     fun candidatePreview_isIndependentFromSelectingCandidate() {
@@ -71,7 +75,7 @@ class IdentifyReviewFunctionalTest {
                 isPlaying = false,
                 isResolving = false,
                 onClick = { selections++ },
-                onPreview = { previews++ }
+                onPreview = { previews++ },
             )
         }
 
@@ -103,7 +107,7 @@ class IdentifyReviewFunctionalTest {
                 isPlaying = true,
                 isResolving = false,
                 onClick = {},
-                onPreview = { previews++ }
+                onPreview = { previews++ },
             )
         }
 

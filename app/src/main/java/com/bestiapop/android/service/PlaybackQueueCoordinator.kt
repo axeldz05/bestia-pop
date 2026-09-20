@@ -5,16 +5,16 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.data.model.withFreshQueueEntryIds
 import com.bestiapop.android.data.playback.PlaybackChangeHint
-import com.bestiapop.android.data.preferences.PlaybackModeClear
-import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.playback.PlaybackQueueSlots
+import com.bestiapop.android.data.preferences.PlaybackModeClear
+import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 internal data class ResolvedLaunchModes(
     val willShuffle: Boolean,
-    val nextRepeat: RepeatMode
+    val nextRepeat: RepeatMode,
 )
 
 internal class PlaybackQueueCoordinator(
@@ -50,7 +50,7 @@ internal class PlaybackQueueCoordinator(
     private val applyQueueReorder: (newOrder: List<PlayableItem>, focusIndex: Int, positionMs: Long, startPlaying: Boolean) -> Unit,
     private val mutateMaterializedTimeline: (syncShuffle: Boolean, mutation: (PlaybackControllerFacade) -> Unit) -> Unit,
     private val syncChangedTimelineItems: (oldQueue: List<PlayableItem>, newQueue: List<PlayableItem>) -> Unit,
-    private val onSetPendingExternalPlaybackModes: (Pair<Boolean, RepeatMode>?) -> Unit
+    private val onSetPendingExternalPlaybackModes: (Pair<Boolean, RepeatMode>?) -> Unit,
 ) {
     var preShuffleOrder: List<String>? = null
         internal set
@@ -61,7 +61,7 @@ internal class PlaybackQueueCoordinator(
                 RepeatMode.OFF -> RepeatMode.ALL
                 RepeatMode.ALL -> RepeatMode.ONE
                 RepeatMode.ONE -> RepeatMode.OFF
-            }
+            },
         )
     }
 
@@ -69,20 +69,22 @@ internal class PlaybackQueueCoordinator(
         if (enabled == isShuffle()) return
         onInvalidatePlaybackWork(false)
         val items = getQueue()
-        val position = if (hasMaterializedTimeline()) {
-            getController()?.currentPosition?.coerceAtLeast(0L) ?: getPlaybackPositionMs()
-        } else {
-            getPlaybackPositionMs()
-        }
+        val position =
+            if (hasMaterializedTimeline()) {
+                getController()?.currentPosition?.coerceAtLeast(0L) ?: getPlaybackPositionMs()
+            } else {
+                getPlaybackPositionMs()
+            }
         val wasPlaying = isPlayWhenReadyIntent()
         if (enabled) {
             setShuffleEnabled(true)
             if (items.isNotEmpty()) {
-                val (shuffled, index) = permuteQueueToPlayOrder(
-                    items,
-                    currentQueueIndex(),
-                    backupSource = true
-                )
+                val (shuffled, index) =
+                    permuteQueueToPlayOrder(
+                        items,
+                        currentQueueIndex(),
+                        backupSource = true,
+                    )
                 applyQueueReorder(shuffled, index, position, wasPlaying)
             }
         } else {
@@ -90,8 +92,10 @@ internal class PlaybackQueueCoordinator(
             val currentSlot = getCurrentItem()?.queueEntryId
             setShuffleEnabled(false)
             if (!restored.isNullOrEmpty()) {
-                val index = restored.indexOfFirst { it.queueEntryId == currentSlot }
-                    .takeIf { it >= 0 } ?: 0
+                val index =
+                    restored
+                        .indexOfFirst { it.queueEntryId == currentSlot }
+                        .takeIf { it >= 0 } ?: 0
                 applyQueueReorder(restored, index, position, wasPlaying)
             }
         }
@@ -130,31 +134,41 @@ internal class PlaybackQueueCoordinator(
         onRestartAsyncPlaybackWork()
     }
 
-    fun updateAlbumArtworkInQueue(albumKey: String, artworkUri: String?) {
+    fun updateAlbumArtworkInQueue(
+        albumKey: String,
+        artworkUri: String?,
+    ) {
         val current = getCurrentItem()
         if (current is PlayableItem.Local &&
-            (current.song.album.equals(albumKey, ignoreCase = true) ||
-                com.bestiapop.android.domain.util.albumIdentityKey(current.song.album) == albumKey)
+            (
+                current.song.album.equals(albumKey, ignoreCase = true) ||
+                    com.bestiapop.android.domain.util
+                        .albumIdentityKey(current.song.album) == albumKey
+            )
         ) {
             onSetCurrentItem(
                 current.copy(resolvedArtworkUri = artworkUri),
                 false,
-                PlaybackChangeHint.METADATA_UPDATE
+                PlaybackChangeHint.METADATA_UPDATE,
             )
         }
         val q = getQueue()
         var changed = false
-        val newQ = q.map { item ->
-            if (item is PlayableItem.Local &&
-                (item.song.album.equals(albumKey, ignoreCase = true) ||
-                    com.bestiapop.android.domain.util.albumIdentityKey(item.song.album) == albumKey)
-            ) {
-                changed = true
-                item.copy(resolvedArtworkUri = artworkUri)
-            } else {
-                item
+        val newQ =
+            q.map { item ->
+                if (item is PlayableItem.Local &&
+                    (
+                        item.song.album.equals(albumKey, ignoreCase = true) ||
+                            com.bestiapop.android.domain.util
+                                .albumIdentityKey(item.song.album) == albumKey
+                    )
+                ) {
+                    changed = true
+                    item.copy(resolvedArtworkUri = artworkUri)
+                } else {
+                    item
+                }
             }
-        }
         if (changed) {
             onSetQueue(newQ)
             syncChangedTimelineItems(q, newQ)
@@ -189,11 +203,12 @@ internal class PlaybackQueueCoordinator(
             setTimelineMaterialized(false)
         } else {
             mutateMaterializedTimeline(true) { it.removeMediaItem(index) }
-            val nextIndex = when {
-                index < currentIndex -> currentIndex - 1
-                index == currentIndex -> index.coerceAtMost(live.lastIndex)
-                else -> currentIndex
-            }.coerceIn(live.indices)
+            val nextIndex =
+                when {
+                    index < currentIndex -> currentIndex - 1
+                    index == currentIndex -> index.coerceAtMost(live.lastIndex)
+                    else -> currentIndex
+                }.coerceIn(live.indices)
             setLastMediaItemIndex(nextIndex)
             if (currentSlot == old[index].queueEntryId) {
                 onSetPlaybackPositionMs(0L)
@@ -224,7 +239,10 @@ internal class PlaybackQueueCoordinator(
         onReleaseControllerIfIdle()
     }
 
-    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+    fun moveQueueItem(
+        fromIndex: Int,
+        toIndex: Int,
+    ) {
         val live = getQueue().toMutableList()
         if (fromIndex !in live.indices || toIndex !in live.indices || fromIndex == toIndex) return
         onInvalidatePlaybackWork(false)
@@ -233,9 +251,10 @@ internal class PlaybackQueueCoordinator(
         onSetQueue(live)
         mutateMaterializedTimeline(true) { it.moveMediaItem(fromIndex, toIndex) }
         setLastMediaItemIndex(
-            live.indexOfFirst { it.queueEntryId == currentSlot }
+            live
+                .indexOfFirst { it.queueEntryId == currentSlot }
                 .takeIf { it >= 0 }
-                ?: getLastMediaItemIndex().coerceIn(live.indices)
+                ?: getLastMediaItemIndex().coerceIn(live.indices),
         )
         onPersistPlaybackSession(true)
         onRestartAsyncPlaybackWork()
@@ -244,7 +263,7 @@ internal class PlaybackQueueCoordinator(
     fun permuteQueueToPlayOrder(
         items: List<PlayableItem>,
         currentIndex: Int,
-        backupSource: Boolean
+        backupSource: Boolean,
     ): Pair<List<PlayableItem>, Int> {
         if (items.isEmpty()) return items to 0
         if (backupSource) preShuffleOrder = PlaybackQueueSlots.capturePreShuffleOrder(items)
@@ -257,7 +276,10 @@ internal class PlaybackQueueCoordinator(
         return PlaybackQueueSlots.restorePreShuffleOrder(getQueue(), order)
     }
 
-    fun setShuffleEnabled(enabled: Boolean, syncPlayer: Boolean = true) {
+    fun setShuffleEnabled(
+        enabled: Boolean,
+        syncPlayer: Boolean = true,
+    ) {
         val wasEnabled = isShuffle()
         onSetShuffleState(enabled)
         scope.launch { dependencies.persistShuffle(enabled) }
@@ -273,16 +295,19 @@ internal class PlaybackQueueCoordinator(
         if (!isShuffle()) return
         val restored = preShuffleQueueOrNull()
         val currentSlot = getCurrentItem()?.queueEntryId
-        val position = if (hasMaterializedTimeline()) {
-            getController()?.currentPosition ?: getPlaybackPositionMs()
-        } else {
-            getPlaybackPositionMs()
-        }
+        val position =
+            if (hasMaterializedTimeline()) {
+                getController()?.currentPosition ?: getPlaybackPositionMs()
+            } else {
+                getPlaybackPositionMs()
+            }
         val wasPlaying = isPlayWhenReadyIntent()
         setShuffleEnabled(false)
         if (!restored.isNullOrEmpty()) {
-            val index = restored.indexOfFirst { it.queueEntryId == currentSlot }
-                .takeIf { it >= 0 } ?: 0
+            val index =
+                restored
+                    .indexOfFirst { it.queueEntryId == currentSlot }
+                    .takeIf { it >= 0 } ?: 0
             applyQueueReorder(restored, index, position, wasPlaying)
         }
     }
@@ -293,7 +318,10 @@ internal class PlaybackQueueCoordinator(
         }
     }
 
-    fun setRepeatMode(mode: RepeatMode, syncPlayer: Boolean = true) {
+    fun setRepeatMode(
+        mode: RepeatMode,
+        syncPlayer: Boolean = true,
+    ) {
         onSetRepeatModeState(mode)
         if (syncPlayer) {
             applyRepeatModeToController(mode)
@@ -302,49 +330,57 @@ internal class PlaybackQueueCoordinator(
     }
 
     fun applyRepeatModeToController(mode: RepeatMode) {
-        getController()?.repeatMode = when (mode) {
-            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-        }
+        getController()?.repeatMode =
+            when (mode) {
+                RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+                RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+                RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            }
     }
 
-    fun repeatModeFromPlayer(value: Int): RepeatMode = when (value) {
-        Player.REPEAT_MODE_ONE -> RepeatMode.ONE
-        Player.REPEAT_MODE_ALL -> RepeatMode.ALL
-        else -> RepeatMode.OFF
-    }
+    fun repeatModeFromPlayer(value: Int): RepeatMode =
+        when (value) {
+            Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+            Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+            else -> RepeatMode.OFF
+        }
 
     fun resolveLaunchModes(
         startShuffled: Boolean,
         applyManualModes: Boolean,
-        fromRadio: Boolean
+        fromRadio: Boolean,
     ): ResolvedLaunchModes {
         val isManual = !fromRadio && (applyManualModes || startShuffled)
-        val (shuffleAfterManual, repeatAfterManual) = if (isManual) {
-            PlaybackModeClear.afterManualPlay(
-                isShuffle(),
-                getRepeatMode(),
-                dependencies.playbackSettings.value
-            )
-        } else {
-            isShuffle() to getRepeatMode()
-        }
-        val willShuffle = when {
-            fromRadio -> false
-            startShuffled -> true
-            applyManualModes -> shuffleAfterManual
-            else -> isShuffle()
-        }
-        val nextRepeat = when {
-            fromRadio -> PlaybackModeClear.afterRadioStart(isShuffle(), getRepeatMode()).second
-            isManual -> repeatAfterManual
-            else -> getRepeatMode()
-        }
+        val (shuffleAfterManual, repeatAfterManual) =
+            if (isManual) {
+                PlaybackModeClear.afterManualPlay(
+                    isShuffle(),
+                    getRepeatMode(),
+                    dependencies.playbackSettings.value,
+                )
+            } else {
+                isShuffle() to getRepeatMode()
+            }
+        val willShuffle =
+            when {
+                fromRadio -> false
+                startShuffled -> true
+                applyManualModes -> shuffleAfterManual
+                else -> isShuffle()
+            }
+        val nextRepeat =
+            when {
+                fromRadio -> PlaybackModeClear.afterRadioStart(isShuffle(), getRepeatMode()).second
+                isManual -> repeatAfterManual
+                else -> getRepeatMode()
+            }
         return ResolvedLaunchModes(willShuffle = willShuffle, nextRepeat = nextRepeat)
     }
 
-    fun applyLaunchModes(resolved: ResolvedLaunchModes, deferPlayerSync: Boolean = false) {
+    fun applyLaunchModes(
+        resolved: ResolvedLaunchModes,
+        deferPlayerSync: Boolean = false,
+    ) {
         if (deferPlayerSync) {
             onSetShuffleState(resolved.willShuffle)
             onSetRepeatModeState(resolved.nextRepeat)
@@ -360,20 +396,22 @@ internal class PlaybackQueueCoordinator(
     }
 
     fun applyManualPlayModes(deferPlayerSync: Boolean = false) {
-        val resolved = resolveLaunchModes(
-            startShuffled = false,
-            applyManualModes = true,
-            fromRadio = false
-        )
+        val resolved =
+            resolveLaunchModes(
+                startShuffled = false,
+                applyManualModes = true,
+                fromRadio = false,
+            )
         applyLaunchModes(resolved, deferPlayerSync)
     }
 
     fun applySkipModes() {
-        val (shuffle, repeat) = PlaybackModeClear.afterSkip(
-            isShuffle(),
-            getRepeatMode(),
-            dependencies.playbackSettings.value
-        )
+        val (shuffle, repeat) =
+            PlaybackModeClear.afterSkip(
+                isShuffle(),
+                getRepeatMode(),
+                dependencies.playbackSettings.value,
+            )
         if (shuffle != isShuffle()) {
             setShuffleEnabled(shuffle)
         }
@@ -385,11 +423,12 @@ internal class PlaybackQueueCoordinator(
         val player = getController()
         if (player != null) {
             if (player.repeatMode == Player.REPEAT_MODE_ONE) {
-                val nextIndex = if (player.mediaItemCount > 0) {
-                    (player.currentMediaItemIndex + 1) % player.mediaItemCount
-                } else {
-                    0
-                }
+                val nextIndex =
+                    if (player.mediaItemCount > 0) {
+                        (player.currentMediaItemIndex + 1) % player.mediaItemCount
+                    } else {
+                        0
+                    }
                 player.seekTo(nextIndex, 0L)
             } else {
                 player.seekToNextMediaItem()
@@ -397,11 +436,12 @@ internal class PlaybackQueueCoordinator(
         } else {
             val q = getQueue()
             if (q.isEmpty()) return
-            val nextIndex = if (getRepeatMode() == RepeatMode.ALL || getRepeatMode() == RepeatMode.ONE) {
-                (getLastMediaItemIndex() + 1) % q.size
-            } else {
-                (getLastMediaItemIndex() + 1).coerceAtMost(q.lastIndex)
-            }
+            val nextIndex =
+                if (getRepeatMode() == RepeatMode.ALL || getRepeatMode() == RepeatMode.ONE) {
+                    (getLastMediaItemIndex() + 1) % q.size
+                } else {
+                    (getLastMediaItemIndex() + 1).coerceAtMost(q.lastIndex)
+                }
             onSkipToIndex(nextIndex)
         }
     }
@@ -411,15 +451,16 @@ internal class PlaybackQueueCoordinator(
         val player = getController()
         if (player != null) {
             if (player.repeatMode == Player.REPEAT_MODE_ONE) {
-                val prevIndex = if (player.mediaItemCount > 0) {
-                    if (player.currentMediaItemIndex > 0) {
-                        player.currentMediaItemIndex - 1
+                val prevIndex =
+                    if (player.mediaItemCount > 0) {
+                        if (player.currentMediaItemIndex > 0) {
+                            player.currentMediaItemIndex - 1
+                        } else {
+                            player.mediaItemCount - 1
+                        }
                     } else {
-                        player.mediaItemCount - 1
+                        0
                     }
-                } else {
-                    0
-                }
                 player.seekTo(prevIndex, 0L)
             } else {
                 when {
@@ -430,16 +471,20 @@ internal class PlaybackQueueCoordinator(
         } else {
             val q = getQueue()
             if (q.isEmpty()) return
-            val prevIndex = if (getRepeatMode() == RepeatMode.ALL || getRepeatMode() == RepeatMode.ONE) {
-                if (getLastMediaItemIndex() > 0) getLastMediaItemIndex() - 1 else q.lastIndex
-            } else {
-                (getLastMediaItemIndex() - 1).coerceAtLeast(0)
-            }
+            val prevIndex =
+                if (getRepeatMode() == RepeatMode.ALL || getRepeatMode() == RepeatMode.ONE) {
+                    if (getLastMediaItemIndex() > 0) getLastMediaItemIndex() - 1 else q.lastIndex
+                } else {
+                    (getLastMediaItemIndex() - 1).coerceAtLeast(0)
+                }
             onSkipToIndex(prevIndex)
         }
     }
 
-    fun restorePlaybackModes(hasLiveSession: Boolean, liveRepeat: RepeatMode) {
+    fun restorePlaybackModes(
+        hasLiveSession: Boolean,
+        liveRepeat: RepeatMode,
+    ) {
         if (!dependencies.playbackSettingsReady.value) return
         val settings = dependencies.playbackSettings.value
         val resolved = PlaybackModeRestore.resolve(settings, hasLiveSession, liveRepeat)
@@ -453,8 +498,9 @@ internal class PlaybackQueueCoordinator(
         reason: Int,
         lastIndex: Int,
         newIndex: Int,
-        queueSize: Int
-    ): Boolean = isShuffle() &&
+        queueSize: Int,
+    ): Boolean =
+        isShuffle() &&
             getRepeatMode() == RepeatMode.ALL &&
             reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
             lastIndex == queueSize - 1 &&
@@ -462,14 +508,18 @@ internal class PlaybackQueueCoordinator(
             queueSize > 1
 
     fun applyRadioStartModes() {
-        val (shuffle, repeat) = PlaybackModeClear.afterRadioStart(
-            isShuffle(),
-            getRepeatMode()
-        )
+        val (shuffle, repeat) =
+            PlaybackModeClear.afterRadioStart(
+                isShuffle(),
+                getRepeatMode(),
+            )
         applyResolvedModes(shuffle, repeat)
     }
 
-    fun applyResolvedModes(shuffle: Boolean, repeat: RepeatMode) {
+    fun applyResolvedModes(
+        shuffle: Boolean,
+        repeat: RepeatMode,
+    ) {
         if (shuffle != isShuffle()) {
             if (shuffle) setShuffleEnabled(true) else disableShuffleRestoringOrder()
         }

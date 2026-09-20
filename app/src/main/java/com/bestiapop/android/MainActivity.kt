@@ -27,58 +27,62 @@ import com.bestiapop.android.ui.theme.ThemePresets
 import com.bestiapop.android.ui.update.AppUpdateViewModel
 
 class MainActivity : ComponentActivity() {
-
     private val viewModel: MusicPlayerViewModel by viewModels()
     private val appUpdateViewModel: AppUpdateViewModel by viewModels()
 
-    private val unknownSourcesLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        appUpdateViewModel.onReturnedFromUnknownSources()
-    }
+    private val unknownSourcesLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+        ) {
+            appUpdateViewModel.onReturnedFromUnknownSources()
+        }
 
-    private val batteryOptimizationLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SYSTEM, "Returned from battery optimization request")
-        viewModel.onAppForeground()
-    }
+    private val batteryOptimizationLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+        ) {
+            PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SYSTEM, "Returned from battery optimization request")
+            viewModel.onAppForeground()
+        }
 
-    private val folderPickerLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { treeUri ->
-        treeUri?.let { uri ->
-            try {
-                contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (_: SecurityException) {
-                // Some providers don't support persistable grants; import can still use the URI now.
+    private val folderPickerLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.OpenDocumentTree(),
+        ) { treeUri ->
+            treeUri?.let { uri ->
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                } catch (_: SecurityException) {
+                    // Some providers don't support persistable grants; import can still use the URI now.
+                }
+                viewModel.importFolder(uri)
             }
-            viewModel.importFolder(uri)
         }
-    }
 
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_AUDIO
-        } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
+    private val permissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions(),
+        ) { results ->
+            val audioPermission =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Manifest.permission.READ_MEDIA_AUDIO
+                } else {
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                }
+            val audioGranted = results[audioPermission] == true
+            // First-install import only (updates skip; Room migrations handle schema).
+            if (audioGranted || hasAudioPermission()) {
+                viewModel.ensureInitialLibraryImport(showRecoveryToast = true)
+            }
         }
-        val audioGranted = results[audioPermission] == true
-        // First-install import only (updates skip; Room migrations handle schema).
-        if (audioGranted || hasAudioPermission()) {
-            viewModel.ensureInitialLibraryImport(showRecoveryToast = true)
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_LIFECYCLE,
-            "MainActivity.onCreate(savedInstanceState=${savedInstanceState != null})"
+            "MainActivity.onCreate(savedInstanceState=${savedInstanceState != null})",
         )
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -98,7 +102,7 @@ class MainActivity : ComponentActivity() {
                     },
                     onRequestUnknownSources = {
                         unknownSourcesLauncher.launch(appUpdateViewModel.unknownSourcesIntent())
-                    }
+                    },
                 )
             }
         }
@@ -119,7 +123,7 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_LIFECYCLE,
-            "MainActivity.onPause (UI losing focus / switching apps / locking)"
+            "MainActivity.onPause (UI losing focus / switching apps / locking)",
         )
         super.onPause()
     }
@@ -127,7 +131,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_LIFECYCLE,
-            "MainActivity.onStop (UI no longer visible / in background)"
+            "MainActivity.onStop (UI no longer visible / in background)",
         )
         viewModel.onUiDetached()
         super.onStop()
@@ -136,7 +140,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_LIFECYCLE,
-            "MainActivity.onDestroy (Activity destroyed, isFinishing=$isFinishing)"
+            "MainActivity.onDestroy (Activity destroyed, isFinishing=$isFinishing)",
         )
         super.onDestroy()
     }
@@ -152,8 +156,9 @@ class MainActivity : ComponentActivity() {
             viewModel.requestOpenNowPlaying()
             intent.removeExtra(MusicService.EXTRA_OPEN_NOW_PLAYING)
         }
-        val tab = intent?.getStringExtra(DownloadNotificationHelper.EXTRA_OPEN_TAB)
-            ?: intent?.getStringExtra(IdentifyNotificationHelper.EXTRA_OPEN_TAB)
+        val tab =
+            intent?.getStringExtra(DownloadNotificationHelper.EXTRA_OPEN_TAB)
+                ?: intent?.getStringExtra(IdentifyNotificationHelper.EXTRA_OPEN_TAB)
         when (tab) {
             DownloadNotificationHelper.TAB_DOWNLOADS -> {
                 viewModel.requestOpenDownloads()
@@ -167,13 +172,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun hasAudioPermission(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
-    } else {
-        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) ==
-            PackageManager.PERMISSION_GRANTED
-    }
+    private fun hasAudioPermission(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                PackageManager.PERMISSION_GRANTED
+        }
 
     private fun requestRequiredPermissions() {
         if (hasAudioPermission()) {

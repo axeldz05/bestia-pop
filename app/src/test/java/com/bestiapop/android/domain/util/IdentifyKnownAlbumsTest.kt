@@ -9,7 +9,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IdentifyKnownAlbumsTest {
-
     private fun song(
         id: Long,
         title: String,
@@ -17,7 +16,7 @@ class IdentifyKnownAlbumsTest {
         album: String = "Espejos",
         durationMs: Long = 200_000L,
         trackNumber: Int = 0,
-        folderPath: String = ""
+        folderPath: String = "",
     ) = Song(
         id = id,
         uriString = "file:///tmp/$id.mp3",
@@ -26,41 +25,44 @@ class IdentifyKnownAlbumsTest {
         album = album,
         durationMs = durationMs,
         trackNumber = trackNumber,
-        folderPath = folderPath
+        folderPath = folderPath,
     )
 
-    private fun espejosLibrary() = knownAlbumsFromLibrary(
-        listOf(
-            song(1, "Antes y Después", trackNumber = 1, durationMs = 210_000L),
-            song(2, "Míralo", trackNumber = 2, durationMs = 190_000L),
-            song(3, "Astros", trackNumber = 3, durationMs = 230_000L)
+    private fun espejosLibrary() =
+        knownAlbumsFromLibrary(
+            listOf(
+                song(1, "Antes y Después", trackNumber = 1, durationMs = 210_000L),
+                song(2, "Míralo", trackNumber = 2, durationMs = 190_000L),
+                song(3, "Astros", trackNumber = 3, durationMs = 230_000L),
+            ),
         )
-    )
 
     private fun espejosAlbum(
-        tracks: List<KnownAlbumTrack> = listOf(
-            KnownAlbumTrack("Antes y Después", durationMs = 210_000L, trackNumber = 1),
-            KnownAlbumTrack("Míralo", durationMs = 190_000L, trackNumber = 2),
-            KnownAlbumTrack("Astros", durationMs = 230_000L, trackNumber = 3)
-        )
+        tracks: List<KnownAlbumTrack> =
+            listOf(
+                KnownAlbumTrack("Antes y Después", durationMs = 210_000L, trackNumber = 1),
+                KnownAlbumTrack("Míralo", durationMs = 190_000L, trackNumber = 2),
+                KnownAlbumTrack("Astros", durationMs = 230_000L, trackNumber = 3),
+            ),
     ) = KnownAlbumTracks(
         key = albumGroupKey("Ciro y Los Persas", "Espejos"),
         artist = "Ciro y Los Persas",
         album = "Espejos",
         artworkUri = "file:///espejos.jpg",
-        tracks = tracks
+        tracks = tracks,
     )
 
     @Test
     fun indexesNonGenericLibraryAlbums() {
-        val albums = knownAlbumsFromLibrary(
-            listOf(
-                song(1, "Antes y Después"),
-                song(2, "Míralo"),
-                song(10, "Rip", artist = "Unknown Artist", album = "Unknown Album"),
-                song(11, "Video", artist = "Someone", album = "YouTube Music")
+        val albums =
+            knownAlbumsFromLibrary(
+                listOf(
+                    song(1, "Antes y Después"),
+                    song(2, "Míralo"),
+                    song(10, "Rip", artist = "Unknown Artist", album = "Unknown Album"),
+                    song(11, "Video", artist = "Someone", album = "YouTube Music"),
+                ),
             )
-        )
         assertEquals(1, albums.size)
         assertEquals("Espejos", albums.single().album)
         assertEquals(2, albums.single().tracks.size)
@@ -69,70 +71,80 @@ class IdentifyKnownAlbumsTest {
     @Test
     fun uniqueTitleMatchesEspejos() {
         val album = espejosLibrary().single()
-        val match = matchSongToKnownAlbum(
-            KnownAlbumQuery(songId = 99, title = "Antes y Después", durationMs = 211_000L),
-            album
-        )
+        val match =
+            matchSongToKnownAlbum(
+                KnownAlbumQuery(songId = 99, title = "Antes y Después", durationMs = 211_000L),
+                album,
+            )
         assertEquals("Antes y Después", match?.track?.title)
         assertTrue(match!!.score >= IdentifyRanking.MEDIUM_SCORE)
     }
 
     @Test
     fun globalDoesNotAssignWhenTitleExistsOnTwoAlbums() {
-        val albums = knownAlbumsFromLibrary(
-            listOf(
-                song(1, "Hysteria", artist = "Muse", album = "Absolution"),
-                song(2, "Hysteria", artist = "Def Leppard", album = "High 'n' Dry")
+        val albums =
+            knownAlbumsFromLibrary(
+                listOf(
+                    song(1, "Hysteria", artist = "Muse", album = "Absolution"),
+                    song(2, "Hysteria", artist = "Def Leppard", album = "High 'n' Dry"),
+                ),
             )
-        )
-        val assigned = assignUniqueKnownAlbumMatches(
-            queries = listOf(KnownAlbumQuery(songId = 50, title = "Hysteria", durationMs = 220_000L)),
-            albums = albums,
-            scoped = false
-        )
+        val assigned =
+            assignUniqueKnownAlbumMatches(
+                queries = listOf(KnownAlbumQuery(songId = 50, title = "Hysteria", durationMs = 220_000L)),
+                albums = albums,
+                scoped = false,
+            )
         assertTrue(assigned.isEmpty())
     }
 
     @Test
     fun twoFilesSameTrack_betterDurationWins() {
         val album = espejosAlbum()
-        val assigned = assignUniqueKnownAlbumMatches(
-            queries = listOf(
-                KnownAlbumQuery(songId = 10, title = "Míralo", durationMs = 204_000L),
-                KnownAlbumQuery(songId = 11, title = "Míralo", durationMs = 191_000L)
-            ),
-            albums = listOf(album),
-            scoped = true
-        )
+        val assigned =
+            assignUniqueKnownAlbumMatches(
+                queries =
+                    listOf(
+                        KnownAlbumQuery(songId = 10, title = "Míralo", durationMs = 204_000L),
+                        KnownAlbumQuery(songId = 11, title = "Míralo", durationMs = 191_000L),
+                    ),
+                albums = listOf(album),
+                scoped = true,
+            )
         assertEquals(setOf(11L), assigned.keys)
         assertEquals("Míralo", assigned.getValue(11L).track.title)
     }
 
     @Test
     fun scopedMatchesCatalogTracklistWhenLibraryIsIncomplete() {
-        val libraryOnly = knownAlbumsFromLibrary(
-            listOf(song(1, "Antes y Después", durationMs = 210_000L, trackNumber = 1))
-        ).single()
-        val catalog = listOf(
-            KnownAlbumTrack("Antes y Después", durationMs = 210_000L, trackNumber = 1),
-            KnownAlbumTrack("Míralo", durationMs = 190_000L, trackNumber = 2),
-            KnownAlbumTrack("Astros", durationMs = 230_000L, trackNumber = 3)
-        )
-        val merged = mergeKnownAlbumTracks(
-            artist = "Ciro y Los Persas",
-            album = "Espejos",
-            library = libraryOnly,
-            catalog = catalog
-        )!!
+        val libraryOnly =
+            knownAlbumsFromLibrary(
+                listOf(song(1, "Antes y Después", durationMs = 210_000L, trackNumber = 1)),
+            ).single()
+        val catalog =
+            listOf(
+                KnownAlbumTrack("Antes y Después", durationMs = 210_000L, trackNumber = 1),
+                KnownAlbumTrack("Míralo", durationMs = 190_000L, trackNumber = 2),
+                KnownAlbumTrack("Astros", durationMs = 230_000L, trackNumber = 3),
+            )
+        val merged =
+            mergeKnownAlbumTracks(
+                artist = "Ciro y Los Persas",
+                album = "Espejos",
+                library = libraryOnly,
+                catalog = catalog,
+            )!!
         assertEquals(3, merged.tracks.size)
-        val assigned = assignUniqueKnownAlbumMatches(
-            queries = listOf(
-                KnownAlbumQuery(songId = 20, title = "Míralo", durationMs = 189_000L),
-                KnownAlbumQuery(songId = 21, title = "Astros", durationMs = 231_000L)
-            ),
-            albums = listOf(merged),
-            scoped = true
-        )
+        val assigned =
+            assignUniqueKnownAlbumMatches(
+                queries =
+                    listOf(
+                        KnownAlbumQuery(songId = 20, title = "Míralo", durationMs = 189_000L),
+                        KnownAlbumQuery(songId = 21, title = "Astros", durationMs = 231_000L),
+                    ),
+                albums = listOf(merged),
+                scoped = true,
+            )
         assertEquals(setOf(20L, 21L), assigned.keys)
         assertEquals("Míralo", assigned.getValue(20L).track.title)
         assertEquals("Astros", assigned.getValue(21L).track.title)
@@ -140,12 +152,13 @@ class IdentifyKnownAlbumsTest {
 
     @Test
     fun placeholderAndGenericAlbumDoNotIndex() {
-        val albums = knownAlbumsFromLibrary(
-            listOf(
-                song(1, "A", artist = "Unknown Artist", album = "Unknown Album"),
-                song(2, "B", artist = "Unknown Artist", album = "Unknown Album")
+        val albums =
+            knownAlbumsFromLibrary(
+                listOf(
+                    song(1, "A", artist = "Unknown Artist", album = "Unknown Album"),
+                    song(2, "B", artist = "Unknown Artist", album = "Unknown Album"),
+                ),
             )
-        )
         assertTrue(albums.isEmpty())
     }
 
@@ -153,16 +166,16 @@ class IdentifyKnownAlbumsTest {
     fun junkTitlesDoNotMatch() {
         val album = espejosAlbum()
         assertNull(
-            matchSongToKnownAlbum(KnownAlbumQuery(songId = 3, title = "01"), album)
+            matchSongToKnownAlbum(KnownAlbumQuery(songId = 3, title = "01"), album),
         )
         assertNull(
-            matchSongToKnownAlbum(KnownAlbumQuery(songId = 4, title = "Track 5"), album)
+            matchSongToKnownAlbum(KnownAlbumQuery(songId = 4, title = "Track 5"), album),
         )
         assertNull(
             matchSongToKnownAlbum(
                 KnownAlbumQuery(songId = 5, title = "/storage/emulated/0/Music/x.mp3"),
-                album
-            )
+                album,
+            ),
         )
     }
 
@@ -172,68 +185,79 @@ class IdentifyKnownAlbumsTest {
         assertNull(
             matchSongToKnownAlbum(
                 KnownAlbumQuery(songId = 8, title = "Míralo", durationMs = 400_000L),
-                album
-            )
+                album,
+            ),
         )
     }
 
     @Test
     fun promoteAttachesMediumSuggestion() {
-        val proposal = IdentifyProposal(
-            songId = 20L,
-            queryArtist = "Unknown Artist",
-            queryTitle = "Astros",
-            confidence = IdentifyConfidence.NONE
-        )
-        val promoted = promoteKnownAlbumMatches(
-            proposals = listOf(proposal),
-            queries = listOf(KnownAlbumQuery(songId = 20L, title = "Astros", durationMs = 230_000L)),
-            albums = listOf(espejosAlbum())
-        )
+        val proposal =
+            IdentifyProposal(
+                songId = 20L,
+                queryArtist = "Unknown Artist",
+                queryTitle = "Astros",
+                confidence = IdentifyConfidence.NONE,
+            )
+        val promoted =
+            promoteKnownAlbumMatches(
+                proposals = listOf(proposal),
+                queries = listOf(KnownAlbumQuery(songId = 20L, title = "Astros", durationMs = 230_000L)),
+                albums = listOf(espejosAlbum()),
+            )
         assertEquals(IdentifyConfidence.MEDIUM, promoted.single().confidence)
         assertEquals("Astros", promoted.single().suggested?.title)
         assertEquals("Espejos", promoted.single().suggested?.album)
-        assertTrue(promoted.single().suggested!!.reasons.contains(KNOWN_ALBUM_REASON))
+        assertTrue(
+            promoted
+                .single()
+                .suggested!!
+                .reasons
+                .contains(KNOWN_ALBUM_REASON),
+        )
     }
 
     @Test
     fun knownAlbumQueryUsesFilenameTitle() {
-        val query = knownAlbumQueryOf(
-            song(
-                id = 4,
-                title = "05 - Astros",
-                artist = "Unknown Artist",
-                album = "Unknown Album"
+        val query =
+            knownAlbumQueryOf(
+                song(
+                    id = 4,
+                    title = "05 - Astros",
+                    artist = "Unknown Artist",
+                    album = "Unknown Album",
+                ),
             )
-        )
         assertEquals("Astros", query.title)
         assertEquals(5, query.trackNumber)
     }
 
     @Test
     fun bonusAndGenericTitles_rejectedFromKnownAlbumMatching() {
-        val albumWithBonus = KnownAlbumTracks(
-            key = albumGroupKey("Ciro y Los Persas", "Espejos"),
-            artist = "Ciro y Los Persas",
-            album = "Espejos",
-            artworkUri = "file:///espejos.jpg",
-            tracks = listOf(
-                KnownAlbumTrack("Antes y Después", durationMs = 210_000L, trackNumber = 1),
-                KnownAlbumTrack("Bonus Track", durationMs = 180_000L, trackNumber = 4)
+        val albumWithBonus =
+            KnownAlbumTracks(
+                key = albumGroupKey("Ciro y Los Persas", "Espejos"),
+                artist = "Ciro y Los Persas",
+                album = "Espejos",
+                artworkUri = "file:///espejos.jpg",
+                tracks =
+                    listOf(
+                        KnownAlbumTrack("Antes y Después", durationMs = 210_000L, trackNumber = 1),
+                        KnownAlbumTrack("Bonus Track", durationMs = 180_000L, trackNumber = 4),
+                    ),
             )
-        )
         // Generic title "Bonus" or "Bonus Track" must not match
         assertNull(
             matchSongToKnownAlbum(
                 KnownAlbumQuery(songId = 30, title = "Bonus", durationMs = 180_000L),
-                albumWithBonus
-            )
+                albumWithBonus,
+            ),
         )
         assertNull(
             matchSongToKnownAlbum(
                 KnownAlbumQuery(songId = 31, title = "Bonus Track", durationMs = 180_000L),
-                albumWithBonus
-            )
+                albumWithBonus,
+            ),
         )
         // Different artist must not match
         assertNull(
@@ -242,10 +266,10 @@ class IdentifyKnownAlbumsTest {
                     songId = 32,
                     artist = "Babasónicos",
                     title = "Antes y Después",
-                    durationMs = 210_000L
+                    durationMs = 210_000L,
                 ),
-                albumWithBonus
-            )
+                albumWithBonus,
+            ),
         )
     }
 }

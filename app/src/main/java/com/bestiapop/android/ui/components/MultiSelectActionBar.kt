@@ -62,7 +62,7 @@ data class MultiSelectActions(
     val onSimilarSelected: () -> Unit,
     val onDeleteSelected: () -> Unit,
     val onSelectAll: () -> Unit,
-    val onClearSelection: () -> Unit
+    val onClearSelection: () -> Unit,
 )
 
 /**
@@ -72,7 +72,7 @@ data class MultiSelectActions(
 fun MultiSelectActionBar(
     selectedCount: Int,
     actions: MultiSelectActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) = MultiSelectActionBar(
     selectedCount = selectedCount,
     onPlaySelected = actions.onPlaySelected,
@@ -83,7 +83,7 @@ fun MultiSelectActionBar(
     onDeleteSelected = actions.onDeleteSelected,
     onSelectAll = actions.onSelectAll,
     onClearSelection = actions.onClearSelection,
-    modifier = modifier
+    modifier = modifier,
 )
 
 /**
@@ -100,44 +100,46 @@ fun MultiSelectActionBar(
     onDeleteSelected: () -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = ListDensity.rowHorizontalPadding,
-                vertical = ListDensity.rowVerticalPadding
-            ),
-        shape = RoundedCornerShape(ListDensity.corner),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 6.dp
-    ) {
-        Column(
-            modifier = Modifier
+        modifier =
+            modifier
                 .fillMaxWidth()
                 .padding(
-                    horizontal = ListDensity.rowInnerPadding,
-                    vertical = ListDensity.rowVerticalPadding
-                )
+                    horizontal = ListDensity.rowHorizontalPadding,
+                    vertical = ListDensity.rowVerticalPadding,
+                ),
+        shape = RoundedCornerShape(ListDensity.corner),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        tonalElevation = 6.dp,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = ListDensity.rowInnerPadding,
+                        vertical = ListDensity.rowVerticalPadding,
+                    ),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     IconButton(
                         onClick = onClearSelection,
-                        modifier = Modifier.size(ChromeIconButtonSize)
+                        modifier = Modifier.size(ChromeIconButtonSize),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Cancelar selección",
-                            modifier = Modifier.size(ActionIconSize)
+                            modifier = Modifier.size(ActionIconSize),
                         )
                     }
                     Text(
@@ -146,25 +148,27 @@ fun MultiSelectActionBar(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 TextButton(
                     onClick = onSelectAll,
-                    contentPadding = PaddingValues(
-                        horizontal = ListDensity.rowInnerPadding,
-                        vertical = ListDensity.rowVerticalPadding
-                    )
+                    contentPadding =
+                        PaddingValues(
+                            horizontal = ListDensity.rowInnerPadding,
+                            vertical = ListDensity.rowVerticalPadding,
+                        ),
                 ) {
                     Text("Seleccionar todo")
                 }
             }
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.Top
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.Top,
             ) {
                 MultiSelectAction(
                     icon = Icons.Default.PlayArrow,
@@ -172,35 +176,35 @@ fun MultiSelectActionBar(
                     description = "Reproducir seleccionados",
                     onClick = onPlaySelected,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.width(ActionSlotWidth)
+                    modifier = Modifier.width(ActionSlotWidth),
                 )
                 MultiSelectAction(
                     icon = Icons.AutoMirrored.Filled.QueueMusic,
                     label = "Cola",
                     description = "Agregar a la cola",
                     onClick = onEnqueueSelected,
-                    modifier = Modifier.width(ActionSlotWidth)
+                    modifier = Modifier.width(ActionSlotWidth),
                 )
                 MultiSelectAction(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                     label = "Lista",
                     description = PlaylistMessages.addToPlaylist,
                     onClick = onAddToPlaylist,
-                    modifier = Modifier.width(ActionSlotWidth)
+                    modifier = Modifier.width(ActionSlotWidth),
                 )
                 MultiSelectAction(
                     icon = Icons.Default.Radio,
                     label = "Similares",
                     description = "Generar playlist de similares",
                     onClick = onSimilarSelected,
-                    modifier = Modifier.width(SimilarActionSlotWidth)
+                    modifier = Modifier.width(SimilarActionSlotWidth),
                 )
                 MultiSelectAction(
                     icon = Icons.Default.AutoFixHigh,
                     label = "ID",
                     description = "Identificar metadata",
                     onClick = onIdentifySelected,
-                    modifier = Modifier.width(ActionSlotWidth)
+                    modifier = Modifier.width(ActionSlotWidth),
                 )
                 MultiSelectAction(
                     icon = Icons.Default.Delete,
@@ -208,7 +212,7 @@ fun MultiSelectActionBar(
                     description = "Eliminar seleccionados",
                     onClick = onDeleteSelected,
                     tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.width(ActionSlotWidth)
+                    modifier = Modifier.width(ActionSlotWidth),
                 )
             }
         }
@@ -222,22 +226,23 @@ private fun MultiSelectAction(
     description: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    tint: Color = LocalContentColor.current
+    tint: Color = LocalContentColor.current,
 ) {
     Column(
-        modifier = modifier
-            .clickable(onClick = onClick, role = Role.Button)
-            .padding(
-                vertical = ListDensity.rowVerticalPadding,
-                horizontal = 2.dp
-            ),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier =
+            modifier
+                .clickable(onClick = onClick, role = Role.Button)
+                .padding(
+                    vertical = ListDensity.rowVerticalPadding,
+                    horizontal = 2.dp,
+                ),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = description,
             tint = tint,
-            modifier = Modifier.size(ActionIconSize)
+            modifier = Modifier.size(ActionIconSize),
         )
         Text(
             text = label,
@@ -245,7 +250,7 @@ private fun MultiSelectAction(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.clearAndSetSemantics { }
+            modifier = Modifier.clearAndSetSemantics { },
         )
     }
 }
@@ -257,42 +262,44 @@ fun PlaylistAdditionActionBar(
     onConfirmAddition: () -> Unit,
     onCancelAddition: () -> Unit,
     onSelectAll: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = ListDensity.rowHorizontalPadding,
-                vertical = ListDensity.rowVerticalPadding
-            ),
-        shape = RoundedCornerShape(ListDensity.corner),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        tonalElevation = 6.dp
-    ) {
-        Row(
-            modifier = Modifier
+        modifier =
+            modifier
                 .fillMaxWidth()
                 .padding(
-                    horizontal = ListDensity.rowInnerPadding,
-                    vertical = ListDensity.rowVerticalPadding
+                    horizontal = ListDensity.rowHorizontalPadding,
+                    vertical = ListDensity.rowVerticalPadding,
                 ),
+        shape = RoundedCornerShape(ListDensity.corner),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 6.dp,
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = ListDensity.rowInnerPadding,
+                        vertical = ListDensity.rowVerticalPadding,
+                    ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) {
                 IconButton(
                     onClick = onCancelAddition,
-                    modifier = Modifier.size(ChromeIconButtonSize)
+                    modifier = Modifier.size(ChromeIconButtonSize),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Cancelar",
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(ActionIconSize)
+                        modifier = Modifier.size(ActionIconSize),
                     )
                 }
                 Spacer(modifier = Modifier.width(4.dp))
@@ -301,7 +308,7 @@ fun PlaylistAdditionActionBar(
                     style = ListDensity.titleStyle.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
@@ -309,15 +316,16 @@ fun PlaylistAdditionActionBar(
                 if (onSelectAll != null) {
                     TextButton(
                         onClick = onSelectAll,
-                        contentPadding = PaddingValues(
-                            horizontal = ListDensity.rowInnerPadding,
-                            vertical = ListDensity.rowVerticalPadding
-                        )
+                        contentPadding =
+                            PaddingValues(
+                                horizontal = ListDensity.rowInnerPadding,
+                                vertical = ListDensity.rowVerticalPadding,
+                            ),
                     ) {
                         Text(
                             text = "Todo",
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
                     Spacer(modifier = Modifier.width(4.dp))
@@ -325,28 +333,31 @@ fun PlaylistAdditionActionBar(
                 Button(
                     onClick = onConfirmAddition,
                     enabled = selectedCount > 0,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
                     shape = RoundedCornerShape(ListDensity.corner),
-                    contentPadding = PaddingValues(
-                        horizontal = ListDensity.rowInnerPadding,
-                        vertical = ListDensity.rowVerticalPadding + 2.dp
-                    )
+                    contentPadding =
+                        PaddingValues(
+                            horizontal = ListDensity.rowInnerPadding,
+                            vertical = ListDensity.rowVerticalPadding + 2.dp,
+                        ),
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.PlaylistAdd,
                         contentDescription = null,
-                        modifier = Modifier
-                            .padding(end = 4.dp)
-                            .size(ActionIconSize)
+                        modifier =
+                            Modifier
+                                .padding(end = 4.dp)
+                                .size(ActionIconSize),
                     )
                     Text(
                         text = PlaylistMessages.addToPlaylistNamed(playlistName),
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

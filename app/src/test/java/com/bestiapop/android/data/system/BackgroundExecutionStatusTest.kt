@@ -9,15 +9,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackgroundExecutionStatusTest {
-
     @Test
     fun preAndroidP_hasNoBackgroundRestrictionApi_butKeepsDozeStatus() {
-        val status = resolveBackgroundExecutionStatus(
-            sdkInt = Build.VERSION_CODES.O_MR1,
-            backgroundRestricted = { true },
-            ignoringBatteryOptimizations = { true },
-            runAnyInBackgroundIgnored = { true }
-        )
+        val status =
+            resolveBackgroundExecutionStatus(
+                sdkInt = Build.VERSION_CODES.O_MR1,
+                backgroundRestricted = { true },
+                ignoringBatteryOptimizations = { true },
+                runAnyInBackgroundIgnored = { true },
+            )
 
         assertFalse(status.backgroundRestricted)
         assertFalse(status.runAnyInBackgroundIgnored)
@@ -27,11 +27,12 @@ class BackgroundExecutionStatusTest {
 
     @Test
     fun androidPAndLater_reportsIndependentPlatformSignals() {
-        val status = resolveBackgroundExecutionStatus(
-            sdkInt = Build.VERSION_CODES.P,
-            backgroundRestricted = { true },
-            ignoringBatteryOptimizations = { false }
-        )
+        val status =
+            resolveBackgroundExecutionStatus(
+                sdkInt = Build.VERSION_CODES.P,
+                backgroundRestricted = { true },
+                ignoringBatteryOptimizations = { false },
+            )
 
         assertTrue(status.backgroundRestricted)
         assertFalse(status.ignoringBatteryOptimizations)
@@ -40,12 +41,13 @@ class BackgroundExecutionStatusTest {
 
     @Test
     fun uiRestrictedWithoutIgnoredAppOp_doesNotClaimBlockedPlayback() {
-        val status = resolveBackgroundExecutionStatus(
-            sdkInt = Build.VERSION_CODES.P,
-            backgroundRestricted = { true },
-            ignoringBatteryOptimizations = { true },
-            runAnyInBackgroundIgnored = { false }
-        )
+        val status =
+            resolveBackgroundExecutionStatus(
+                sdkInt = Build.VERSION_CODES.P,
+                backgroundRestricted = { true },
+                ignoringBatteryOptimizations = { true },
+                runAnyInBackgroundIgnored = { false },
+            )
 
         assertTrue(status.backgroundRestricted)
         assertFalse(status.runAnyInBackgroundIgnored)
@@ -54,12 +56,13 @@ class BackgroundExecutionStatusTest {
 
     @Test
     fun runAnyInBackgroundIgnored_withoutUiRestriction_doesNotClaimBlockedPlayback() {
-        val status = resolveBackgroundExecutionStatus(
-            sdkInt = Build.VERSION_CODES.P,
-            backgroundRestricted = { false },
-            ignoringBatteryOptimizations = { true },
-            runAnyInBackgroundIgnored = { true }
-        )
+        val status =
+            resolveBackgroundExecutionStatus(
+                sdkInt = Build.VERSION_CODES.P,
+                backgroundRestricted = { false },
+                ignoringBatteryOptimizations = { true },
+                runAnyInBackgroundIgnored = { true },
+            )
 
         assertFalse(status.backgroundRestricted)
         assertTrue(status.runAnyInBackgroundIgnored)
@@ -68,12 +71,13 @@ class BackgroundExecutionStatusTest {
 
     @Test
     fun confirmedBlock_requiresUiRestrictionAndIgnoredAppOp() {
-        val status = resolveBackgroundExecutionStatus(
-            sdkInt = Build.VERSION_CODES.P,
-            backgroundRestricted = { true },
-            ignoringBatteryOptimizations = { true },
-            runAnyInBackgroundIgnored = { true }
-        )
+        val status =
+            resolveBackgroundExecutionStatus(
+                sdkInt = Build.VERSION_CODES.P,
+                backgroundRestricted = { true },
+                ignoringBatteryOptimizations = { true },
+                runAnyInBackgroundIgnored = { true },
+            )
 
         assertTrue(status.backgroundRestricted)
         assertTrue(status.runAnyInBackgroundIgnored)
@@ -91,30 +95,33 @@ class BackgroundExecutionStatusTest {
 
     @Test
     fun oemScreenOffCleanup_onlyWarnsWhenSettingIsExplicitlyOn() {
-        val unknown = resolveBackgroundExecutionStatus(
-            sdkInt = Build.VERSION_CODES.P,
-            backgroundRestricted = { false },
-            ignoringBatteryOptimizations = { true },
-            oemScreenOffCleanupEnabled = { null }
-        )
+        val unknown =
+            resolveBackgroundExecutionStatus(
+                sdkInt = Build.VERSION_CODES.P,
+                backgroundRestricted = { false },
+                ignoringBatteryOptimizations = { true },
+                oemScreenOffCleanupEnabled = { null },
+            )
         assertNull(unknown.oemScreenOffCleanupEnabled)
         assertFalse(unknown.oemScreenOffCleanupActive)
 
-        val disabled = resolveBackgroundExecutionStatus(
-            sdkInt = Build.VERSION_CODES.P,
-            backgroundRestricted = { false },
-            ignoringBatteryOptimizations = { true },
-            oemScreenOffCleanupEnabled = { false }
-        )
+        val disabled =
+            resolveBackgroundExecutionStatus(
+                sdkInt = Build.VERSION_CODES.P,
+                backgroundRestricted = { false },
+                ignoringBatteryOptimizations = { true },
+                oemScreenOffCleanupEnabled = { false },
+            )
         assertEquals(false, disabled.oemScreenOffCleanupEnabled)
         assertFalse(disabled.oemScreenOffCleanupActive)
 
-        val enabled = resolveBackgroundExecutionStatus(
-            sdkInt = Build.VERSION_CODES.P,
-            backgroundRestricted = { false },
-            ignoringBatteryOptimizations = { true },
-            oemScreenOffCleanupEnabled = { true }
-        )
+        val enabled =
+            resolveBackgroundExecutionStatus(
+                sdkInt = Build.VERSION_CODES.P,
+                backgroundRestricted = { false },
+                ignoringBatteryOptimizations = { true },
+                oemScreenOffCleanupEnabled = { true },
+            )
         assertEquals(true, enabled.oemScreenOffCleanupEnabled)
         assertTrue(enabled.oemScreenOffCleanupActive)
     }

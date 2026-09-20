@@ -19,24 +19,23 @@ class ListenBrainzRadio(
     private val lookupMetadata: suspend (
         artist: String,
         recording: String,
-        token: String
+        token: String,
     ) -> LbApiResult<LbMetadataLookup>,
     private val fetchLbRadio: suspend (
         artistMbid: String,
         token: String,
-        mode: String
+        mode: String,
     ) -> LbApiResult<List<LbRadioRecording>>,
     private val fetchRecordingMetadata: suspend (
         mbids: List<String>,
-        token: String
+        token: String,
     ) -> LbApiResult<Map<String, LbRecordingMetadata>>,
     private val clockMs: () -> Long = { System.currentTimeMillis() },
-    private val artistMbidTtlMs: Long = ARTIST_MBID_TTL_MS
+    private val artistMbidTtlMs: Long = ARTIST_MBID_TTL_MS,
 ) {
-
     constructor(
         clockMs: () -> Long = { System.currentTimeMillis() },
-        artistMbidTtlMs: Long = ARTIST_MBID_TTL_MS
+        artistMbidTtlMs: Long = ARTIST_MBID_TTL_MS,
     ) : this(
         lookupMetadata = { artist, recording, token ->
             ListenBrainzClient.lookupRecordingMetadata(artist, recording, token)
@@ -48,7 +47,7 @@ class ListenBrainzRadio(
             ListenBrainzClient.fetchRecordingMetadata(mbids, token)
         },
         clockMs = clockMs,
-        artistMbidTtlMs = artistMbidTtlMs
+        artistMbidTtlMs = artistMbidTtlMs,
     )
 
     private val artistMbidCache = HashMap<String, CachedArtistMbid>()
@@ -61,17 +60,18 @@ class ListenBrainzRadio(
         excludeKeys: Set<String>,
         limit: Int,
         token: String,
-        lbMode: String = DEFAULT_LB_MODE
+        lbMode: String = DEFAULT_LB_MODE,
     ): List<PlayableItem> {
         if (limit <= 0 || token.isBlank()) return emptyList()
         if (seed.artist.isBlank() || seed.title.isBlank()) return emptyList()
 
         val artistMbid = resolveArtistMbid(seed.artist, seed.title, token) ?: return emptyList()
         val radioResult = fetchLbRadio(artistMbid, token, lbMode)
-        val recordings = when (radioResult) {
-            is LbApiResult.Success -> radioResult.data
-            is LbApiResult.Failure -> return emptyList()
-        }
+        val recordings =
+            when (radioResult) {
+                is LbApiResult.Success -> radioResult.data
+                is LbApiResult.Failure -> return emptyList()
+            }
         if (recordings.isEmpty()) return emptyList()
 
         val mbids = recordings.map { it.recordingMbid }.distinct()
@@ -91,12 +91,17 @@ class ListenBrainzRadio(
             if (results.size >= limit) break
             val meta = metaByMbid[rec.recordingMbid] ?: continue
             if (meta.title.isBlank()) continue
-            val artist = meta.artist.takeIf { it.isNotBlank() }
-                ?: artistFallback[rec.recordingMbid]
-                ?: continue
+            val artist =
+                meta.artist.takeIf { it.isNotBlank() }
+                    ?: artistFallback[rec.recordingMbid]
+                    ?: continue
 
-            val identity = if (artist == meta.artist) meta.identity
-            else meta.identity.copy(artist = artist)
+            val identity =
+                if (artist == meta.artist) {
+                    meta.identity
+                } else {
+                    meta.identity.copy(artist = artist)
+                }
             val key = identity.matchKey()
             if (key.isEmpty() || key in localSeen) continue
             // excludeKeys was accepted and ignored, so this `limit` window filled up with tracks the
@@ -105,11 +110,12 @@ class ListenBrainzRadio(
             if (key in excludeKeys) continue
             localSeen.add(key)
 
-            val item = PlayableItem.fromLibraryOrRemote(
-                local = TrackMatchKeys.lookupLocalSong(libraryIndex, identity),
-                identity = identity,
-                recordingMbid = rec.recordingMbid
-            )
+            val item =
+                PlayableItem.fromLibraryOrRemote(
+                    local = TrackMatchKeys.lookupLocalSong(libraryIndex, identity),
+                    identity = identity,
+                    recordingMbid = rec.recordingMbid,
+                )
             if (item.mediaId in excludeKeys) continue
             results.add(item)
         }
@@ -119,7 +125,7 @@ class ListenBrainzRadio(
     private suspend fun resolveArtistMbid(
         artist: String,
         title: String,
-        token: String
+        token: String,
     ): String? {
         val cacheKey = TrackMatchKeys.normalize(artist)
         if (cacheKey.isEmpty()) return null
@@ -132,10 +138,18 @@ class ListenBrainzRadio(
         }
 
         val result = lookupMetadata(artist, title, token)
-        val mbid = when (result) {
-            is LbApiResult.Success -> result.data.artistMbids.firstOrNull()?.takeIf { it.isNotBlank() }
-            is LbApiResult.Failure -> null
-        }
+        val mbid =
+            when (result) {
+                is LbApiResult.Success -> {
+                    result.data.artistMbids
+                        .firstOrNull()
+                        ?.takeIf { it.isNotBlank() }
+                }
+
+                is LbApiResult.Failure -> {
+                    null
+                }
+            }
 
         if (mbid != null) {
             mutex.withLock {
@@ -147,7 +161,7 @@ class ListenBrainzRadio(
 
     private suspend fun resolveRecordingMetadata(
         mbids: List<String>,
-        token: String
+        token: String,
     ): Map<String, LbRecordingMetadata> {
         if (mbids.isEmpty()) return emptyMap()
 
@@ -174,13 +188,19 @@ class ListenBrainzRadio(
                         }
                     }
                 }
-                is LbApiResult.Failure -> Unit
+
+                is LbApiResult.Failure -> {
+                    Unit
+                }
             }
         }
         return result
     }
 
-    private data class CachedArtistMbid(val mbid: String, val storedAtMs: Long)
+    private data class CachedArtistMbid(
+        val mbid: String,
+        val storedAtMs: Long,
+    )
 
     companion object {
         const val DEFAULT_LB_MODE = "medium"

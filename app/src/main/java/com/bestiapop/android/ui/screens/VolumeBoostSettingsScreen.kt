@@ -12,13 +12,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SettingsScrollColumn
 import com.bestiapop.android.ui.components.SettingsSwitchRow
@@ -29,37 +29,44 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
     val settings by viewModel.playbackSettings.collectAsStateWithLifecycle()
 
     SettingsScrollColumn(
-        intro = "El volumen general se controla con los botones del dispositivo. Acá podés amplificar por encima del 100% y atenuar el canal izquierdo o derecho por separado."
+        intro =
+            "El volumen general se controla con los botones del dispositivo. " +
+                "Acá podés amplificar por encima del 100% y atenuar el canal izquierdo o derecho por separado.",
     ) {
         Text(
             text = "Amplificar volumen",
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Permite subir el volumen por encima del 100% del sistema. Puede distorsionar temas ya masterizados a alto volumen. Nota: Deshabilita la decodificación por hardware de ultra-bajo consumo (Audio Offload) del sistema, lo que puede incrementar el consumo de batería durante la reproducción en segundo plano.",
+            text =
+                "Permite subir el volumen por encima del 100% del sistema. Puede distorsionar temas ya " +
+                    "masterizados a alto volumen. Nota: Deshabilita la decodificación por hardware de " +
+                    "ultra-bajo consumo (Audio Offload) del sistema, lo que puede incrementar el consumo " +
+                    "de batería durante la reproducción en segundo plano.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(12.dp))
 
         SettingsSwitchRow(
             title = "Amplificar volumen",
-            subtitle = if (settings.volumeBoostEnabled) {
-                "Activo — amplificación disponible hasta 200%"
-            } else {
-                "Desactivado — volumen limitado al 100% del sistema"
-            },
+            subtitle =
+                if (settings.volumeBoostEnabled) {
+                    "Activo — amplificación disponible hasta 200%"
+                } else {
+                    "Desactivado — volumen limitado al 100% del sistema"
+                },
             checked = settings.volumeBoostEnabled,
-            onCheckedChange = { viewModel.setVolumeBoostEnabled(it) }
+            onCheckedChange = { viewModel.setVolumeBoostEnabled(it) },
         )
 
         if (settings.volumeBoostEnabled) {
             Spacer(modifier = Modifier.height(16.dp))
             BoostGainSlider(
                 value = settings.volumeBoostAmount,
-                onValueChange = { viewModel.setVolumeBoostAmount(it) }
+                onValueChange = { viewModel.setVolumeBoostAmount(it) },
             )
         }
 
@@ -68,12 +75,12 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
                 text = "Balance estéreo",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
             TextButton(onClick = { viewModel.resetStereoBalance() }) {
                 Text("Restablecer")
@@ -82,7 +89,7 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
         Text(
             text = "Cada fader atenúa solo su canal (independientes). Con amplificar activo el boost se aplica a ambos por igual.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -90,7 +97,7 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
         StereoGainSlider(
             label = "Izquierdo",
             value = settings.stereoLeftGain,
-            onValueChange = { viewModel.setStereoLeftGain(it) }
+            onValueChange = { viewModel.setStereoLeftGain(it) },
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -98,7 +105,7 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
         StereoGainSlider(
             label = "Derecho",
             value = settings.stereoRightGain,
-            onValueChange = { viewModel.setStereoRightGain(it) }
+            onValueChange = { viewModel.setStereoRightGain(it) },
         )
     }
 }
@@ -107,33 +114,34 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
 private fun StereoGainSlider(
     label: String,
     value: Float,
-    onValueChange: (Float) -> Unit
+    onValueChange: (Float) -> Unit,
 ) {
     val percent = (value.coerceIn(0f, 1f) * 100f).roundToInt()
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
                 text = "$percent%",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Slider(
             value = value.coerceIn(0f, 1f),
             onValueChange = onValueChange,
             valueRange = 0f..1f,
-            modifier = Modifier.semantics {
-                contentDescription = "Balance $label"
-            }
+            modifier =
+                Modifier.semantics {
+                    contentDescription = "Balance $label"
+                },
         )
     }
 }
@@ -141,7 +149,7 @@ private fun StereoGainSlider(
 @Composable
 private fun BoostGainSlider(
     value: Float,
-    onValueChange: (Float) -> Unit
+    onValueChange: (Float) -> Unit,
 ) {
     val boostPercent = (value.coerceIn(0f, 1f) * 100f).roundToInt()
     val totalPercent = 100 + boostPercent
@@ -149,17 +157,17 @@ private fun BoostGainSlider(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "Nivel de amplificación",
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
                 text = "+$boostPercent% ($totalPercent%)",
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.tertiary
+                color = MaterialTheme.colorScheme.tertiary,
             )
         }
         Slider(
@@ -167,9 +175,10 @@ private fun BoostGainSlider(
             onValueChange = onValueChange,
             valueRange = 0f..1f,
             steps = 9,
-            modifier = Modifier.semantics {
-                contentDescription = "Nivel de amplificación"
-            }
+            modifier =
+                Modifier.semantics {
+                    contentDescription = "Nivel de amplificación"
+                },
         )
     }
 }

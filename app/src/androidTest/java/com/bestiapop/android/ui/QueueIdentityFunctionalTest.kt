@@ -36,29 +36,32 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @SmallTest
 class QueueIdentityFunctionalTest {
-
     private val composeTestRule = createComposeRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeTestRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeTestRule)
 
-    private val repeatedSong = Song(
-        id = 7L,
-        uriString = "content://media/repeated",
-        title = "Repeated track",
-        artist = "Same artist"
-    )
+    private val repeatedSong =
+        Song(
+            id = 7L,
+            uriString = "content://media/repeated",
+            title = "Repeated track",
+            artist = "Same artist",
+        )
 
-    private val firstOccurrence = PlayableItem.Local(
-        song = repeatedSong,
-        queueEntryId = "slot-a"
-    )
-    private val secondOccurrence = PlayableItem.Local(
-        song = repeatedSong,
-        queueEntryId = "slot-b"
-    )
+    private val firstOccurrence =
+        PlayableItem.Local(
+            song = repeatedSong,
+            queueEntryId = "slot-a",
+        )
+    private val secondOccurrence =
+        PlayableItem.Local(
+            song = repeatedSong,
+            queueEntryId = "slot-b",
+        )
 
     @Test
     fun exactDuplicate_reorderKeepsCurrentIndicatorOnQueueEntry() {
@@ -75,7 +78,7 @@ class QueueIdentityFunctionalTest {
             Column(modifier = Modifier.fillMaxSize()) {
                 Button(
                     onClick = { items = items.reversed() },
-                    modifier = Modifier.testTag("reverse-queue")
+                    modifier = Modifier.testTag("reverse-queue"),
                 ) {
                     Text("Reverse")
                 }
@@ -89,7 +92,7 @@ class QueueIdentityFunctionalTest {
                     modifier = Modifier.weight(1f),
                     listState = queueListState,
                     compact = true,
-                    showIndex = true
+                    showIndex = true,
                 )
             }
         }
@@ -97,7 +100,7 @@ class QueueIdentityFunctionalTest {
         composeTestRule.runOnIdle {
             assertEquals(
                 listOf(firstOccurrence.queueEntryId, secondOccurrence.queueEntryId),
-                listState.layoutInfo.visibleItemsInfo.map { it.key }
+                listState.layoutInfo.visibleItemsInfo.map { it.key },
             )
         }
         // The focused second slot replaces index "2" with the playing icon.
@@ -110,7 +113,7 @@ class QueueIdentityFunctionalTest {
         composeTestRule.runOnIdle {
             assertEquals(
                 listOf(secondOccurrence.queueEntryId, firstOccurrence.queueEntryId),
-                listState.layoutInfo.visibleItemsInfo.map { it.key }
+                listState.layoutInfo.visibleItemsInfo.map { it.key },
             )
         }
         // After reorder, the same occurrence is first; focus did not follow the old index.
@@ -129,7 +132,7 @@ class QueueIdentityFunctionalTest {
                 isCurrentPlaying = { _, _ -> false },
                 onSkipTo = {},
                 onRemove = { removedIndex = it },
-                compact = true
+                compact = true,
             )
         }
 

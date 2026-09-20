@@ -74,8 +74,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.DownloadMessages
@@ -88,12 +86,14 @@ import com.bestiapop.android.data.model.isInFlight
 import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
-import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongItemActions
+import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.TrackTextColumn
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.SongActionDialogsController
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 /**
  * Level 2 / 3: Screen coordinator for adding and importing music.
@@ -103,7 +103,7 @@ import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 fun WebServerScreen(
     viewModel: MusicPlayerViewModel,
     onSelectFolderClick: () -> Unit = {},
-    onOpenDownloads: () -> Unit = {}
+    onOpenDownloads: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val serverAddress by WebServerService.serverState.collectAsStateWithLifecycle()
@@ -118,62 +118,66 @@ fun WebServerScreen(
     var linkUrlInput by rememberSaveable { mutableStateOf("") }
 
     val linkDownloads by remember(viewModel) {
-        viewModel.activeDownloads.map { list ->
-            list.filter {
-                it.source == ActiveDownloadSource.LINK &&
-                    (it.state.isInFlight || it.state.isFailed)
-            }
-        }.distinctUntilChanged()
+        viewModel.activeDownloads
+            .map { list ->
+                list.filter {
+                    it.source == ActiveDownloadSource.LINK &&
+                        (it.state.isInFlight || it.state.isFailed)
+                }
+            }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 
-    val songDialogs = rememberSongActionDialogs(
-        viewModel = viewModel,
-        playlists = playlists,
-        onSelectPlaylist = { playlist, song ->
-            viewModel.addSongToPlaylist(playlist.id, song)
-        },
-        onAfterDelete = { targetSongs ->
-            targetSongs.forEach { song ->
-                transfers.find { it.songId == song.id }?.let {
-                    WebServerService.dismissTransfer(it.id)
+    val songDialogs =
+        rememberSongActionDialogs(
+            viewModel = viewModel,
+            playlists = playlists,
+            onSelectPlaylist = { playlist, song ->
+                viewModel.addSongToPlaylist(playlist.id, song)
+            },
+            onAfterDelete = { targetSongs ->
+                targetSongs.forEach { song ->
+                    transfers.find { it.songId == song.id }?.let {
+                        WebServerService.dismissTransfer(it.id)
+                    }
                 }
-            }
-        }
-    )
+            },
+        )
 
     val songActions = rememberSongQueueActions(viewModel)
     val songsById = songList.songsById
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = Icons.Default.DriveFolderUpload,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .size(32.dp)
-                    .padding(end = 8.dp)
+                modifier =
+                    Modifier
+                        .size(32.dp)
+                        .padding(end = 8.dp),
             )
             Column {
                 Text(
                     text = "Añadir e Importar",
                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
                     text = "WiFi, carpetas locales o enlace web",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                 )
             }
         }
@@ -185,71 +189,80 @@ fun WebServerScreen(
             selectedTabIndex = selectedTab,
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
             contentColor = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp)),
         ) {
             Tab(
                 selected = selectedTab == 0,
                 onClick = { selectedTab = 0 },
                 text = { Text("WiFi Sync", fontWeight = FontWeight.Bold) },
-                icon = { Icon(Icons.Default.Wifi, contentDescription = null) }
+                icon = { Icon(Icons.Default.Wifi, contentDescription = null) },
             )
             Tab(
                 selected = selectedTab == 1,
                 onClick = { selectedTab = 1 },
                 text = { Text("Carpeta local", fontWeight = FontWeight.Bold) },
-                icon = { Icon(Icons.Default.FolderOpen, contentDescription = null) }
+                icon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
             )
             Tab(
                 selected = selectedTab == 2,
                 onClick = { selectedTab = 2 },
                 text = { Text("Por enlace", fontWeight = FontWeight.Bold) },
-                icon = { Icon(Icons.Default.Link, contentDescription = null) }
+                icon = { Icon(Icons.Default.Link, contentDescription = null) },
             )
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
         when (selectedTab) {
-            0 -> WifiSyncTabContent(
-                serverAddress = serverAddress,
-                transfers = transfers,
-                songsById = songsById,
-                currentSongId = currentSongId,
-                pendingConflicts = identifyReview.pendingCount,
-                onToggleServer = { start ->
-                    val intent = Intent(context, WebServerService::class.java)
-                    if (start) {
-                        context.startForegroundService(intent)
-                    } else {
-                        context.stopService(intent)
-                    }
-                },
-                onCopyUrl = { url ->
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("WiFi Sync", url))
-                    Toast.makeText(context, "Link copiado", Toast.LENGTH_SHORT).show()
-                },
-                onShowIdentifyReview = { viewModel.showIdentifyReview() },
-                onDismissTransfer = { id -> WebServerService.dismissTransfer(id) },
-                onPlaySong = { song -> viewModel.playSong(song) },
-                songActions = songActions,
-                songDialogs = songDialogs
-            )
-            1 -> LocalFolderTabContent(
-                onSelectFolderClick = onSelectFolderClick
-            )
-            2 -> LinkDownloaderTabContent(
-                urlInput = linkUrlInput,
-                onUrlInputChange = { linkUrlInput = it },
-                linkDownloads = linkDownloads,
-                onDownloadClick = {
-                    viewModel.downloadFromUrl(linkUrlInput)
-                },
-                onRetryDownload = { id -> viewModel.retryActiveDownload(id) },
-                onOpenDownloads = onOpenDownloads
-            )
+            0 -> {
+                WifiSyncTabContent(
+                    serverAddress = serverAddress,
+                    transfers = transfers,
+                    songsById = songsById,
+                    currentSongId = currentSongId,
+                    pendingConflicts = identifyReview.pendingCount,
+                    onToggleServer = { start ->
+                        val intent = Intent(context, WebServerService::class.java)
+                        if (start) {
+                            context.startForegroundService(intent)
+                        } else {
+                            context.stopService(intent)
+                        }
+                    },
+                    onCopyUrl = { url ->
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("WiFi Sync", url))
+                        Toast.makeText(context, "Link copiado", Toast.LENGTH_SHORT).show()
+                    },
+                    onShowIdentifyReview = { viewModel.showIdentifyReview() },
+                    onDismissTransfer = { id -> WebServerService.dismissTransfer(id) },
+                    onPlaySong = { song -> viewModel.playSong(song) },
+                    songActions = songActions,
+                    songDialogs = songDialogs,
+                )
+            }
+
+            1 -> {
+                LocalFolderTabContent(
+                    onSelectFolderClick = onSelectFolderClick,
+                )
+            }
+
+            2 -> {
+                LinkDownloaderTabContent(
+                    urlInput = linkUrlInput,
+                    onUrlInputChange = { linkUrlInput = it },
+                    linkDownloads = linkDownloads,
+                    onDownloadClick = {
+                        viewModel.downloadFromUrl(linkUrlInput)
+                    },
+                    onRetryDownload = { id -> viewModel.retryActiveDownload(id) },
+                    onOpenDownloads = onOpenDownloads,
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -276,52 +289,57 @@ fun WifiSyncTabContent(
     onDismissTransfer: (String) -> Unit,
     onPlaySong: (Song) -> Unit,
     songActions: com.bestiapop.android.ui.components.SongQueueActions,
-    songDialogs: SongActionDialogsController
+    songDialogs: SongActionDialogsController,
 ) {
-    val webServerSongActions = remember(songActions, songDialogs) {
-        SongItemActions.from(songActions, songDialogs)
-    }
+    val webServerSongActions =
+        remember(songActions, songDialogs) {
+            SongItemActions.from(songActions, songDialogs)
+        }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Card(
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            ),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Surface(
-                    color = if (serverAddress != null) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                    } else {
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
-                    },
+                    color =
+                        if (serverAddress != null) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                        } else {
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
+                        },
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 16.dp),
                 ) {
                     Box(
                         modifier = Modifier.padding(16.dp),
-                        contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Default.CloudUpload,
                             contentDescription = null,
-                            tint = if (serverAddress != null) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            },
-                            modifier = Modifier.size(48.dp)
+                            tint =
+                                if (serverAddress != null) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                },
+                            modifier = Modifier.size(48.dp),
                         )
                     }
                 }
@@ -329,7 +347,7 @@ fun WifiSyncTabContent(
                 Text(
                     text = if (serverAddress != null) "Servidor Web Activo" else "Servidor Inactivo",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -339,46 +357,49 @@ fun WifiSyncTabContent(
                     Surface(
                         color = MaterialTheme.colorScheme.surface,
                         shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(
                                 text = "Añadí música desde tu PC o celular abriendo:",
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
 
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable(onClick = { onCopyUrl(urlDisplay) })
-                                    .padding(vertical = 4.dp),
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable(onClick = { onCopyUrl(urlDisplay) })
+                                        .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
+                                horizontalArrangement = Arrangement.Center,
                             ) {
                                 Text(
                                     text = urlDisplay,
-                                    style = MaterialTheme.typography.headlineSmall.copy(
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 20.sp
-                                    ),
+                                    style =
+                                        MaterialTheme.typography.headlineSmall.copy(
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 20.sp,
+                                        ),
                                     color = MaterialTheme.colorScheme.primary,
                                     textAlign = TextAlign.Center,
-                                    modifier = Modifier.weight(1f, fill = false)
+                                    modifier = Modifier.weight(1f, fill = false),
                                 )
                                 IconButton(onClick = { onCopyUrl(urlDisplay) }) {
                                     Icon(
                                         imageVector = Icons.Default.ContentCopy,
                                         contentDescription = "Copiar link",
-                                        tint = MaterialTheme.colorScheme.primary
+                                        tint = MaterialTheme.colorScheme.primary,
                                     )
                                 }
                             }
@@ -388,7 +409,7 @@ fun WifiSyncTabContent(
                                 style = MaterialTheme.typography.bodySmall,
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                modifier = Modifier.padding(top = 4.dp)
+                                modifier = Modifier.padding(top = 4.dp),
                             )
                         }
                     }
@@ -397,7 +418,7 @@ fun WifiSyncTabContent(
                         text = "Encendé el servidor para transferir canciones por WiFi desde tu computadora u otro celular sin cables.",
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                     )
                 }
 
@@ -405,21 +426,22 @@ fun WifiSyncTabContent(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                    horizontalArrangement = Arrangement.Center,
                 ) {
                     Text(
                         text = if (serverAddress != null) "Servidor encendido" else "Servidor apagado",
                         style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(end = 12.dp)
+                        modifier = Modifier.padding(end = 12.dp),
                     )
 
                     Switch(
                         checked = serverAddress != null,
                         onCheckedChange = onToggleServer,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                            checkedTrackColor = MaterialTheme.colorScheme.primary
-                        )
+                        colors =
+                            SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                            ),
                     )
                 }
             }
@@ -430,19 +452,19 @@ fun WifiSyncTabContent(
         // Transfers header & conflicts
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "Transferencias",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             )
             if (transfers.isNotEmpty()) {
                 Text(
                     text = "${transfers.size}",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 )
             }
         }
@@ -450,16 +472,17 @@ fun WifiSyncTabContent(
         if (pendingConflicts > 0) {
             TextButton(
                 onClick = onShowIdentifyReview,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = if (pendingConflicts == 1) {
-                        "Revisar conflictos de información (1)"
-                    } else {
-                        "Revisar conflictos de información ($pendingConflicts)"
-                    },
+                    text =
+                        if (pendingConflicts == 1) {
+                            "Revisar conflictos de información (1)"
+                        } else {
+                            "Revisar conflictos de información ($pendingConflicts)"
+                        },
                     modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Start
+                    textAlign = TextAlign.Start,
                 )
             }
         }
@@ -471,10 +494,11 @@ fun WifiSyncTabContent(
                 text = "Las canciones recibidas o en proceso aparecerán aquí",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                textAlign = TextAlign.Center
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                textAlign = TextAlign.Center,
             )
         } else {
             transfers.forEach { transfer ->
@@ -484,12 +508,12 @@ fun WifiSyncTabContent(
                         song = doneSong,
                         actions = webServerSongActions,
                         isCurrentPlaying = currentSongId == doneSong.id,
-                        onClick = { onPlaySong(doneSong) }
+                        onClick = { onPlaySong(doneSong) },
                     )
                 } else {
                     WifiTransferProgressRow(
                         transfer = transfer,
-                        onDismiss = { onDismissTransfer(transfer.id) }
+                        onDismiss = { onDismissTransfer(transfer.id) },
                     )
                 }
             }
@@ -499,16 +523,17 @@ fun WifiSyncTabContent(
 
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            modifier = Modifier.fillMaxWidth()
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = "Instrucciones de uso:",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("1. Conectá ambos dispositivos a la misma red WiFi.", style = MaterialTheme.typography.bodySmall)
@@ -525,37 +550,37 @@ fun WifiSyncTabContent(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun LocalFolderTabContent(
-    onSelectFolderClick: () -> Unit
-) {
+fun LocalFolderTabContent(onSelectFolderClick: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Card(
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            ),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
+                    modifier =
+                        Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Default.FolderOpen,
                         contentDescription = null,
                         modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
 
@@ -565,17 +590,19 @@ fun LocalFolderTabContent(
                     text = "Importar Carpeta de Música",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Seleccioná cualquier carpeta en tu dispositivo o tarjeta SD para escanear e incorporar archivos de música a tu biblioteca.",
+                    text =
+                        "Seleccioná cualquier carpeta en tu dispositivo o tarjeta SD para escanear e " +
+                            "incorporar archivos de música a tu biblioteca.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -584,25 +611,25 @@ fun LocalFolderTabContent(
                 Text(
                     text = "Formatos admitidos:",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 FlowRow(
                     horizontalArrangement = Arrangement.Center,
                     verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     listOf("MP3", "FLAC", "M4A", "OGG", "WAV", "OPUS").forEach { format ->
                         Surface(
                             color = MaterialTheme.colorScheme.surface,
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.padding(horizontal = 3.dp)
+                            modifier = Modifier.padding(horizontal = 3.dp),
                         ) {
                             Text(
                                 text = format,
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             )
                         }
                     }
@@ -614,7 +641,7 @@ fun LocalFolderTabContent(
                     onClick = onSelectFolderClick,
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(imageVector = Icons.Default.FolderOpen, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -627,10 +654,11 @@ fun LocalFolderTabContent(
 
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            modifier = Modifier.fillMaxWidth()
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -638,27 +666,29 @@ fun LocalFolderTabContent(
                         imageVector = Icons.Default.Info,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Consejos de almacenamiento:",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "• Podés elegir carpetas como 'Music', 'Download' o cualquier directorio de tu tarjeta SD.",
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
-                    text = "• BestiaPop preserva tus archivos originales sin modificarlos a menos que actives la escritura de etiquetas en Ajustes.",
-                    style = MaterialTheme.typography.bodySmall
+                    text =
+                        "• BestiaPop preserva tus archivos originales sin modificarlos a menos que " +
+                            "actives la escritura de etiquetas en Ajustes.",
+                    style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
                     text = "• Los metadatos y carátulas se leen de forma automática; si faltan datos, la app puede identificarlos online.",
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
@@ -675,39 +705,41 @@ fun LinkDownloaderTabContent(
     linkDownloads: List<ActiveDownload>,
     onDownloadClick: () -> Unit,
     onRetryDownload: (String) -> Unit,
-    onOpenDownloads: () -> Unit
+    onOpenDownloads: () -> Unit,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val isDownloading = linkDownloads.any { it.state.isInFlight }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Card(
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            ),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
+                    modifier =
+                        Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Default.Link,
                         contentDescription = null,
                         modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
 
@@ -717,17 +749,19 @@ fun LinkDownloaderTabContent(
                     text = "Descargar por Enlace Web",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Pegá un enlace de YouTube (youtube.com o youtu.be) o ingresá la URL de un audio para descargarlo e incorporarlo a tu biblioteca.",
+                    text =
+                        "Pegá un enlace de YouTube (youtube.com o youtu.be) o ingresá la URL de un audio " +
+                            "para descargarlo e incorporarlo a tu biblioteca.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 Spacer(modifier = Modifier.height(20.dp))
@@ -746,23 +780,26 @@ fun LinkDownloaderTabContent(
                     },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Uri,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            keyboardController?.hide()
-                            if (urlInput.isNotBlank() && !isDownloading) {
-                                onDownloadClick()
-                            }
-                        }
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.Uri,
+                            imeAction = ImeAction.Done,
+                        ),
+                    keyboardActions =
+                        KeyboardActions(
+                            onDone = {
+                                keyboardController?.hide()
+                                if (urlInput.isNotBlank() && !isDownloading) {
+                                    onDownloadClick()
+                                }
+                            },
+                        ),
+                    colors =
+                        OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                        ),
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -775,7 +812,7 @@ fun LinkDownloaderTabContent(
                     enabled = urlInput.isNotBlank() && !isDownloading,
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -787,7 +824,7 @@ fun LinkDownloaderTabContent(
                 ActiveDownloadsSummaryBanner(
                     downloads = linkDownloads,
                     onRetry = onRetryDownload,
-                    onOpenDownloads = onOpenDownloads
+                    onOpenDownloads = onOpenDownloads,
                 )
             }
         }
@@ -801,7 +838,7 @@ fun LinkDownloaderTabContent(
 fun ActiveDownloadsSummaryBanner(
     downloads: List<ActiveDownload>,
     onRetry: (String) -> Unit,
-    onOpenDownloads: () -> Unit
+    onOpenDownloads: () -> Unit,
 ) {
     if (downloads.isEmpty()) return
     val downloading = downloads.filter { it.state.isInFlight }
@@ -815,23 +852,24 @@ fun ActiveDownloadsSummaryBanner(
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = if (downloading.size == 1) {
-                                latest.progressMessage
-                                    ?: DownloadMessages.downloadingQuoted(latest.displayLabel)
-                            } else {
-                                DownloadMessages.downloadingCount(downloading.size)
-                            },
+                            text =
+                                if (downloading.size == 1) {
+                                    latest.progressMessage
+                                        ?: DownloadMessages.downloadingQuoted(latest.displayLabel)
+                                } else {
+                                    DownloadMessages.downloadingCount(downloading.size)
+                                },
                             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
                 }
@@ -840,18 +878,19 @@ fun ActiveDownloadsSummaryBanner(
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            text = if (failed.size == 1) {
-                                failed.first().errorMessage
-                                    ?: DownloadMessages.failedQuoted(failed.first().displayLabel)
-                            } else {
-                                DownloadMessages.downloadsFailed(failed.size)
-                            },
+                            text =
+                                if (failed.size == 1) {
+                                    failed.first().errorMessage
+                                        ?: DownloadMessages.failedQuoted(failed.first().displayLabel)
+                                } else {
+                                    DownloadMessages.downloadsFailed(failed.size)
+                                },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
+                            color = MaterialTheme.colorScheme.onErrorContainer,
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -872,46 +911,51 @@ fun ActiveDownloadsSummaryBanner(
 @Composable
 private fun WifiTransferProgressRow(
     transfer: WifiTransferItem,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        ),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            ),
         shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             ArtworkThumbnail(
                 artworkUri = transfer.artworkUri,
                 size = 48.dp,
-                cornerRadius = 8.dp
+                cornerRadius = 8.dp,
             )
             Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 TrackTextColumn(
                     title = transfer.title.ifBlank { transfer.fileName },
-                    subtitle = when (transfer.state) {
-                        WifiTransferState.PENDING -> "Pendiente"
-                        WifiTransferState.UPLOADING -> "Recibiendo… ${transfer.progressPercent}%"
-                        WifiTransferState.PROCESSING -> "Procesando…"
-                        WifiTransferState.DONE -> transfer.artist
-                        WifiTransferState.ERROR -> transfer.errorMessage ?: "Error"
-                    },
+                    subtitle =
+                        when (transfer.state) {
+                            WifiTransferState.PENDING -> "Pendiente"
+                            WifiTransferState.UPLOADING -> "Recibiendo… ${transfer.progressPercent}%"
+                            WifiTransferState.PROCESSING -> "Procesando…"
+                            WifiTransferState.DONE -> transfer.artist
+                            WifiTransferState.ERROR -> transfer.errorMessage ?: "Error"
+                        },
                     titleStyle = MaterialTheme.typography.bodyMedium,
                     titleWeight = FontWeight.SemiBold,
-                    subtitleColor = if (transfer.state == WifiTransferState.ERROR) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
-                    }
+                    subtitleColor =
+                        if (transfer.state == WifiTransferState.ERROR) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                        },
                 )
                 if (transfer.state == WifiTransferState.UPLOADING ||
                     transfer.state == WifiTransferState.PROCESSING
@@ -920,7 +964,7 @@ private fun WifiTransferProgressRow(
                     LinearProgressIndicator(
                         progress = { transfer.progressPercent / 100f },
                         modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -929,15 +973,16 @@ private fun WifiTransferProgressRow(
                     CircularProgressIndicator(
                         modifier = Modifier.size(22.dp),
                         strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
+
                 WifiTransferState.ERROR, WifiTransferState.DONE -> {
                     IconButton(onClick = onDismiss) {
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "Descartar",
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         )
                     }
                 }
@@ -945,4 +990,3 @@ private fun WifiTransferProgressRow(
         }
     }
 }
-

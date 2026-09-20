@@ -30,33 +30,42 @@ class IdentifyForegroundService : Service() {
         super.onCreate()
         IdentifyExecutionLauncher.markRunning(
             IdentifyExecutionBackend.FOREGROUND_SERVICE,
-            true
+            true,
         )
         acquireWakeLock()
         val helper = IdentifyNotificationHelper(this)
         promote(helper.buildStarting(ongoing = true))
-        notificationCollector = serviceScope.collectIdentifyNotifications(
-            progress = app.processIdentifyRuntime.progress,
-            helper = helper,
-            publish = ::promote
-        )
+        notificationCollector =
+            serviceScope.collectIdentifyNotifications(
+                progress = app.processIdentifyRuntime.progress,
+                helper = helper,
+                publish = ::promote,
+            )
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         latestStartId = startId
         runner?.cancel()
-        runner = serviceScope.launch {
-            settleIdentifyLifetime(
-                runtime = app.processIdentifyRuntime,
-                backend = IdentifyExecutionBackend.FOREGROUND_SERVICE,
-                autoResume = app.shouldAutoResumeDownloads
-            )
-            stopIdentifyService(startId)
-        }
+        runner =
+            serviceScope.launch {
+                settleIdentifyLifetime(
+                    runtime = app.processIdentifyRuntime,
+                    backend = IdentifyExecutionBackend.FOREGROUND_SERVICE,
+                    autoResume = app.shouldAutoResumeDownloads,
+                )
+                stopIdentifyService(startId)
+            }
         return START_REDELIVER_INTENT
     }
 
-    override fun onTimeout(startId: Int, fgsType: Int) {
+    override fun onTimeout(
+        startId: Int,
+        fgsType: Int,
+    ) {
         app.processIdentifyRuntime.interruptNow()
         forceStopIdentifyService(startId)
     }
@@ -64,7 +73,7 @@ class IdentifyForegroundService : Service() {
     override fun onDestroy() {
         IdentifyExecutionLauncher.markRunning(
             IdentifyExecutionBackend.FOREGROUND_SERVICE,
-            false
+            false,
         )
         notificationCollector?.cancel()
         serviceScope.cancel()
@@ -78,28 +87,31 @@ class IdentifyForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun promote(notification: android.app.Notification) {
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        } else {
-            0
-        }
+        val type =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            } else {
+                0
+            }
         ServiceCompat.startForeground(
             this,
             IdentifyNotificationHelper.NOTIFICATION_ID,
             notification,
-            type
+            type,
         )
     }
 
     private fun acquireWakeLock() {
         val power = getSystemService(PowerManager::class.java)
-        wakeLock = power.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "$packageName:identify"
-        ).apply {
-            setReferenceCounted(false)
-            acquire(MAX_WAKE_LOCK_MS)
-        }
+        wakeLock =
+            power
+                .newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "$packageName:identify",
+                ).apply {
+                    setReferenceCounted(false)
+                    acquire(MAX_WAKE_LOCK_MS)
+                }
     }
 
     private fun stopIdentifyService(startId: Int = latestStartId) {
@@ -110,7 +122,7 @@ class IdentifyForegroundService : Service() {
     private fun forceStopIdentifyService(startId: Int) {
         IdentifyExecutionLauncher.markRunning(
             IdentifyExecutionBackend.FOREGROUND_SERVICE,
-            false
+            false,
         )
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf(startId)

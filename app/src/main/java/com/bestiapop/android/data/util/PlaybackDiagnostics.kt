@@ -18,7 +18,6 @@ import com.bestiapop.android.data.system.BackgroundExecutionProbe
  * background kills, memory trimming, and uncaught exceptions.
  */
 object PlaybackDiagnostics {
-
     private const val DEFAULT_TAG = "BestiaPop"
     const val TAG_LIFECYCLE = "BestiaPopLifecycle"
     const val TAG_SERVICE = "BestiaPopService"
@@ -38,17 +37,27 @@ object PlaybackDiagnostics {
         registerMemoryCallbacks(application)
     }
 
-    fun log(tag: String = DEFAULT_TAG, message: String) {
+    fun log(
+        tag: String = DEFAULT_TAG,
+        message: String,
+    ) {
         safeLogD(tag, message)
         CrashReporter.log("[$tag] $message")
     }
 
-    fun warn(tag: String = DEFAULT_TAG, message: String) {
+    fun warn(
+        tag: String = DEFAULT_TAG,
+        message: String,
+    ) {
         safeLogW(tag, message)
         CrashReporter.log("[WARN][$tag] $message")
     }
 
-    fun error(tag: String = DEFAULT_TAG, message: String, throwable: Throwable? = null) {
+    fun error(
+        tag: String = DEFAULT_TAG,
+        message: String,
+        throwable: Throwable? = null,
+    ) {
         safeLogE(tag, message, throwable)
         if (throwable != null) {
             CrashReporter.recordNonFatal(throwable, mapOf("tag" to tag, "message" to message))
@@ -57,7 +66,10 @@ object PlaybackDiagnostics {
         }
     }
 
-    private fun safeLogD(tag: String, msg: String) {
+    private fun safeLogD(
+        tag: String,
+        msg: String,
+    ) {
         try {
             Log.d(tag, msg)
         } catch (_: Throwable) {
@@ -65,7 +77,10 @@ object PlaybackDiagnostics {
         }
     }
 
-    private fun safeLogW(tag: String, msg: String) {
+    private fun safeLogW(
+        tag: String,
+        msg: String,
+    ) {
         try {
             Log.w(tag, msg)
         } catch (_: Throwable) {
@@ -73,7 +88,11 @@ object PlaybackDiagnostics {
         }
     }
 
-    private fun safeLogE(tag: String, msg: String, tr: Throwable?) {
+    private fun safeLogE(
+        tag: String,
+        msg: String,
+        tr: Throwable?,
+    ) {
         try {
             Log.e(tag, msg, tr)
         } catch (_: Throwable) {
@@ -81,41 +100,52 @@ object PlaybackDiagnostics {
         }
     }
 
-    fun logServiceEvent(event: String, details: Map<String, Any?> = emptyMap()) {
-        val detailStr = if (details.isNotEmpty()) {
-            " " + details.entries.joinToString(prefix = "{", postfix = "}") { "${it.key}=${it.value}" }
-        } else {
-            ""
-        }
+    fun logServiceEvent(
+        event: String,
+        details: Map<String, Any?> = emptyMap(),
+    ) {
+        val detailStr =
+            if (details.isNotEmpty()) {
+                " " + details.entries.joinToString(prefix = "{", postfix = "}") { "${it.key}=${it.value}" }
+            } else {
+                ""
+            }
         log(TAG_SERVICE, "$event$detailStr")
     }
 
-    fun logPlayerError(error: PlaybackException, currentMediaId: String?) {
+    fun logPlayerError(
+        error: PlaybackException,
+        currentMediaId: String?,
+    ) {
         val kind = TrackKind.from(currentMediaId)
         val isPendingRemoteFileNotFound =
             kind == TrackKind.REMOTE && error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
         if (isPendingRemoteFileNotFound) {
             warn(
                 TAG_PLAYBACK,
-                "ExoPlayer.onPlayerError: transient remote resolution pending: errorCode=${error.errorCodeName} (${error.errorCode}), msg=${error.message}, trackType=$kind"
+                "ExoPlayer.onPlayerError: transient remote resolution pending: errorCode=${error.errorCodeName} (${error.errorCode}), msg=${error.message}, trackType=$kind",
             )
         } else {
             error(
                 TAG_PLAYBACK,
                 "ExoPlayer.onPlayerError: errorCode=${error.errorCodeName} (${error.errorCode}), msg=${error.message}, trackType=$kind",
-                error
+                error,
             )
         }
     }
 
-    fun logMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        val reasonStr = when (reason) {
-            Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "AUTO (next track)"
-            Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> "SEEK"
-            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> "PLAYLIST_CHANGED"
-            Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> "REPEAT"
-            else -> "REASON_$reason"
-        }
+    fun logMediaItemTransition(
+        mediaItem: MediaItem?,
+        reason: Int,
+    ) {
+        val reasonStr =
+            when (reason) {
+                Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "AUTO (next track)"
+                Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> "SEEK"
+                Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> "PLAYLIST_CHANGED"
+                Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> "REPEAT"
+                else -> "REASON_$reason"
+            }
         val kind = TrackKind.from(mediaItem?.mediaId)
         log(TAG_PLAYBACK, "ExoPlayer.onMediaItemTransition: trackType=$kind, reason=$reasonStr")
     }
@@ -127,29 +157,30 @@ object PlaybackDiagnostics {
         playbackState: Int,
         currentMediaId: String? = null,
         positionMs: Long = -1L,
-        extra: String? = null
+        extra: String? = null,
     ) {
-        val stateName = when (playbackState) {
-            Player.STATE_IDLE -> "IDLE(1)"
-            Player.STATE_BUFFERING -> "BUFFERING(2)"
-            Player.STATE_READY -> "READY(3)"
-            Player.STATE_ENDED -> "ENDED(4)"
-            else -> "UNKNOWN($playbackState)"
-        }
+        val stateName =
+            when (playbackState) {
+                Player.STATE_IDLE -> "IDLE(1)"
+                Player.STATE_BUFFERING -> "BUFFERING(2)"
+                Player.STATE_READY -> "READY(3)"
+                Player.STATE_ENDED -> "ENDED(4)"
+                else -> "UNKNOWN($playbackState)"
+            }
         val kind = TrackKind.from(currentMediaId)
         val typeStr = if (kind != TrackKind.NONE) " trackType=$kind" else ""
         val posStr = if (positionMs >= 0) " pos=${positionMs}ms" else ""
         val extraStr = extra?.let { " extra='$it'" } ?: ""
         log(
             TAG_PLAYBACK,
-            "$event: isPlaying=$isPlaying, playWhenReady=$playWhenReady, state=$stateName$typeStr$posStr$extraStr"
+            "$event: isPlaying=$isPlaying, playWhenReady=$playWhenReady, state=$stateName$typeStr$posStr$extraStr",
         )
         appContext?.let { ctx ->
             com.bestiapop.android.data.system.SystemStabilityMonitor.updatePlaybackState(
                 context = ctx,
                 isPlaying = isPlaying,
                 playWhenReady = playWhenReady,
-                trackKind = kind
+                trackKind = kind,
             )
         }
     }
@@ -158,11 +189,12 @@ object PlaybackDiagnostics {
         val powerManager = context.getSystemService(PowerManager::class.java)
         val activityManager = context.getSystemService(ActivityManager::class.java)
         val ignoringBattery = powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
-        val bgRestricted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            activityManager?.isBackgroundRestricted == true
-        } else {
-            false
-        }
+        val bgRestricted =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                activityManager?.isBackgroundRestricted == true
+            } else {
+                false
+            }
         val status = BackgroundExecutionProbe.current(context)
         log(
             TAG_SYSTEM,
@@ -171,7 +203,7 @@ object PlaybackDiagnostics {
                 "IgnoringBatteryOptimizations=$ignoringBattery, BackgroundRestricted=$bgRestricted, " +
                 "RunAnyInBackgroundIgnored=${status.runAnyInBackgroundIgnored}, " +
                 "BlocksBackgroundPlayback=${status.blocksBackgroundPlayback}, " +
-                "OemScreenOffCleanup=${status.oemScreenOffCleanupEnabled}"
+                "OemScreenOffCleanup=${status.oemScreenOffCleanupEnabled}",
         )
     }
 
@@ -186,14 +218,16 @@ object PlaybackDiagnostics {
             }
             log(TAG_SYSTEM, "Historical process exit reasons (last ${exitReasons.size}):")
             exitReasons.forEachIndexed { index, info ->
-                val reasonName = com.bestiapop.android.data.system.SystemStabilityMonitor.formatReason(info.reason)
+                val reasonName =
+                    com.bestiapop.android.data.system.SystemStabilityMonitor
+                        .formatReason(info.reason)
                 val description = info.description ?: "none"
                 val pssMb = info.pss / 1024 / 1024
                 val rssMb = info.rss / 1024 / 1024
                 log(
                     TAG_SYSTEM,
                     "  [$index] reason=$reasonName (${info.reason}), timestamp=${info.timestamp}, " +
-                        "importance=${info.importance}, status=${info.status}, RSS=${rssMb}MB, PSS=${pssMb}MB, desc='$description'"
+                        "importance=${info.importance}, status=${info.status}, RSS=${rssMb}MB, PSS=${pssMb}MB, desc='$description'",
                 )
             }
         } catch (e: Exception) {
@@ -207,7 +241,7 @@ object PlaybackDiagnostics {
             error(
                 TAG_SYSTEM,
                 "!!! UNCAUGHT EXCEPTION on thread '${thread.name}' !!!: ${throwable.message}",
-                throwable
+                throwable,
             )
             defaultHandler?.uncaughtException(thread, throwable)
         }
@@ -217,25 +251,37 @@ object PlaybackDiagnostics {
         application.registerComponentCallbacks(DiagnosticMemoryCallbacks(application))
     }
 
-    private class DiagnosticMemoryCallbacks(private val application: Application) : ComponentCallbacks2 {
+    private class DiagnosticMemoryCallbacks(
+        private val application: Application,
+    ) : ComponentCallbacks2 {
         override fun onConfigurationChanged(newConfig: Configuration) = Unit
 
         @Deprecated("Deprecated in Java", ReplaceWith("onTrimMemory(level)"))
         override fun onLowMemory() {
             warn(TAG_SYSTEM, "onLowMemory() received! System is critically low on memory. Clearing memory cache.")
             try {
-                coil.Coil.imageLoader(application).memoryCache?.clear()
-            } catch (_: Throwable) {}
+                coil.Coil
+                    .imageLoader(application)
+                    .memoryCache
+                    ?.clear()
+            } catch (_: Throwable) {
+            }
             System.gc()
         }
 
         override fun onTrimMemory(level: Int) {
             if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
                 try {
-                    coil.Coil.imageLoader(application).memoryCache?.clear()
-                } catch (_: Throwable) {}
+                    coil.Coil
+                        .imageLoader(application)
+                        .memoryCache
+                        ?.clear()
+                } catch (_: Throwable) {
+                }
             }
-            val levelName = com.bestiapop.android.data.system.SystemStabilityMonitor.formatTrimMemoryLevel(level) ?: "LEVEL_$level"
+            val levelName =
+                com.bestiapop.android.data.system.SystemStabilityMonitor
+                    .formatTrimMemoryLevel(level) ?: "LEVEL_$level"
             val runtime = Runtime.getRuntime()
             val usedMemMb = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
             val maxMemMb = runtime.maxMemory() / 1024 / 1024
@@ -247,20 +293,23 @@ object PlaybackDiagnostics {
 enum class TrackKind {
     LOCAL,
     REMOTE,
-    NONE;
+    NONE,
+    ;
 
     companion object {
-        fun from(mediaId: String?): TrackKind = when {
-            mediaId.isNullOrBlank() -> NONE
-            mediaId.startsWith("remote:") || mediaId.startsWith("remote://") -> REMOTE
-            else -> LOCAL
-        }
+        fun from(mediaId: String?): TrackKind =
+            when {
+                mediaId.isNullOrBlank() -> NONE
+                mediaId.startsWith("remote:") || mediaId.startsWith("remote://") -> REMOTE
+                else -> LOCAL
+            }
 
-        fun from(item: com.bestiapop.android.data.model.PlayableItem?): TrackKind = when (item) {
-            null -> NONE
-            is com.bestiapop.android.data.model.PlayableItem.Remote -> REMOTE
-            is com.bestiapop.android.data.model.PlayableItem.Local -> LOCAL
-        }
+        fun from(item: com.bestiapop.android.data.model.PlayableItem?): TrackKind =
+            when (item) {
+                null -> NONE
+                is com.bestiapop.android.data.model.PlayableItem.Remote -> REMOTE
+                is com.bestiapop.android.data.model.PlayableItem.Local -> LOCAL
+            }
 
         fun fromMediaId(mediaId: String?): TrackKind = from(mediaId)
     }

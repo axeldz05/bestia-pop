@@ -24,333 +24,363 @@ import com.bestiapop.android.data.model.SongPlayStat
         SongArtistCrossRef::class,
         SongGenreCrossRef::class,
         AlbumArtistCrossRef::class,
-        AlbumGenreCrossRef::class
+        AlbumGenreCrossRef::class,
     ],
     version = 16,
-    exportSchema = false
+    exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun musicDao(): MusicDao
+
     abstract fun pendingListenDao(): PendingListenDao
 
     companion object {
         @Volatile
-        private var INSTANCE: AppDatabase? = null
+        private var instance: AppDatabase? = null
 
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("DELETE FROM songs WHERE id NOT IN (SELECT MIN(id) FROM songs GROUP BY uriString)")
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_songs_uriString` ON `songs` (`uriString`)")
+        private val MIGRATION_1_2 =
+            object : Migration(1, 2) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("DELETE FROM songs WHERE id NOT IN (SELECT MIN(id) FROM songs GROUP BY uriString)")
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_songs_uriString` ON `songs` (`uriString`)")
+                }
             }
-        }
 
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `playlists` ADD COLUMN `description` TEXT DEFAULT NULL")
-                db.execSQL("ALTER TABLE `playlists` ADD COLUMN `coverUri` TEXT DEFAULT NULL")
+        private val MIGRATION_2_3 =
+            object : Migration(2, 3) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE `playlists` ADD COLUMN `description` TEXT DEFAULT NULL")
+                    db.execSQL("ALTER TABLE `playlists` ADD COLUMN `coverUri` TEXT DEFAULT NULL")
+                }
             }
-        }
 
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `pending_listens` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `listenedAt` INTEGER NOT NULL,
-                        `trackName` TEXT NOT NULL,
-                        `artistName` TEXT NOT NULL,
-                        `releaseName` TEXT,
-                        `durationMs` INTEGER,
-                        `createdAt` INTEGER NOT NULL,
-                        `attempts` INTEGER NOT NULL,
-                        `lastError` TEXT
+        private val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `pending_listens` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `listenedAt` INTEGER NOT NULL,
+                            `trackName` TEXT NOT NULL,
+                            `artistName` TEXT NOT NULL,
+                            `releaseName` TEXT,
+                            `durationMs` INTEGER,
+                            `createdAt` INTEGER NOT NULL,
+                            `attempts` INTEGER NOT NULL,
+                            `lastError` TEXT
+                        )
+                        """.trimIndent(),
                     )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_pending_listens_listenedAt` ON `pending_listens` (`listenedAt`)"
-                )
-            }
-        }
-
-        private val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `playlist_pending_tracks` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `playlistId` INTEGER NOT NULL,
-                        `title` TEXT NOT NULL,
-                        `artist` TEXT NOT NULL,
-                        `releaseName` TEXT,
-                        `recordingMbid` TEXT,
-                        `position` INTEGER NOT NULL
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_pending_listens_listenedAt` ON `pending_listens` (`listenedAt`)",
                     )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_playlist_pending_tracks_playlistId` ON `playlist_pending_tracks` (`playlistId`)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_playlist_pending_tracks_playlistId_artist_title` ON `playlist_pending_tracks` (`playlistId`, `artist`, `title`)"
-                )
+                }
             }
-        }
 
-        private val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `album_overrides` (
-                        `albumKey` TEXT NOT NULL PRIMARY KEY,
-                        `displayName` TEXT NOT NULL,
-                        `artist` TEXT,
-                        `genre` TEXT,
-                        `year` INTEGER NOT NULL,
-                        `artworkUri` TEXT
+        private val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `playlist_pending_tracks` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `playlistId` INTEGER NOT NULL,
+                            `title` TEXT NOT NULL,
+                            `artist` TEXT NOT NULL,
+                            `releaseName` TEXT,
+                            `recordingMbid` TEXT,
+                            `position` INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
                     )
-                    """.trimIndent()
-                )
-            }
-        }
-
-        private val MIGRATION_6_7 = object : Migration(6, 7) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_songId` ON `playlist_song_cross_ref` (`songId`)"
-                )
-            }
-        }
-
-        private val MIGRATION_7_8 = object : Migration(7, 8) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE songs ADD COLUMN lastPlayedAt INTEGER NOT NULL DEFAULT 0"
-                )
-            }
-        }
-
-        private val MIGRATION_8_9 = object : Migration(8, 9) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE playlist_pending_tracks " +
-                        "ADD COLUMN trackNumber INTEGER NOT NULL DEFAULT 0"
-                )
-            }
-        }
-
-        private val MIGRATION_9_10 = object : Migration(9, 10) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `song_play_stats` (
-                        `songId` INTEGER NOT NULL,
-                        `lastPlayedAt` INTEGER NOT NULL,
-                        PRIMARY KEY(`songId`)
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_playlist_pending_tracks_playlistId` ON `playlist_pending_tracks` (`playlistId`)",
                     )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    """
-                    INSERT INTO `song_play_stats` (`songId`, `lastPlayedAt`)
-                    SELECT `id`, `lastPlayedAt` FROM `songs` WHERE `lastPlayedAt` > 0
-                    """.trimIndent()
-                )
-            }
-        }
-
-        private val MIGRATION_10_11 = object : Migration(10, 11) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_songs_album` ON `songs` (`album`)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_songs_artist` ON `songs` (`artist`)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_songs_dateAdded` ON `songs` (`dateAdded`)"
-                )
-            }
-        }
-
-        private val MIGRATION_11_12 = object : Migration(11, 12) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_songs_title` ON `songs` (`title`)"
-                )
-            }
-        }
-
-        private val MIGRATION_12_13 = object : Migration(12, 13) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS `index_songs_artist_album` ON `songs` (`artist`, `album`)"
-                )
-                db.execSQL(
-                    "DROP INDEX IF EXISTS `index_songs_artist`"
-                )
-            }
-        }
-
-        private val MIGRATION_13_14 = object : Migration(13, 14) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `playlist_song_cross_ref_new` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `playlistId` INTEGER NOT NULL,
-                        `songId` INTEGER NOT NULL,
-                        `position` INTEGER NOT NULL DEFAULT 0
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_playlist_pending_tracks_playlistId_artist_title` ON `playlist_pending_tracks` (`playlistId`, `artist`, `title`)",
                     )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    """
-                    INSERT INTO `playlist_song_cross_ref_new` (`playlistId`, `songId`, `position`)
-                    SELECT `playlistId`, `songId`, `position` FROM `playlist_song_cross_ref`
-                    """.trimIndent()
-                )
-                db.execSQL("DROP TABLE `playlist_song_cross_ref`")
-                db.execSQL("ALTER TABLE `playlist_song_cross_ref_new` RENAME TO `playlist_song_cross_ref`")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_playlistId` ON `playlist_song_cross_ref` (`playlistId`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_songId` ON `playlist_song_cross_ref` (`songId`)")
+                }
             }
-        }
 
-        private val MIGRATION_14_15 = object : Migration(14, 15) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `artists` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `name` TEXT NOT NULL,
-                        `normalizedName` TEXT NOT NULL,
-                        `photoUri` TEXT
+        private val MIGRATION_5_6 =
+            object : Migration(5, 6) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `album_overrides` (
+                            `albumKey` TEXT NOT NULL PRIMARY KEY,
+                            `displayName` TEXT NOT NULL,
+                            `artist` TEXT,
+                            `genre` TEXT,
+                            `year` INTEGER NOT NULL,
+                            `artworkUri` TEXT
+                        )
+                        """.trimIndent(),
                     )
-                    """.trimIndent()
-                )
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_artists_normalizedName` ON `artists` (`normalizedName`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_artists_name` ON `artists` (`name`)")
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `genres` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `name` TEXT NOT NULL,
-                        `normalizedName` TEXT NOT NULL
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_genres_normalizedName` ON `genres` (`normalizedName`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_genres_name` ON `genres` (`name`)")
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `song_artist_cross_ref` (
-                        `songId` INTEGER NOT NULL,
-                        `artistId` INTEGER NOT NULL,
-                        `isPrimary` INTEGER NOT NULL DEFAULT 1,
-                        `position` INTEGER NOT NULL DEFAULT 0,
-                        PRIMARY KEY(`songId`, `artistId`),
-                        FOREIGN KEY(`songId`) REFERENCES `songs`(`id`) ON DELETE CASCADE,
-                        FOREIGN KEY(`artistId`) REFERENCES `artists`(`id`) ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_artist_cross_ref_songId` ON `song_artist_cross_ref` (`songId`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_artist_cross_ref_artistId` ON `song_artist_cross_ref` (`artistId`)")
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `song_genre_cross_ref` (
-                        `songId` INTEGER NOT NULL,
-                        `genreId` INTEGER NOT NULL,
-                        PRIMARY KEY(`songId`, `genreId`),
-                        FOREIGN KEY(`songId`) REFERENCES `songs`(`id`) ON DELETE CASCADE,
-                        FOREIGN KEY(`genreId`) REFERENCES `genres`(`id`) ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_genre_cross_ref_songId` ON `song_genre_cross_ref` (`songId`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_genre_cross_ref_genreId` ON `song_genre_cross_ref` (`genreId`)")
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `album_artist_cross_ref` (
-                        `albumKey` TEXT NOT NULL,
-                        `artistId` INTEGER NOT NULL,
-                        PRIMARY KEY(`albumKey`, `artistId`),
-                        FOREIGN KEY(`artistId`) REFERENCES `artists`(`id`) ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_artist_cross_ref_albumKey` ON `album_artist_cross_ref` (`albumKey`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_artist_cross_ref_artistId` ON `album_artist_cross_ref` (`artistId`)")
-
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `album_genre_cross_ref` (
-                        `albumKey` TEXT NOT NULL,
-                        `genreId` INTEGER NOT NULL,
-                        PRIMARY KEY(`albumKey`, `genreId`),
-                        FOREIGN KEY(`genreId`) REFERENCES `genres`(`id`) ON DELETE CASCADE
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_genre_cross_ref_albumKey` ON `album_genre_cross_ref` (`albumKey`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_genre_cross_ref_genreId` ON `album_genre_cross_ref` (`genreId`)")
-
-                // Initial seed from songs
-                db.execSQL("INSERT OR IGNORE INTO `artists` (`name`, `normalizedName`) SELECT DISTINCT `artist`, LOWER(TRIM(`artist`)) FROM `songs` WHERE `artist` IS NOT NULL AND TRIM(`artist`) != ''")
-                db.execSQL("INSERT OR IGNORE INTO `genres` (`name`, `normalizedName`) SELECT DISTINCT `genre`, LOWER(TRIM(`genre`)) FROM `songs` WHERE `genre` IS NOT NULL AND TRIM(`genre`) != '' AND TRIM(`genre`) != 'Unknown Genre'")
-                db.execSQL("INSERT OR IGNORE INTO `song_artist_cross_ref` (`songId`, `artistId`, `isPrimary`, `position`) SELECT s.id, a.id, 1, 0 FROM `songs` s JOIN `artists` a ON LOWER(TRIM(s.artist)) = a.normalizedName")
-                db.execSQL("INSERT OR IGNORE INTO `song_genre_cross_ref` (`songId`, `genreId`) SELECT s.id, g.id FROM `songs` s JOIN `genres` g ON LOWER(TRIM(s.genre)) = g.normalizedName")
+                }
             }
-        }
 
-        private val MIGRATION_15_16 = object : Migration(15, 16) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE `playlist_pending_tracks` ADD COLUMN `artworkUri` TEXT DEFAULT NULL")
+        private val MIGRATION_6_7 =
+            object : Migration(6, 7) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_songId` ON `playlist_song_cross_ref` (`songId`)",
+                    )
+                }
             }
-        }
+
+        private val MIGRATION_7_8 =
+            object : Migration(7, 8) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE songs ADD COLUMN lastPlayedAt INTEGER NOT NULL DEFAULT 0",
+                    )
+                }
+            }
+
+        private val MIGRATION_8_9 =
+            object : Migration(8, 9) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE playlist_pending_tracks " +
+                            "ADD COLUMN trackNumber INTEGER NOT NULL DEFAULT 0",
+                    )
+                }
+            }
+
+        private val MIGRATION_9_10 =
+            object : Migration(9, 10) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `song_play_stats` (
+                            `songId` INTEGER NOT NULL,
+                            `lastPlayedAt` INTEGER NOT NULL,
+                            PRIMARY KEY(`songId`)
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        """
+                        INSERT INTO `song_play_stats` (`songId`, `lastPlayedAt`)
+                        SELECT `id`, `lastPlayedAt` FROM `songs` WHERE `lastPlayedAt` > 0
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+        private val MIGRATION_10_11 =
+            object : Migration(10, 11) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_songs_album` ON `songs` (`album`)",
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_songs_artist` ON `songs` (`artist`)",
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_songs_dateAdded` ON `songs` (`dateAdded`)",
+                    )
+                }
+            }
+
+        private val MIGRATION_11_12 =
+            object : Migration(11, 12) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_songs_title` ON `songs` (`title`)",
+                    )
+                }
+            }
+
+        private val MIGRATION_12_13 =
+            object : Migration(12, 13) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_songs_artist_album` ON `songs` (`artist`, `album`)",
+                    )
+                    db.execSQL(
+                        "DROP INDEX IF EXISTS `index_songs_artist`",
+                    )
+                }
+            }
+
+        private val MIGRATION_13_14 =
+            object : Migration(13, 14) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `playlist_song_cross_ref_new` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `playlistId` INTEGER NOT NULL,
+                            `songId` INTEGER NOT NULL,
+                            `position` INTEGER NOT NULL DEFAULT 0
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        """
+                        INSERT INTO `playlist_song_cross_ref_new` (`playlistId`, `songId`, `position`)
+                        SELECT `playlistId`, `songId`, `position` FROM `playlist_song_cross_ref`
+                        """.trimIndent(),
+                    )
+                    db.execSQL("DROP TABLE `playlist_song_cross_ref`")
+                    db.execSQL("ALTER TABLE `playlist_song_cross_ref_new` RENAME TO `playlist_song_cross_ref`")
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_playlistId` ON `playlist_song_cross_ref` (`playlistId`)",
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_songId` ON `playlist_song_cross_ref` (`songId`)")
+                }
+            }
+
+        private val MIGRATION_14_15 =
+            object : Migration(14, 15) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `artists` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `normalizedName` TEXT NOT NULL,
+                            `photoUri` TEXT
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_artists_normalizedName` ON `artists` (`normalizedName`)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_artists_name` ON `artists` (`name`)")
+
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `genres` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `normalizedName` TEXT NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_genres_normalizedName` ON `genres` (`normalizedName`)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_genres_name` ON `genres` (`name`)")
+
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `song_artist_cross_ref` (
+                            `songId` INTEGER NOT NULL,
+                            `artistId` INTEGER NOT NULL,
+                            `isPrimary` INTEGER NOT NULL DEFAULT 1,
+                            `position` INTEGER NOT NULL DEFAULT 0,
+                            PRIMARY KEY(`songId`, `artistId`),
+                            FOREIGN KEY(`songId`) REFERENCES `songs`(`id`) ON DELETE CASCADE,
+                            FOREIGN KEY(`artistId`) REFERENCES `artists`(`id`) ON DELETE CASCADE
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_artist_cross_ref_songId` ON `song_artist_cross_ref` (`songId`)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_artist_cross_ref_artistId` ON `song_artist_cross_ref` (`artistId`)")
+
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `song_genre_cross_ref` (
+                            `songId` INTEGER NOT NULL,
+                            `genreId` INTEGER NOT NULL,
+                            PRIMARY KEY(`songId`, `genreId`),
+                            FOREIGN KEY(`songId`) REFERENCES `songs`(`id`) ON DELETE CASCADE,
+                            FOREIGN KEY(`genreId`) REFERENCES `genres`(`id`) ON DELETE CASCADE
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_genre_cross_ref_songId` ON `song_genre_cross_ref` (`songId`)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_genre_cross_ref_genreId` ON `song_genre_cross_ref` (`genreId`)")
+
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `album_artist_cross_ref` (
+                            `albumKey` TEXT NOT NULL,
+                            `artistId` INTEGER NOT NULL,
+                            PRIMARY KEY(`albumKey`, `artistId`),
+                            FOREIGN KEY(`artistId`) REFERENCES `artists`(`id`) ON DELETE CASCADE
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_album_artist_cross_ref_albumKey` ON `album_artist_cross_ref` (`albumKey`)",
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_album_artist_cross_ref_artistId` ON `album_artist_cross_ref` (`artistId`)",
+                    )
+
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `album_genre_cross_ref` (
+                            `albumKey` TEXT NOT NULL,
+                            `genreId` INTEGER NOT NULL,
+                            PRIMARY KEY(`albumKey`, `genreId`),
+                            FOREIGN KEY(`genreId`) REFERENCES `genres`(`id`) ON DELETE CASCADE
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_genre_cross_ref_albumKey` ON `album_genre_cross_ref` (`albumKey`)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_genre_cross_ref_genreId` ON `album_genre_cross_ref` (`genreId`)")
+
+                    // Initial seed from songs
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO `artists` (`name`, `normalizedName`) SELECT DISTINCT `artist`, LOWER(TRIM(`artist`)) FROM `songs` WHERE `artist` IS NOT NULL AND TRIM(`artist`) != ''",
+                    )
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO `genres` (`name`, `normalizedName`) SELECT DISTINCT `genre`, LOWER(TRIM(`genre`)) FROM `songs` WHERE `genre` IS NOT NULL AND TRIM(`genre`) != '' AND TRIM(`genre`) != 'Unknown Genre'",
+                    )
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO `song_artist_cross_ref` (`songId`, `artistId`, `isPrimary`, `position`) SELECT s.id, a.id, 1, 0 FROM `songs` s JOIN `artists` a ON LOWER(TRIM(s.artist)) = a.normalizedName",
+                    )
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO `song_genre_cross_ref` (`songId`, `genreId`) SELECT s.id, g.id FROM `songs` s JOIN `genres` g ON LOWER(TRIM(s.genre)) = g.normalizedName",
+                    )
+                }
+            }
+
+        private val MIGRATION_15_16 =
+            object : Migration(15, 16) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE `playlist_pending_tracks` ADD COLUMN `artworkUri` TEXT DEFAULT NULL")
+                }
+            }
 
         /** Kept in sync with the `@Database` version so a downgrade can be detected and reported. */
         const val VERSION = 16
 
-        fun getDatabase(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "bestiapop_music_db"
-                )
-                .addMigrations(
-                    MIGRATION_1_2,
-                    MIGRATION_2_3,
-                    MIGRATION_3_4,
-                    MIGRATION_4_5,
-                    MIGRATION_5_6,
-                    MIGRATION_6_7,
-                    MIGRATION_7_8,
-                    MIGRATION_8_9,
-                    MIGRATION_9_10,
-                    MIGRATION_10_11,
-                    MIGRATION_11_12,
-                    MIGRATION_12_13,
-                    MIGRATION_13_14,
-                    MIGRATION_14_15,
-                    MIGRATION_15_16
-                )
-                // Sideloading an older APK is plausible here (GitHub Releases), and Room would refuse
-                // to open a newer schema, so the app has to stay usable. The wipe is not silent:
-                // LibraryPreferencesRepository keeps a high-water mark and the UI reports it.
-                .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
-                .build()
+        fun getDatabase(context: Context): AppDatabase =
+            instance ?: synchronized(this) {
+                val newInstance =
+                    Room
+                        .databaseBuilder(
+                            context.applicationContext,
+                            AppDatabase::class.java,
+                            "bestiapop_music_db",
+                        ).addMigrations(
+                            MIGRATION_1_2,
+                            MIGRATION_2_3,
+                            MIGRATION_3_4,
+                            MIGRATION_4_5,
+                            MIGRATION_5_6,
+                            MIGRATION_6_7,
+                            MIGRATION_7_8,
+                            MIGRATION_8_9,
+                            MIGRATION_9_10,
+                            MIGRATION_10_11,
+                            MIGRATION_11_12,
+                            MIGRATION_12_13,
+                            MIGRATION_13_14,
+                            MIGRATION_14_15,
+                            MIGRATION_15_16,
+                        )
+                        // Sideloading an older APK is plausible here (GitHub Releases), and Room would refuse
+                        // to open a newer schema, so the app has to stay usable. The wipe is not silent:
+                        // LibraryPreferencesRepository keeps a high-water mark and the UI reports it.
+                        .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
+                        .build()
 
-                INSTANCE = instance
-                instance
+                instance = newInstance
+                newInstance
             }
-        }
     }
 }

@@ -22,15 +22,19 @@ internal class RefreshingMediaNotificationProvider(
     notificationId: Int,
     channelId: String,
     channelNameResourceId: Int,
-    private val requestNotificationRefresh: () -> Unit
+    private val requestNotificationRefresh: () -> Unit,
 ) : MediaNotification.Provider {
-    private val delegate = DefaultMediaNotificationProvider.Builder(context)
-        .setNotificationId(notificationId)
-        .setChannelId(channelId)
-        .setChannelName(channelNameResourceId)
-        .build()
+    private val delegate =
+        DefaultMediaNotificationProvider
+            .Builder(context)
+            .setNotificationId(notificationId)
+            .setChannelId(channelId)
+            .setChannelName(channelNameResourceId)
+            .build()
 
-    fun setSmallIcon(@DrawableRes resourceId: Int) {
+    fun setSmallIcon(
+        @DrawableRes resourceId: Int,
+    ) {
         delegate.setSmallIcon(resourceId)
     }
 
@@ -42,19 +46,20 @@ internal class RefreshingMediaNotificationProvider(
         mediaSession: MediaSession,
         mediaButtonPreferences: ImmutableList<CommandButton>,
         actionFactory: MediaNotification.ActionFactory,
-        onNotificationChangedCallback: MediaNotification.Provider.Callback
+        onNotificationChangedCallback: MediaNotification.Provider.Callback,
     ): MediaNotification {
-        val notification = delegate.createNotification(
-            mediaSession,
-            mediaButtonPreferences,
-            actionFactory,
-            object : MediaNotification.Provider.Callback {
-                override fun onNotificationChanged(notification: MediaNotification) {
-                    lastMediaNotification = notification
-                    onNotificationChangedCallback.onNotificationChanged(notification)
-                }
-            }
-        )
+        val notification =
+            delegate.createNotification(
+                mediaSession,
+                mediaButtonPreferences,
+                actionFactory,
+                object : MediaNotification.Provider.Callback {
+                    override fun onNotificationChanged(notification: MediaNotification) {
+                        lastMediaNotification = notification
+                        onNotificationChangedCallback.onNotificationChanged(notification)
+                    }
+                },
+            )
         lastMediaNotification = notification
         return notification
     }
@@ -62,9 +67,8 @@ internal class RefreshingMediaNotificationProvider(
     override fun handleCustomCommand(
         session: MediaSession,
         action: String,
-        extras: Bundle
+        extras: Bundle,
     ): Boolean = delegate.handleCustomCommand(session, action, extras)
 
-    override fun getNotificationChannelInfo(): MediaNotification.Provider.NotificationChannelInfo =
-        delegate.notificationChannelInfo
+    override fun getNotificationChannelInfo(): MediaNotification.Provider.NotificationChannelInfo = delegate.notificationChannelInfo
 }

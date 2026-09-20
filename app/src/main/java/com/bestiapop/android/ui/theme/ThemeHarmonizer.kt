@@ -17,7 +17,6 @@ import kotlin.math.roundToInt
  * and comprehensive Material 3 ColorScheme generation.
  */
 object ThemeHarmonizer {
-
     private const val WCAG_MIN_CONTRAST_NORMAL_TEXT = 4.5f
     private const val WCAG_MIN_CONTRAST_LARGE_UI = 3.0f
 
@@ -26,13 +25,12 @@ object ThemeHarmonizer {
      * Returned value is in range [0.0, 1.0].
      */
     fun calculateLuminance(color: Color): Float {
-        fun linearize(channel: Float): Float {
-            return if (channel <= 0.04045f) {
+        fun linearize(channel: Float): Float =
+            if (channel <= 0.04045f) {
                 channel / 12.92f
             } else {
                 ((channel + 0.055f) / 1.055f).pow(2.4f)
             }
-        }
         val r = linearize(color.red)
         val g = linearize(color.green)
         val b = linearize(color.blue)
@@ -43,7 +41,10 @@ object ThemeHarmonizer {
      * Computes the WCAG 2.1 contrast ratio between two colors.
      * Value is in range [1.0, 21.0].
      */
-    fun calculateContrastRatio(colorA: Color, colorB: Color): Float {
+    fun calculateContrastRatio(
+        colorA: Color,
+        colorB: Color,
+    ): Float {
         val lumA = calculateLuminance(colorA)
         val lumB = calculateLuminance(colorB)
         val lighter = max(lumA, lumB)
@@ -72,11 +73,12 @@ object ThemeHarmonizer {
 
         val s = if (l > 0.5f) delta / (2f - maxC - minC) else delta / (maxC + minC)
 
-        var h = when (maxC) {
-            r -> ((g - b) / delta) + (if (g < b) 6f else 0f)
-            g -> ((b - r) / delta) + 2f
-            else -> ((r - g) / delta) + 4f
-        } * 60f
+        var h =
+            when (maxC) {
+                r -> ((g - b) / delta) + (if (g < b) 6f else 0f)
+                g -> ((b - r) / delta) + 2f
+                else -> ((r - g) / delta) + 4f
+            } * 60f
 
         if (h < 0f) h += 360f
 
@@ -86,7 +88,12 @@ object ThemeHarmonizer {
     /**
      * Converts HSL values to a Compose Color.
      */
-    fun hslToColor(hue: Float, saturation: Float, lightness: Float, alpha: Float = 1f): Color {
+    fun hslToColor(
+        hue: Float,
+        saturation: Float,
+        lightness: Float,
+        alpha: Float = 1f,
+    ): Color {
         val h = (hue % 360f + 360f) % 360f
         val s = saturation.coerceIn(0f, 1f)
         val l = lightness.coerceIn(0f, 1f)
@@ -125,7 +132,7 @@ object ThemeHarmonizer {
         color: Color,
         background: Color,
         minRatio: Float = WCAG_MIN_CONTRAST_NORMAL_TEXT,
-        isDarkTheme: Boolean = true
+        isDarkTheme: Boolean = true,
     ): Color {
         var ratio = calculateContrastRatio(color, background)
         if (ratio >= minRatio) return color
@@ -166,7 +173,10 @@ object ThemeHarmonizer {
     /**
      * Builds a comprehensive, harmonized Material 3 ColorScheme from [data].
      */
-    fun toMaterialColorScheme(data: ColorSchemeData, isDark: Boolean): ColorScheme {
+    fun toMaterialColorScheme(
+        data: ColorSchemeData,
+        isDark: Boolean,
+    ): ColorScheme {
         val rawPrimary = Color(data.primary)
         val rawSecondary = Color(data.secondary)
         val rawAccent = Color(data.accent)
@@ -185,89 +195,102 @@ object ThemeHarmonizer {
         val onTertiary = bestOnColor(tertiary)
 
         val background = rawBackground
-        val onBackground = if (isDark) {
-            ensureContrast(Color(0xFFF1F3F4), background, minRatio = 7.0f, isDarkTheme = true)
-        } else {
-            ensureContrast(Color(0xFF1F1F1F), background, minRatio = 7.0f, isDarkTheme = false)
-        }
+        val onBackground =
+            if (isDark) {
+                ensureContrast(Color(0xFFF1F3F4), background, minRatio = 7.0f, isDarkTheme = true)
+            } else {
+                ensureContrast(Color(0xFF1F1F1F), background, minRatio = 7.0f, isDarkTheme = false)
+            }
 
         val surface = rawSurface
-        val onSurface = if (isDark) {
-            ensureContrast(Color(0xFFE8EAED), surface, minRatio = 7.0f, isDarkTheme = true)
-        } else {
-            ensureContrast(Color(0xFF202124), surface, minRatio = 7.0f, isDarkTheme = false)
-        }
+        val onSurface =
+            if (isDark) {
+                ensureContrast(Color(0xFFE8EAED), surface, minRatio = 7.0f, isDarkTheme = true)
+            } else {
+                ensureContrast(Color(0xFF202124), surface, minRatio = 7.0f, isDarkTheme = false)
+            }
 
         val surfaceVariant = rawSurfaceVariant
-        val onSurfaceVariant = if (isDark) {
-            ensureContrast(Color(0xFFC4C7C5), surfaceVariant, minRatio = 4.5f, isDarkTheme = true)
-        } else {
-            ensureContrast(Color(0xFF444746), surfaceVariant, minRatio = 4.5f, isDarkTheme = false)
-        }
+        val onSurfaceVariant =
+            if (isDark) {
+                ensureContrast(Color(0xFFC4C7C5), surfaceVariant, minRatio = 4.5f, isDarkTheme = true)
+            } else {
+                ensureContrast(Color(0xFF444746), surfaceVariant, minRatio = 4.5f, isDarkTheme = false)
+            }
 
         // Tonal containers
         val primaryHsl = rgbToHsl(primary)
-        val primaryContainer = if (isDark) {
-            hslToColor(primaryHsl[0], (primaryHsl[1] * 0.45f).coerceIn(0.15f, 0.6f), 0.22f)
-        } else {
-            hslToColor(primaryHsl[0], (primaryHsl[1] * 0.4f).coerceIn(0.15f, 0.5f), 0.90f)
-        }
+        val primaryContainer =
+            if (isDark) {
+                hslToColor(primaryHsl[0], (primaryHsl[1] * 0.45f).coerceIn(0.15f, 0.6f), 0.22f)
+            } else {
+                hslToColor(primaryHsl[0], (primaryHsl[1] * 0.4f).coerceIn(0.15f, 0.5f), 0.90f)
+            }
         val onPrimaryContainer = bestOnColor(primaryContainer)
 
         val secondaryHsl = rgbToHsl(secondary)
-        val secondaryContainer = if (isDark) {
-            hslToColor(secondaryHsl[0], (secondaryHsl[1] * 0.4f).coerceIn(0.12f, 0.5f), 0.24f)
-        } else {
-            hslToColor(secondaryHsl[0], (secondaryHsl[1] * 0.35f).coerceIn(0.12f, 0.45f), 0.92f)
-        }
+        val secondaryContainer =
+            if (isDark) {
+                hslToColor(secondaryHsl[0], (secondaryHsl[1] * 0.4f).coerceIn(0.12f, 0.5f), 0.24f)
+            } else {
+                hslToColor(secondaryHsl[0], (secondaryHsl[1] * 0.35f).coerceIn(0.12f, 0.45f), 0.92f)
+            }
         val onSecondaryContainer = bestOnColor(secondaryContainer)
 
         val tertiaryHsl = rgbToHsl(tertiary)
-        val tertiaryContainer = if (isDark) {
-            hslToColor(tertiaryHsl[0], (tertiaryHsl[1] * 0.4f).coerceIn(0.12f, 0.5f), 0.22f)
-        } else {
-            hslToColor(tertiaryHsl[0], (tertiaryHsl[1] * 0.35f).coerceIn(0.12f, 0.45f), 0.90f)
-        }
+        val tertiaryContainer =
+            if (isDark) {
+                hslToColor(tertiaryHsl[0], (tertiaryHsl[1] * 0.4f).coerceIn(0.12f, 0.5f), 0.22f)
+            } else {
+                hslToColor(tertiaryHsl[0], (tertiaryHsl[1] * 0.35f).coerceIn(0.12f, 0.45f), 0.90f)
+            }
         val onTertiaryContainer = bestOnColor(tertiaryContainer)
 
         // Surface elevation containers
         val surfaceHsl = rgbToHsl(surface)
-        val surfaceContainerLowest = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.8f, 0.05f)
-        } else {
-            Color.White
-        }
-        val surfaceContainerLow = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.85f, 0.09f)
-        } else {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.5f, 0.96f)
-        }
-        val surfaceContainer = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.9f, 0.12f)
-        } else {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.6f, 0.94f)
-        }
-        val surfaceContainerHigh = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.95f, 0.16f)
-        } else {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.7f, 0.92f)
-        }
-        val surfaceContainerHighest = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1], 0.20f)
-        } else {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.8f, 0.90f)
-        }
+        val surfaceContainerLowest =
+            if (isDark) {
+                hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.8f, 0.05f)
+            } else {
+                Color.White
+            }
+        val surfaceContainerLow =
+            if (isDark) {
+                hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.85f, 0.09f)
+            } else {
+                hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.5f, 0.96f)
+            }
+        val surfaceContainer =
+            if (isDark) {
+                hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.9f, 0.12f)
+            } else {
+                hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.6f, 0.94f)
+            }
+        val surfaceContainerHigh =
+            if (isDark) {
+                hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.95f, 0.16f)
+            } else {
+                hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.7f, 0.92f)
+            }
+        val surfaceContainerHighest =
+            if (isDark) {
+                hslToColor(surfaceHsl[0], surfaceHsl[1], 0.20f)
+            } else {
+                hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.8f, 0.90f)
+            }
 
-        val outline = if (isDark) {
-            hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.3f), 0.45f)
-        } else {
-            hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.3f), 0.60f)
-        }
-        val outlineVariant = if (isDark) {
-            hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.25f), 0.28f)
-        } else {
-            hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.25f), 0.80f)
-        }
+        val outline =
+            if (isDark) {
+                hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.3f), 0.45f)
+            } else {
+                hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.3f), 0.60f)
+            }
+        val outlineVariant =
+            if (isDark) {
+                hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.25f), 0.28f)
+            } else {
+                hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.25f), 0.80f)
+            }
 
         return if (isDark) {
             darkColorScheme(
@@ -295,7 +318,7 @@ object ThemeHarmonizer {
                 surfaceContainerHigh = surfaceContainerHigh,
                 surfaceContainerHighest = surfaceContainerHighest,
                 outline = outline,
-                outlineVariant = outlineVariant
+                outlineVariant = outlineVariant,
             )
         } else {
             lightColorScheme(
@@ -323,7 +346,7 @@ object ThemeHarmonizer {
                 surfaceContainerHigh = surfaceContainerHigh,
                 surfaceContainerHighest = surfaceContainerHighest,
                 outline = outline,
-                outlineVariant = outlineVariant
+                outlineVariant = outlineVariant,
             )
         }
     }
@@ -332,7 +355,10 @@ object ThemeHarmonizer {
      * Automatically calculates a harmonious [ColorSchemeData] from a single [primaryColor].
      * Derives balanced background, surface, secondary, and accent colors.
      */
-    fun autoHarmonizePalette(primaryColor: Color, isDark: Boolean = true): ColorSchemeData {
+    fun autoHarmonizePalette(
+        primaryColor: Color,
+        isDark: Boolean = true,
+    ): ColorSchemeData {
         val hsl = rgbToHsl(primaryColor)
         val h = hsl[0]
         val s = hsl[1]
@@ -367,7 +393,7 @@ object ThemeHarmonizer {
             background = background.toArgb().toLong(),
             surface = surface.toArgb().toLong(),
             surfaceVariant = surfaceVariant.toArgb().toLong(),
-            accent = accent.toArgb().toLong()
+            accent = accent.toArgb().toLong(),
         )
     }
 }

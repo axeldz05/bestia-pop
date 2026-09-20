@@ -12,12 +12,11 @@ data class SongQueueActions(
 )
 
 @Composable
-fun rememberSongQueueActions(viewModel: MusicPlayerViewModel): SongQueueActions {
-    return remember(viewModel) {
+fun rememberSongQueueActions(viewModel: MusicPlayerViewModel): SongQueueActions =
+    remember(viewModel) {
         SongQueueActions(
             onPlayNext = { viewModel.playNextInQueue(it) },
             onAddToQueue = { viewModel.addToQueue(it) },
             onStartRadio = { viewModel.startRadio(seedSong = it) },
         )
     }
-}

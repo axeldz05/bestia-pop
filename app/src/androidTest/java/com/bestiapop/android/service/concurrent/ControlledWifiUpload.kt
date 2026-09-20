@@ -80,21 +80,22 @@ internal class ControlledWifiUpload : AutoCloseable {
         return activeSocket.use { connected ->
             connected.connect(
                 InetSocketAddress(LOOPBACK_HOST, WebServerService.PORT),
-                HTTP_TIMEOUT_MS
+                HTTP_TIMEOUT_MS,
             )
             connected.soTimeout = HTTP_TIMEOUT_MS
             val output = connected.getOutputStream().buffered()
-            val requestHead = buildString {
-                append(
-                    "POST /upload-file?name=${WebServerServiceTestContract.FILE_NAME} " +
-                        "HTTP/1.1\r\n"
-                )
-                append("Host: localhost:${WebServerService.PORT}\r\n")
-                append("Connection: close\r\n")
-                append("Content-Type: audio/wav\r\n")
-                append("Content-Length: ${bytes.size}\r\n")
-                append("\r\n")
-            }.toByteArray(Charsets.US_ASCII)
+            val requestHead =
+                buildString {
+                    append(
+                        "POST /upload-file?name=${WebServerServiceTestContract.FILE_NAME} " +
+                            "HTTP/1.1\r\n",
+                    )
+                    append("Host: localhost:${WebServerService.PORT}\r\n")
+                    append("Connection: close\r\n")
+                    append("Content-Type: audio/wav\r\n")
+                    append("Content-Length: ${bytes.size}\r\n")
+                    append("\r\n")
+                }.toByteArray(Charsets.US_ASCII)
             output.write(requestHead)
             output.write(bytes, 0, FIRST_CHUNK_BYTES)
             output.flush()
@@ -107,12 +108,14 @@ internal class ControlledWifiUpload : AutoCloseable {
             output.flush()
 
             val responseBytes = connected.getInputStream().readBytes()
-            val statusLine = responseBytes
-                .toString(Charsets.ISO_8859_1)
-                .lineSequence()
-                .firstOrNull()
-                .orEmpty()
-            statusLine.substringAfter(' ', missingDelimiterValue = "")
+            val statusLine =
+                responseBytes
+                    .toString(Charsets.ISO_8859_1)
+                    .lineSequence()
+                    .firstOrNull()
+                    .orEmpty()
+            statusLine
+                .substringAfter(' ', missingDelimiterValue = "")
                 .substringBefore(' ')
                 .toIntOrNull()
                 ?: error("Malformed localhost HTTP status: $statusLine")

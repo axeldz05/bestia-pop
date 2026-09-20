@@ -25,7 +25,6 @@ import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.testutil.ComposeE2EProbe
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.TestAudioDocumentsProvider
-import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -38,6 +37,7 @@ import org.junit.Test
 import org.junit.rules.ExternalResource
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
+import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 @LargeTest
@@ -48,22 +48,26 @@ class SafFolderPickerFunctionalTest {
     private val stateRule = SafPickerStateRule(namespace)
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(stateRule)
-        .around(activityRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(stateRule)
+            .around(activityRule)
 
     private val probe by lazy {
         ComposeE2EProbe(
             rule = activityRule,
             timeoutMs = 10_000L,
             diagnostics = {
-                val songs = runBlocking {
-                    stateRule.database.musicDao().getAllSongs()
-                        .joinToString { "${it.id}:${it.title}:${it.uriString}" }
-                }
+                val songs =
+                    runBlocking {
+                        stateRule.database
+                            .musicDao()
+                            .getAllSongs()
+                            .joinToString { "${it.id}:${it.title}:${it.uriString}" }
+                    }
                 "songs=[$songs]"
-            }
+            },
         )
     }
 
@@ -80,15 +84,16 @@ class SafFolderPickerFunctionalTest {
     @Test
     fun selectFolder_usesOpenDocumentTree_andImportsReturnedTree() {
         val treeUri = TestAudioDocumentsProvider.treeUri(namespace)
-        val resultIntent = Intent()
-            .setData(treeUri)
-            .addFlags(
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PREFIX_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-            )
+        val resultIntent =
+            Intent()
+                .setData(treeUri)
+                .addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+                )
         intending(hasAction(Intent.ACTION_OPEN_DOCUMENT_TREE)).respondWith(
-            Instrumentation.ActivityResult(Activity.RESULT_OK, resultIntent)
+            Instrumentation.ActivityResult(Activity.RESULT_OK, resultIntent),
         )
 
         activityRule.onNodeWithText("Agregar", useUnmergedTree = true).performClick()
@@ -96,15 +101,26 @@ class SafFolderPickerFunctionalTest {
 
         intended(hasAction(Intent.ACTION_OPEN_DOCUMENT_TREE))
         probe.await("SAF picker result imported into production Room") {
-            runBlocking { stateRule.database.musicDao().getAllSongs().size == 1 }
+            runBlocking {
+                stateRule.database
+                    .musicDao()
+                    .getAllSongs()
+                    .size == 1
+            }
         }
-        val persisted = runBlocking { stateRule.database.musicDao().getAllSongs().single() }
+        val persisted =
+            runBlocking {
+                stateRule.database
+                    .musicDao()
+                    .getAllSongs()
+                    .single()
+            }
         assertEquals(TestAudioDocumentsProvider.audioUri(namespace).toString(), persisted.uriString)
     }
 }
 
 private class SafPickerStateRule(
-    private val namespace: UUID
+    private val namespace: UUID,
 ) : ExternalResource() {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
@@ -123,7 +139,7 @@ private class SafPickerStateRule(
         providerContext.grantUriPermission(
             context.packageName,
             TestAudioDocumentsProvider.treeUri(namespace),
-            TREE_GRANT_FLAGS
+            TREE_GRANT_FLAGS,
         )
         runBlocking {
             withContext(Dispatchers.IO) {
@@ -150,7 +166,7 @@ private class SafPickerStateRule(
                 runCatching {
                     context.contentResolver.releasePersistableUriPermission(
                         permission.uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
                     )
                 }
             }
@@ -158,7 +174,7 @@ private class SafPickerStateRule(
             providerContext.revokeUriPermission(
                 context.packageName,
                 TestAudioDocumentsProvider.treeUri(namespace),
-                TREE_GRANT_FLAGS
+                TREE_GRANT_FLAGS,
             )
         }
         TestAudioDocumentsProvider.delete(providerContext, namespace)
@@ -167,7 +183,7 @@ private class SafPickerStateRule(
     private fun grantStartupPermissions() {
         listOf(
             Manifest.permission.READ_MEDIA_AUDIO,
-            Manifest.permission.POST_NOTIFICATIONS
+            Manifest.permission.POST_NOTIFICATIONS,
         ).forEach { permission ->
             if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_DENIED) {
                 instrumentation.uiAutomation.grantRuntimePermission(context.packageName, permission)

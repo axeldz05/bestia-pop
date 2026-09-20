@@ -20,38 +20,39 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private val Context.identifyReviewDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "identify_review"
+    name = "identify_review",
 )
 
 data class PersistedIdentifyReviewQueue(
     val proposals: List<IdentifyProposal> = emptyList(),
     val phase: String = "Item",
-    val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL
+    val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
 )
 
 /**
  * Pure JSON codec for the identify-review queue. Candidates persist without CDN [audioUrl].
  */
 object IdentifyReviewCodec {
-
     fun encode(queue: PersistedIdentifyReviewQueue): String {
         val items = JSONArray()
         for (proposal in queue.proposals) {
             items.put(encodeProposal(proposal))
         }
-        val fieldsObj = JSONObject().apply {
-            put("artwork", queue.applyFields.artwork)
-            put("title", queue.applyFields.title)
-            put("artist", queue.applyFields.artist)
-            put("album", queue.applyFields.album)
-            put("year", queue.applyFields.year)
-            put("trackNumber", queue.applyFields.trackNumber)
-        }
-        return JSONObject().apply {
-            put("phase", queue.phase)
-            put("items", items)
-            put("applyFields", fieldsObj)
-        }.toString()
+        val fieldsObj =
+            JSONObject().apply {
+                put("artwork", queue.applyFields.artwork)
+                put("title", queue.applyFields.title)
+                put("artist", queue.applyFields.artist)
+                put("album", queue.applyFields.album)
+                put("year", queue.applyFields.year)
+                put("trackNumber", queue.applyFields.trackNumber)
+            }
+        return JSONObject()
+            .apply {
+                put("phase", queue.phase)
+                put("items", items)
+                put("applyFields", fieldsObj)
+            }.toString()
     }
 
     fun decode(json: String): PersistedIdentifyReviewQueue {
@@ -59,28 +60,30 @@ object IdentifyReviewCodec {
         return try {
             val obj = JSONObject(json)
             val arr = obj.optJSONArray("items") ?: return PersistedIdentifyReviewQueue()
-            val proposals = buildList {
-                for (i in 0 until arr.length()) {
-                    decodeProposal(arr.getJSONObject(i))?.let { add(it) }
+            val proposals =
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        decodeProposal(arr.getJSONObject(i))?.let { add(it) }
+                    }
                 }
-            }
             val fieldsObj = obj.optJSONObject("applyFields")
-            val applyFields = if (fieldsObj != null) {
-                IdentifyApplyFields(
-                    artwork = fieldsObj.optBoolean("artwork", true),
-                    title = fieldsObj.optBoolean("title", true),
-                    artist = fieldsObj.optBoolean("artist", true),
-                    album = fieldsObj.optBoolean("album", true),
-                    year = fieldsObj.optBoolean("year", true),
-                    trackNumber = fieldsObj.optBoolean("trackNumber", true)
-                )
-            } else {
-                IdentifyApplyFields.ALL
-            }
+            val applyFields =
+                if (fieldsObj != null) {
+                    IdentifyApplyFields(
+                        artwork = fieldsObj.optBoolean("artwork", true),
+                        title = fieldsObj.optBoolean("title", true),
+                        artist = fieldsObj.optBoolean("artist", true),
+                        album = fieldsObj.optBoolean("album", true),
+                        year = fieldsObj.optBoolean("year", true),
+                        trackNumber = fieldsObj.optBoolean("trackNumber", true),
+                    )
+                } else {
+                    IdentifyApplyFields.ALL
+                }
             PersistedIdentifyReviewQueue(
                 proposals = proposals,
                 phase = obj.optString("phase", "Item").ifBlank { "Item" },
-                applyFields = applyFields
+                applyFields = applyFields,
             )
         } catch (_: Exception) {
             PersistedIdentifyReviewQueue()
@@ -114,18 +117,20 @@ object IdentifyReviewCodec {
             put("track", CatalogTrackJson.encode(candidate.track, includeAudioUrl = false))
         }
 
-    private fun decodeProposal(obj: JSONObject): IdentifyProposal? {
-        return try {
+    private fun decodeProposal(obj: JSONObject): IdentifyProposal? =
+        try {
             val songId = obj.getLong("songId")
             val candidatesArr = obj.optJSONArray("candidates") ?: JSONArray()
-            val candidates = buildList {
-                for (i in 0 until candidatesArr.length()) {
-                    decodeCandidate(candidatesArr.getJSONObject(i))?.let { add(it) }
+            val candidates =
+                buildList {
+                    for (i in 0 until candidatesArr.length()) {
+                        decodeCandidate(candidatesArr.getJSONObject(i))?.let { add(it) }
+                    }
                 }
-            }
-            val confidence = runCatching {
-                IdentifyConfidence.valueOf(obj.optString("confidence", "NONE"))
-            }.getOrDefault(IdentifyConfidence.NONE)
+            val confidence =
+                runCatching {
+                    IdentifyConfidence.valueOf(obj.optString("confidence", "NONE"))
+                }.getOrDefault(IdentifyConfidence.NONE)
             IdentifyProposal(
                 songId = songId,
                 queryArtist = obj.optString("queryArtist", ""),
@@ -135,30 +140,34 @@ object IdentifyReviewCodec {
                 confidence = confidence,
                 suggested = candidates.firstOrNull(),
                 usedListenBrainz = obj.optBoolean("usedListenBrainz", false),
-                fillGapsOnly = obj.optBoolean("fillGapsOnly", false)
+                fillGapsOnly = obj.optBoolean("fillGapsOnly", false),
             )
         } catch (_: Exception) {
             null
         }
-    }
 
     private fun decodeCandidate(obj: JSONObject): IdentifyCandidate? {
         return try {
             val trackObj = obj.optJSONObject("track") ?: return null
-            val track = CatalogTrackJson.decode(trackObj).let { decoded ->
-                if (decoded.audioUrl.isEmpty()) decoded
-                else decoded.copy(audioUrl = "")
-            }
-            val reasonsArr = obj.optJSONArray("reasons") ?: JSONArray()
-            val reasons = buildList {
-                for (i in 0 until reasonsArr.length()) {
-                    add(reasonsArr.optString(i))
+            val track =
+                CatalogTrackJson.decode(trackObj).let { decoded ->
+                    if (decoded.audioUrl.isEmpty()) {
+                        decoded
+                    } else {
+                        decoded.copy(audioUrl = "")
+                    }
                 }
-            }
+            val reasonsArr = obj.optJSONArray("reasons") ?: JSONArray()
+            val reasons =
+                buildList {
+                    for (i in 0 until reasonsArr.length()) {
+                        add(reasonsArr.optString(i))
+                    }
+                }
             IdentifyCandidate(
                 track = track,
                 score = obj.optDouble("score", 0.0).toFloat(),
-                reasons = reasons
+                reasons = reasons,
             )
         } catch (_: Exception) {
             null
@@ -167,7 +176,7 @@ object IdentifyReviewCodec {
 }
 
 class IdentifyReviewStore internal constructor(
-    private val dataStore: DataStore<Preferences>
+    private val dataStore: DataStore<Preferences>,
 ) {
     constructor(context: Context) : this(context.identifyReviewDataStore)
 
@@ -203,7 +212,7 @@ class IdentifyReviewStore internal constructor(
     /** Append proposals whose songIds are not already queued. */
     suspend fun appendProposals(
         proposals: List<IdentifyProposal>,
-        applyFields: IdentifyApplyFields? = null
+        applyFields: IdentifyApplyFields? = null,
     ) {
         if (proposals.isEmpty() && applyFields == null) return
         dataStore.edit { prefs ->
@@ -211,15 +220,17 @@ class IdentifyReviewStore internal constructor(
             val existingIds = current.proposals.map { it.songId }.toSet()
             val incoming = proposals.filter { it.songId !in existingIds }
             if (incoming.isEmpty() && applyFields == null) return@edit
-            val targetFields = if (current.proposals.isEmpty() && applyFields != null) {
-                applyFields
-            } else {
-                current.applyFields
-            }
-            val merged = current.copy(
-                proposals = current.proposals + incoming,
-                applyFields = targetFields
-            )
+            val targetFields =
+                if (current.proposals.isEmpty() && applyFields != null) {
+                    applyFields
+                } else {
+                    current.applyFields
+                }
+            val merged =
+                current.copy(
+                    proposals = current.proposals + incoming,
+                    applyFields = targetFields,
+                )
             writeQueue(prefs, merged)
         }
     }
@@ -228,9 +239,10 @@ class IdentifyReviewStore internal constructor(
         if (ids.isEmpty()) return
         dataStore.edit { prefs ->
             val current = IdentifyReviewCodec.decode(prefs[Keys.QUEUE_JSON].orEmpty())
-            val merged = current.copy(
-                proposals = current.proposals.filter { it.songId !in ids }
-            )
+            val merged =
+                current.copy(
+                    proposals = current.proposals.filter { it.songId !in ids },
+                )
             writeQueue(prefs, merged)
         }
     }
@@ -244,26 +256,31 @@ class IdentifyReviewStore internal constructor(
         knownSongIds: Set<Long>,
         droppedIds: Set<Long>,
         phase: String,
-        applyFields: IdentifyApplyFields
+        applyFields: IdentifyApplyFields,
     ) {
         dataStore.edit { prefs ->
             val current = IdentifyReviewCodec.decode(prefs[Keys.QUEUE_JSON].orEmpty())
             val remainingIds = remaining.map { it.songId }.toSet()
-            val extras = current.proposals.filter { proposal ->
-                proposal.songId !in remainingIds &&
-                    proposal.songId !in knownSongIds &&
-                    proposal.songId !in droppedIds
-            }
-            val merged = PersistedIdentifyReviewQueue(
-                proposals = remaining + extras,
-                phase = phase,
-                applyFields = applyFields
-            )
+            val extras =
+                current.proposals.filter { proposal ->
+                    proposal.songId !in remainingIds &&
+                        proposal.songId !in knownSongIds &&
+                        proposal.songId !in droppedIds
+                }
+            val merged =
+                PersistedIdentifyReviewQueue(
+                    proposals = remaining + extras,
+                    phase = phase,
+                    applyFields = applyFields,
+                )
             writeQueue(prefs, merged)
         }
     }
 
-    private fun writeQueue(prefs: MutablePreferences, queue: PersistedIdentifyReviewQueue) {
+    private fun writeQueue(
+        prefs: MutablePreferences,
+        queue: PersistedIdentifyReviewQueue,
+    ) {
         val json = if (queue.proposals.isEmpty()) "" else IdentifyReviewCodec.encode(queue)
         if (prefs[Keys.QUEUE_JSON].orEmpty() == json) return
         prefs[Keys.QUEUE_JSON] = json

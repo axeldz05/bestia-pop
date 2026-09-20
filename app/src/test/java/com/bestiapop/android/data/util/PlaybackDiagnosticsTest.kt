@@ -19,7 +19,6 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 @Category(MediumTest::class)
 class PlaybackDiagnosticsTest {
-
     @Test
     fun trackKind_fromMediaId_classifiesCorrectly() {
         assertEquals(TrackKind.NONE, TrackKind.from(null as String?))
@@ -52,11 +51,12 @@ class PlaybackDiagnosticsTest {
         var recordedException: Throwable? = null
         CrashReporter.isEnabled = false // prevent actual Firebase calls
 
-        val remoteError = PlaybackException(
-            "Source error",
-            null,
-            PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
-        )
+        val remoteError =
+            PlaybackException(
+                "Source error",
+                null,
+                PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+            )
 
         // Remote pending file not found should be treated as transient warn
         PlaybackDiagnostics.logPlayerError(remoteError, "remote:12345")
@@ -65,9 +65,11 @@ class PlaybackDiagnosticsTest {
 
     @Test
     fun logMediaItemTransition_doesNotThrowAndSanitizesTrack() {
-        val mediaItem = MediaItem.Builder()
-            .setMediaId("/storage/emulated/0/Music/Secret Song.mp3")
-            .build()
+        val mediaItem =
+            MediaItem
+                .Builder()
+                .setMediaId("/storage/emulated/0/Music/Secret Song.mp3")
+                .build()
         PlaybackDiagnostics.logMediaItemTransition(mediaItem, androidx.media3.common.Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
     }
 }

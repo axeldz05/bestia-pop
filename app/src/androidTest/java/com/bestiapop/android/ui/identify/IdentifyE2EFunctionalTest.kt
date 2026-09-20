@@ -31,9 +31,10 @@ class IdentifyE2EFunctionalTest {
     private val ui = ComposeE2EProbe(composeRule, UI_TIMEOUT_MS, fixture::diagnostic)
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeRule)
 
     @Before
     fun setUp() {
@@ -59,10 +60,10 @@ class IdentifyE2EFunctionalTest {
             ui.exists(hasText(IdentifyE2ETestContract.HIGH_SOURCE_TITLE)) &&
                 ui.exists(hasText(IdentifyE2ETestContract.MEDIUM_SOURCE_TITLE)) &&
                 ui.exists(
-                    hasTestTag(IdentifyE2ETestContract.songOptionsTag(fixture.highSongId))
+                    hasTestTag(IdentifyE2ETestContract.songOptionsTag(fixture.highSongId)),
                 ) &&
                 ui.exists(
-                    hasTestTag(IdentifyE2ETestContract.songOptionsTag(fixture.mediumSongId))
+                    hasTestTag(IdentifyE2ETestContract.songOptionsTag(fixture.mediumSongId)),
                 )
         }
 
@@ -133,9 +134,8 @@ class IdentifyE2EFunctionalTest {
         composeRule
             .onNodeWithTag(
                 IdentifyE2ETestContract.songOptionsTag(songId),
-                useUnmergedTree = true
-            )
-            .performClick()
+                useUnmergedTree = true,
+            ).performClick()
         composeRule.onNodeWithText("Identificar…").performClick()
     }
 

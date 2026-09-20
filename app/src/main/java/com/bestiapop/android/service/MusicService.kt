@@ -74,7 +74,6 @@ private const val EXOPLAYER_TARGET_AUDIO_BUFFER_BYTES = 1024 * 1024 // 1 MB
 
 @OptIn(UnstableApi::class)
 class MusicService : MediaLibraryService() {
-
     private var player: ExoPlayer? = null
     private var mediaLibrarySession: MediaLibrarySession? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
@@ -95,7 +94,7 @@ class MusicService : MediaLibraryService() {
     private val libraryBrowseProvider by lazy {
         MediaLibraryBrowseProvider(
             repository = (application as BestiaPopApplication).musicRepository,
-            scope = serviceScope
+            scope = serviceScope,
         )
     }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -107,264 +106,291 @@ class MusicService : MediaLibraryService() {
         createPlaybackNotificationChannel()
         watchBackgroundAppOps()
         maybeNotifyBackgroundRestriction("onCreate")
-        notificationProvider = RefreshingMediaNotificationProvider(
-            context = this,
-            notificationId = PLAYBACK_NOTIFICATION_ID,
-            channelId = PLAYBACK_CHANNEL_ID,
-            channelNameResourceId = R.string.playback_notification_channel,
-            requestNotificationRefresh = ::triggerNotificationUpdate
-        ).apply { setSmallIcon(R.drawable.ic_stat_bestiapop) }
+        notificationProvider =
+            RefreshingMediaNotificationProvider(
+                context = this,
+                notificationId = PLAYBACK_NOTIFICATION_ID,
+                channelId = PLAYBACK_CHANNEL_ID,
+                channelNameResourceId = R.string.playback_notification_channel,
+                requestNotificationRefresh = ::triggerNotificationUpdate,
+            ).apply { setSmallIcon(R.drawable.ic_stat_bestiapop) }
         setMediaNotificationProvider(notificationProvider)
         setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_ALWAYS)
         setForegroundServiceTimeoutMs(MediaSessionService.DEFAULT_FOREGROUND_SERVICE_TIMEOUT_MS)
-        setListener(object : MediaSessionService.Listener {
-            override fun onForegroundServiceStartNotAllowedException() {
-                handleForegroundServiceStartDenied()
-            }
-        })
-        val audioAttributes = AudioAttributes.Builder()
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-            .setUsage(C.USAGE_MEDIA)
-            .build()
+        setListener(
+            object : MediaSessionService.Listener {
+                override fun onForegroundServiceStartNotAllowedException() {
+                    handleForegroundServiceStartDenied()
+                }
+            },
+        )
+        val audioAttributes =
+            AudioAttributes
+                .Builder()
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .setUsage(C.USAGE_MEDIA)
+                .build()
 
-        val renderersFactory = object : DefaultRenderersFactory(this) {
-            init {
-                setEnableDecoderFallback(true)
-                setMediaCodecSelector { mimeType, requiresSecure, requiresTunneling ->
-                    val decoders = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecure, requiresTunneling)
-                    if (mimeType.startsWith("audio/")) {
-                        decoders.sortedWith(
-                            compareBy { info ->
-                                val isUnisoc = info.name.startsWith("c2.unisoc.") || info.name.startsWith("OMX.unisoc.")
-                                val isSoftware = info.softwareOnly || info.name.startsWith("c2.android.") || info.name.startsWith("OMX.google.")
-                                when {
-                                    !isSoftware && !isUnisoc -> 0
-                                    isSoftware && !isUnisoc -> 1
-                                    else -> 2
-                                }
-                            }
-                        )
-                    } else {
-                        decoders
+        val renderersFactory =
+            object : DefaultRenderersFactory(this) {
+                init {
+                    setEnableDecoderFallback(true)
+                    setMediaCodecSelector { mimeType, requiresSecure, requiresTunneling ->
+                        val decoders = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecure, requiresTunneling)
+                        if (mimeType.startsWith("audio/")) {
+                            decoders.sortedWith(
+                                compareBy { info ->
+                                    val isUnisoc = info.name.startsWith("c2.unisoc.") || info.name.startsWith("OMX.unisoc.")
+                                    val isSoftware =
+                                        info.softwareOnly || info.name.startsWith("c2.android.") || info.name.startsWith("OMX.google.")
+                                    when {
+                                        !isSoftware && !isUnisoc -> 0
+                                        isSoftware && !isUnisoc -> 1
+                                        else -> 2
+                                    }
+                                },
+                            )
+                        } else {
+                            decoders
+                        }
                     }
                 }
+
+                override fun buildAudioSink(
+                    context: Context,
+                    enableFloatOutput: Boolean,
+                    enableAudioTrackPlaybackParams: Boolean,
+                ): AudioSink =
+                    DefaultAudioSink
+                        .Builder(context)
+                        .setEnableFloatOutput(enableFloatOutput)
+                        .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
+                        .setAudioProcessors(arrayOf(stereoBalanceProcessor))
+                        .build()
             }
 
-            override fun buildAudioSink(
-                context: Context,
-                enableFloatOutput: Boolean,
-                enableAudioTrackPlaybackParams: Boolean
-            ): AudioSink {
-                return DefaultAudioSink.Builder(context)
-                    .setEnableFloatOutput(enableFloatOutput)
-                    .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf(stereoBalanceProcessor))
-                    .build()
-            }
-        }
+        val loadControl =
+            DefaultLoadControl
+                .Builder()
+                .setBufferDurationsMs(
+                    EXOPLAYER_MIN_BUFFER_MS,
+                    EXOPLAYER_MAX_BUFFER_MS,
+                    EXOPLAYER_BUFFER_FOR_PLAYBACK_MS,
+                    EXOPLAYER_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
+                ).setTargetBufferBytes(EXOPLAYER_TARGET_AUDIO_BUFFER_BYTES)
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
 
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                EXOPLAYER_MIN_BUFFER_MS,
-                EXOPLAYER_MAX_BUFFER_MS,
-                EXOPLAYER_BUFFER_FOR_PLAYBACK_MS,
-                EXOPLAYER_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
-            )
-            .setTargetBufferBytes(EXOPLAYER_TARGET_AUDIO_BUFFER_BYTES)
-            .setPrioritizeTimeOverSizeThresholds(true)
-            .build()
-
-        player = ExoPlayer.Builder(this)
-            .setRenderersFactory(renderersFactory)
-            .setLoadControl(loadControl)
-            .setAudioAttributes(audioAttributes, true)
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_NONE)
-            .setMediaSourceFactory(UserAgentMediaSourceFactory(this))
-            .build()
+        player =
+            ExoPlayer
+                .Builder(this)
+                .setRenderersFactory(renderersFactory)
+                .setLoadControl(loadControl)
+                .setAudioAttributes(audioAttributes, true)
+                .setHandleAudioBecomingNoisy(true)
+                .setWakeMode(C.WAKE_MODE_NONE)
+                .setMediaSourceFactory(UserAgentMediaSourceFactory(this))
+                .build()
 
         // Buffers the first seconds of upcoming items. prefetchAround only re-resolves the CDN *URL*
         // for N+1 / N+2; without this nothing is downloaded until the track actually starts, so a
         // slow or expiring stream produced an audible gap (or an error) right at the transition.
         player?.setPreloadConfiguration(
-            ExoPlayer.PreloadConfiguration(PRELOAD_TARGET_DURATION_US)
+            ExoPlayer.PreloadConfiguration(PRELOAD_TARGET_DURATION_US),
         )
 
         player?.let { p ->
-            p.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    PlaybackDiagnostics.logPlayerState(
-                        event = "ExoPlayer.onPlaybackStateChanged",
-                        isPlaying = p.isPlaying,
-                        playWhenReady = p.playWhenReady,
-                        playbackState = playbackState,
-                        currentMediaId = p.currentMediaItem?.mediaId,
-                        positionMs = p.currentPosition
-                    )
-                    updateWakeMode()
-                    updateCrossfadeLoop()
-                    if (playbackState == Player.STATE_BUFFERING) {
-                        acquireTransientWakeLock(10_000L)
-                    } else if (playbackState == Player.STATE_READY) {
-                        if (p.isPlaying) {
-                            releaseTransientWakeLock()
-                        }
-                        if (latestPlaybackSettings.volumeBoostEnabled && latestPlaybackSettings.volumeBoostAmount > 0f) {
-                            applyBoost(latestPlaybackSettings)
-                        }
-                    } else if (playbackState == Player.STATE_ENDED && p.playWhenReady && p.mediaItemCount > 0) {
-                        acquireTransientWakeLock(10_000L)
-                    }
-                }
-
-                override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                    PlaybackDiagnostics.log(
-                        PlaybackDiagnostics.TAG_SERVICE,
-                        "ExoPlayer.onAudioSessionIdChanged: sessionId=$audioSessionId"
-                    )
-                    if (audioSessionId == 0) return
-                    if (audioSessionId != boundAudioSessionId) {
-                        releaseLoudnessEnhancer()
-                    }
-                    applyBoost(latestPlaybackSettings, explicitSessionId = audioSessionId)
-                }
-
-                override fun onPlayerError(error: PlaybackException) {
-                    PlaybackDiagnostics.logPlayerError(error, p.currentMediaItem?.mediaId)
-                    releaseTransientWakeLock()
-                }
-
-                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                    val reasonStr = when (reason) {
-                        Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "USER_REQUEST"
-                        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "AUDIO_FOCUS_LOSS"
-                        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "AUDIO_BECOMING_NOISY"
-                        Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "REMOTE"
-                        Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "END_OF_MEDIA_ITEM"
-                        else -> "REASON_$reason"
-                    }
-                    PlaybackDiagnostics.logPlayerState(
-                        event = "ExoPlayer.onPlayWhenReadyChanged(playWhenReady=$playWhenReady, reason=$reasonStr)",
-                        isPlaying = p.isPlaying,
-                        playWhenReady = playWhenReady,
-                        playbackState = p.playbackState,
-                        currentMediaId = p.currentMediaItem?.mediaId,
-                        positionMs = p.currentPosition
-                    )
-                    foregroundPromoteRetryAttempts = 0
-                    persistPlaybackEngaged(isPlaybackEngaged())
-                    updateWakeMode()
-                    if (playWhenReady) {
-                        pauseGraceJob?.cancel()
-                        pauseGraceJob = null
-                        lastPausedAtElapsedRealtime = 0L
-                        (application as? BestiaPopApplication)?.playbackRuntime?.onPlaybackStartedFromService()
-                    } else {
-                        releaseTransientWakeLock()
-                        if (p.mediaItemCount > 0 && p.playbackState != Player.STATE_ENDED) {
-                            lastPausedAtElapsedRealtime = SystemClock.elapsedRealtime()
-                            pauseGraceJob?.cancel()
-                            pauseGraceJob = serviceScope.launch {
-                                delay(PAUSE_GRACE_PERIOD_MS)
-                                PlaybackDiagnostics.log(
-                                    PlaybackDiagnostics.TAG_SERVICE,
-                                    "MusicService: Pause grace period expired. Refreshing foreground status."
-                                )
-                                triggerNotificationUpdate()
-                                if (!isPlaybackEngaged()) {
-                                    stopServiceAndClearForeground("pause grace period expired")
-                                }
+            p.addListener(
+                object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        PlaybackDiagnostics.logPlayerState(
+                            event = "ExoPlayer.onPlaybackStateChanged",
+                            isPlaying = p.isPlaying,
+                            playWhenReady = p.playWhenReady,
+                            playbackState = playbackState,
+                            currentMediaId = p.currentMediaItem?.mediaId,
+                            positionMs = p.currentPosition,
+                        )
+                        updateWakeMode()
+                        updateCrossfadeLoop()
+                        if (playbackState == Player.STATE_BUFFERING) {
+                            acquireTransientWakeLock(10_000L)
+                        } else if (playbackState == Player.STATE_READY) {
+                            if (p.isPlaying) {
+                                releaseTransientWakeLock()
                             }
-                        } else {
+                            if (latestPlaybackSettings.volumeBoostEnabled && latestPlaybackSettings.volumeBoostAmount > 0f) {
+                                applyBoost(latestPlaybackSettings)
+                            }
+                        } else if (playbackState == Player.STATE_ENDED && p.playWhenReady && p.mediaItemCount > 0) {
+                            acquireTransientWakeLock(10_000L)
+                        }
+                    }
+
+                    override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                        PlaybackDiagnostics.log(
+                            PlaybackDiagnostics.TAG_SERVICE,
+                            "ExoPlayer.onAudioSessionIdChanged: sessionId=$audioSessionId",
+                        )
+                        if (audioSessionId == 0) return
+                        if (audioSessionId != boundAudioSessionId) {
+                            releaseLoudnessEnhancer()
+                        }
+                        applyBoost(latestPlaybackSettings, explicitSessionId = audioSessionId)
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        PlaybackDiagnostics.logPlayerError(error, p.currentMediaItem?.mediaId)
+                        releaseTransientWakeLock()
+                    }
+
+                    override fun onPlayWhenReadyChanged(
+                        playWhenReady: Boolean,
+                        reason: Int,
+                    ) {
+                        val reasonStr =
+                            when (reason) {
+                                Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "USER_REQUEST"
+                                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "AUDIO_FOCUS_LOSS"
+                                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "AUDIO_BECOMING_NOISY"
+                                Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "REMOTE"
+                                Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "END_OF_MEDIA_ITEM"
+                                else -> "REASON_$reason"
+                            }
+                        PlaybackDiagnostics.logPlayerState(
+                            event = "ExoPlayer.onPlayWhenReadyChanged(playWhenReady=$playWhenReady, reason=$reasonStr)",
+                            isPlaying = p.isPlaying,
+                            playWhenReady = playWhenReady,
+                            playbackState = p.playbackState,
+                            currentMediaId = p.currentMediaItem?.mediaId,
+                            positionMs = p.currentPosition,
+                        )
+                        foregroundPromoteRetryAttempts = 0
+                        persistPlaybackEngaged(isPlaybackEngaged())
+                        updateWakeMode()
+                        if (playWhenReady) {
                             pauseGraceJob?.cancel()
                             pauseGraceJob = null
                             lastPausedAtElapsedRealtime = 0L
-                        }
-                    }
-                }
-
-                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    PlaybackDiagnostics.logPlayerState(
-                        event = "ExoPlayer.onIsPlayingChanged(isPlaying=$isPlaying)",
-                        isPlaying = isPlaying,
-                        playWhenReady = p.playWhenReady,
-                        playbackState = p.playbackState,
-                        currentMediaId = p.currentMediaItem?.mediaId,
-                        positionMs = p.currentPosition
-                    )
-                    if (isPlaying) {
-                        foregroundPromoteRetryAttempts = 0
-                        releaseTransientWakeLock()
-                        (application as? BestiaPopApplication)?.playbackRuntime?.onPlaybackStartedFromService()
-                    }
-                    persistPlaybackEngaged(isPlaybackEngaged())
-                    updateWakeMode()
-                    updateCrossfadeLoop()
-                }
-
-                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    PlaybackDiagnostics.logMediaItemTransition(mediaItem, reason)
-                    if (latestPlaybackSettings.crossfadeEnabled) {
-                        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
-                            reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
-                        ) {
-                            p.volume = 0f
-                        } else {
-                            p.volume = calculateCrossfadeVolume(
-                                positionMs = p.currentPosition,
-                                durationMs = p.duration,
-                                crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds
-                            )
-                        }
-                    }
-                    updateWakeMode()
-                    updateCrossfadeLoop()
-                    if (p.playWhenReady) {
-                        if (!p.isPlaying || p.playbackState != Player.STATE_READY) {
-                            acquireTransientWakeLock(10_000L)
+                            (application as? BestiaPopApplication)?.playbackRuntime?.onPlaybackStartedFromService()
                         } else {
                             releaseTransientWakeLock()
+                            if (p.mediaItemCount > 0 && p.playbackState != Player.STATE_ENDED) {
+                                lastPausedAtElapsedRealtime = SystemClock.elapsedRealtime()
+                                pauseGraceJob?.cancel()
+                                pauseGraceJob =
+                                    serviceScope.launch {
+                                        delay(PAUSE_GRACE_PERIOD_MS)
+                                        PlaybackDiagnostics.log(
+                                            PlaybackDiagnostics.TAG_SERVICE,
+                                            "MusicService: Pause grace period expired. Refreshing foreground status.",
+                                        )
+                                        triggerNotificationUpdate()
+                                        if (!isPlaybackEngaged()) {
+                                            stopServiceAndClearForeground("pause grace period expired")
+                                        }
+                                    }
+                            } else {
+                                pauseGraceJob?.cancel()
+                                pauseGraceJob = null
+                                lastPausedAtElapsedRealtime = 0L
+                            }
                         }
                     }
-                }
 
-                override fun onPositionDiscontinuity(
-                    oldPosition: Player.PositionInfo,
-                    newPosition: Player.PositionInfo,
-                    reason: Int
-                ) {
-                    updateCrossfadeLoop()
-                }
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        PlaybackDiagnostics.logPlayerState(
+                            event = "ExoPlayer.onIsPlayingChanged(isPlaying=$isPlaying)",
+                            isPlaying = isPlaying,
+                            playWhenReady = p.playWhenReady,
+                            playbackState = p.playbackState,
+                            currentMediaId = p.currentMediaItem?.mediaId,
+                            positionMs = p.currentPosition,
+                        )
+                        if (isPlaying) {
+                            foregroundPromoteRetryAttempts = 0
+                            releaseTransientWakeLock()
+                            (application as? BestiaPopApplication)?.playbackRuntime?.onPlaybackStartedFromService()
+                        }
+                        persistPlaybackEngaged(isPlaybackEngaged())
+                        updateWakeMode()
+                        updateCrossfadeLoop()
+                    }
 
-                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-                    PlaybackDiagnostics.log(
-                        PlaybackDiagnostics.TAG_PLAYBACK,
-                        "ExoPlayer.onTimelineChanged: windowCount=${timeline.windowCount}, reason=$reason"
-                    )
-                    applyIdentityShuffleOrderIfEnabled()
-                }
+                    override fun onMediaItemTransition(
+                        mediaItem: MediaItem?,
+                        reason: Int,
+                    ) {
+                        PlaybackDiagnostics.logMediaItemTransition(mediaItem, reason)
+                        if (latestPlaybackSettings.crossfadeEnabled) {
+                            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                                reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+                            ) {
+                                p.volume = 0f
+                            } else {
+                                p.volume =
+                                    calculateCrossfadeVolume(
+                                        positionMs = p.currentPosition,
+                                        durationMs = p.duration,
+                                        crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds,
+                                    )
+                            }
+                        }
+                        updateWakeMode()
+                        updateCrossfadeLoop()
+                        if (p.playWhenReady) {
+                            if (!p.isPlaying || p.playbackState != Player.STATE_READY) {
+                                acquireTransientWakeLock(10_000L)
+                            } else {
+                                releaseTransientWakeLock()
+                            }
+                        }
+                    }
 
-                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                    PlaybackDiagnostics.log(
-                        PlaybackDiagnostics.TAG_PLAYBACK,
-                        "ExoPlayer.onShuffleModeEnabledChanged: shuffleModeEnabled=$shuffleModeEnabled"
-                    )
-                    if (shuffleModeEnabled) {
+                    override fun onPositionDiscontinuity(
+                        oldPosition: Player.PositionInfo,
+                        newPosition: Player.PositionInfo,
+                        reason: Int,
+                    ) {
+                        updateCrossfadeLoop()
+                    }
+
+                    override fun onTimelineChanged(
+                        timeline: androidx.media3.common.Timeline,
+                        reason: Int,
+                    ) {
+                        PlaybackDiagnostics.log(
+                            PlaybackDiagnostics.TAG_PLAYBACK,
+                            "ExoPlayer.onTimelineChanged: windowCount=${timeline.windowCount}, reason=$reason",
+                        )
                         applyIdentityShuffleOrderIfEnabled()
                     }
-                }
-            })
-            val callback = BestiaPopMediaLibraryCallback(
-                scope = serviceScope,
-                application = application as BestiaPopApplication,
-                audioStore = audioStore,
-                browseProvider = libraryBrowseProvider,
-                publishShuffleExtras = ::publishShuffleExtras,
-                applyShuffleOrder = ::applyShuffleOrder
+
+                    override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                        PlaybackDiagnostics.log(
+                            PlaybackDiagnostics.TAG_PLAYBACK,
+                            "ExoPlayer.onShuffleModeEnabledChanged: shuffleModeEnabled=$shuffleModeEnabled",
+                        )
+                        if (shuffleModeEnabled) {
+                            applyIdentityShuffleOrderIfEnabled()
+                        }
+                    }
+                },
             )
-            mediaLibrarySession = MediaLibrarySession.Builder(this, p, callback)
-                .setSessionActivity(mainActivityPendingIntent())
-                .build()
+            val callback =
+                BestiaPopMediaLibraryCallback(
+                    scope = serviceScope,
+                    application = application as BestiaPopApplication,
+                    audioStore = audioStore,
+                    browseProvider = libraryBrowseProvider,
+                    publishShuffleExtras = ::publishShuffleExtras,
+                    applyShuffleOrder = ::applyShuffleOrder,
+                )
+            mediaLibrarySession =
+                MediaLibrarySession
+                    .Builder(this, p, callback)
+                    .setSessionActivity(mainActivityPendingIntent())
+                    .build()
         }
 
         val playbackPreferences = PlaybackPreferencesRepository(this)
@@ -391,11 +417,12 @@ class MusicService : MediaLibraryService() {
         if (!p.isPlaying) {
             crossfadeJob?.cancel()
             crossfadeJob = null
-            val targetVolume = calculateCrossfadeVolume(
-                positionMs = p.currentPosition,
-                durationMs = p.duration,
-                crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds
-            )
+            val targetVolume =
+                calculateCrossfadeVolume(
+                    positionMs = p.currentPosition,
+                    durationMs = p.duration,
+                    crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds,
+                )
             if (kotlin.math.abs(p.volume - targetVolume) > 0.01f) {
                 p.volume = targetVolume
             }
@@ -403,50 +430,56 @@ class MusicService : MediaLibraryService() {
         }
         if (crossfadeJob?.isActive == true) return
 
-        crossfadeJob = serviceScope.launch {
-            while (isActive && p.isPlaying && latestPlaybackSettings.crossfadeEnabled) {
-                val positionMs = p.currentPosition
-                val durationMs = p.duration
-                val crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds
-                val targetVolume = calculateCrossfadeVolume(
-                    positionMs = positionMs,
-                    durationMs = durationMs,
-                    crossfadeDurationSeconds = crossfadeDurationSeconds
-                )
-                if (kotlin.math.abs(p.volume - targetVolume) > 0.01f) {
-                    p.volume = targetVolume
-                }
-                if (durationMs > 1500L && positionMs >= 0L) {
-                    val fadeMs = (crossfadeDurationSeconds * 1000L).coerceIn(500L, 10000L)
-                    val effectiveFadeMs = minOf(fadeMs, durationMs / 3).coerceAtLeast(500L)
-                    val timeUntilFadeOut = (durationMs - effectiveFadeMs) - positionMs
-                    if (positionMs in effectiveFadeMs until (durationMs - effectiveFadeMs) && timeUntilFadeOut > 100L) {
-                        // Stable body of the track: volume is 1.0f. Sleep directly until fade-out begins.
-                        // Seeks/skips trigger onPositionDiscontinuity and re-evaluate immediately.
-                        delay(timeUntilFadeOut)
+        crossfadeJob =
+            serviceScope.launch {
+                while (isActive && p.isPlaying && latestPlaybackSettings.crossfadeEnabled) {
+                    val positionMs = p.currentPosition
+                    val durationMs = p.duration
+                    val crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds
+                    val targetVolume =
+                        calculateCrossfadeVolume(
+                            positionMs = positionMs,
+                            durationMs = durationMs,
+                            crossfadeDurationSeconds = crossfadeDurationSeconds,
+                        )
+                    if (kotlin.math.abs(p.volume - targetVolume) > 0.01f) {
+                        p.volume = targetVolume
+                    }
+                    if (durationMs > 1500L && positionMs >= 0L) {
+                        val fadeMs = (crossfadeDurationSeconds * 1000L).coerceIn(500L, 10000L)
+                        val effectiveFadeMs = minOf(fadeMs, durationMs / 3).coerceAtLeast(500L)
+                        val timeUntilFadeOut = (durationMs - effectiveFadeMs) - positionMs
+                        if (positionMs in effectiveFadeMs until (durationMs - effectiveFadeMs) && timeUntilFadeOut > 100L) {
+                            // Stable body of the track: volume is 1.0f. Sleep directly until fade-out begins.
+                            // Seeks/skips trigger onPositionDiscontinuity and re-evaluate immediately.
+                            delay(timeUntilFadeOut)
+                            continue
+                        }
+                    } else if (durationMs <= 1500L || positionMs < 0L) {
+                        // Duration not yet known or short track: avoid spinning at 25Hz while metadata resolves.
+                        delay(1000L)
                         continue
                     }
-                } else if (durationMs <= 1500L || positionMs < 0L) {
-                    // Duration not yet known or short track: avoid spinning at 25Hz while metadata resolves.
-                    delay(1000L)
-                    continue
+                    delay(40L)
                 }
-                delay(40L)
             }
-        }
     }
 
     private fun applyStereoBalance(settings: PlaybackSettings) {
-        appliedSettings = appliedSettings.copy(
-            leftGain = clampStereoGain(settings.stereoLeftGain),
-            rightGain = clampStereoGain(settings.stereoRightGain)
-        )
+        appliedSettings =
+            appliedSettings.copy(
+                leftGain = clampStereoGain(settings.stereoLeftGain),
+                rightGain = clampStereoGain(settings.stereoRightGain),
+            )
         stereoBalanceProcessor.leftGain = appliedSettings.leftGain
         stereoBalanceProcessor.rightGain = appliedSettings.rightGain
         publishAppliedSettings()
     }
 
-    private fun applyBoost(settings: PlaybackSettings, explicitSessionId: Int? = null) {
+    private fun applyBoost(
+        settings: PlaybackSettings,
+        explicitSessionId: Int? = null,
+    ) {
         val clampedAmount =
             if (settings.volumeBoostEnabled) settings.volumeBoostAmount.coerceIn(0f, 1f) else 0f
         if (clampedAmount <= 0f) {
@@ -466,7 +499,7 @@ class MusicService : MediaLibraryService() {
 
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_SERVICE,
-            "applyBoost: soft-saturation boost active (boostGain=${stereoBalanceProcessor.boostGain})"
+            "applyBoost: soft-saturation boost active (boostGain=${stereoBalanceProcessor.boostGain})",
         )
         publishAppliedSettings()
     }
@@ -485,12 +518,12 @@ class MusicService : MediaLibraryService() {
             boundAudioSessionId = sessionId
             PlaybackDiagnostics.log(
                 PlaybackDiagnostics.TAG_SERVICE,
-                "ensureLoudnessEnhancer: bound LoudnessEnhancer to sessionId=$sessionId"
+                "ensureLoudnessEnhancer: bound LoudnessEnhancer to sessionId=$sessionId",
             )
         } catch (e: Exception) {
             PlaybackDiagnostics.log(
                 PlaybackDiagnostics.TAG_SERVICE,
-                "ensureLoudnessEnhancer: failed on sessionId=$sessionId: ${e.message}"
+                "ensureLoudnessEnhancer: failed on sessionId=$sessionId: ${e.message}",
             )
             loudnessEnhancer = null
             boundAudioSessionId = 0
@@ -506,10 +539,14 @@ class MusicService : MediaLibraryService() {
         boundAudioSessionId = 0
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_SERVICE,
-            "MusicService.onStartCommand(intentAction=${intent?.action}, flags=$flags, startId=$startId)"
+            "MusicService.onStartCommand(intentAction=${intent?.action}, flags=$flags, startId=$startId)",
         )
         super.onStartCommand(intent, flags, startId)
         maybeNotifyBackgroundRestriction("onStartCommand")
@@ -519,29 +556,30 @@ class MusicService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_SERVICE,
-            "MusicService.onGetSession(callerPackage=${controllerInfo.packageName}, uid=${controllerInfo.uid})"
+            "MusicService.onGetSession(callerPackage=${controllerInfo.packageName}, uid=${controllerInfo.uid})",
         )
         return mediaLibrarySession
     }
 
     override fun onUpdateNotificationAsync(
         session: MediaSession,
-        startInForegroundRequired: Boolean
+        startInForegroundRequired: Boolean,
     ): ListenableFuture<Void?> {
         val p = player
         val isEngaged = isPlaybackEngaged()
-        val calculatedForeground = playbackForegroundRequired(
-            startInForegroundRequired = startInForegroundRequired,
-            playWhenReady = p?.playWhenReady == true,
-            mediaItemCount = p?.mediaItemCount ?: 0,
-            playbackState = p?.playbackState ?: Player.STATE_IDLE,
-            isWithinPauseGracePeriod = isWithinPauseGracePeriod()
-        )
+        val calculatedForeground =
+            playbackForegroundRequired(
+                startInForegroundRequired = startInForegroundRequired,
+                playWhenReady = p?.playWhenReady == true,
+                mediaItemCount = p?.mediaItemCount ?: 0,
+                playbackState = p?.playbackState ?: Player.STATE_IDLE,
+                isWithinPauseGracePeriod = isWithinPauseGracePeriod(),
+            )
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_SERVICE,
             "MusicService.onUpdateNotificationAsync: media3StartForegroundRequired=$startInForegroundRequired, " +
                 "calculatedForeground=$calculatedForeground, isPlaybackEngaged=$isEngaged, " +
-                "isPlaying=${p?.isPlaying}, playWhenReady=${p?.playWhenReady}, items=${p?.mediaItemCount}, state=${p?.playbackState}"
+                "isPlaying=${p?.isPlaying}, playWhenReady=${p?.playWhenReady}, items=${p?.mediaItemCount}, state=${p?.playbackState}",
         )
         maybeNotifyBackgroundRestriction("notification")
         return super.onUpdateNotificationAsync(session, calculatedForeground)
@@ -556,7 +594,7 @@ class MusicService : MediaLibraryService() {
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_SERVICE,
             "MusicService.onTaskRemoved(rootIntent=${rootIntent?.action}): stopping playback and service, " +
-                "isPlaying=${p?.isPlaying}, playWhenReady=${p?.playWhenReady}, items=${p?.mediaItemCount}, state=${p?.playbackState}"
+                "isPlaying=${p?.isPlaying}, playWhenReady=${p?.playWhenReady}, items=${p?.mediaItemCount}, state=${p?.playbackState}",
         )
         try {
             p?.stop()
@@ -569,7 +607,7 @@ class MusicService : MediaLibraryService() {
     private fun stopServiceAndClearForeground(reason: String) {
         PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_SERVICE,
-            "MusicService: Stopping service ($reason)."
+            "MusicService: Stopping service ($reason).",
         )
         persistPlaybackEngaged(false)
         pauseGraceJob?.cancel()
@@ -590,7 +628,7 @@ class MusicService : MediaLibraryService() {
     override fun onDestroy() {
         PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_SERVICE,
-            "MusicService.onDestroy() invoked! Releasing player and session."
+            "MusicService.onDestroy() invoked! Releasing player and session.",
         )
         persistPlaybackEngaged(false)
         stopWatchingBackgroundAppOps()
@@ -609,29 +647,40 @@ class MusicService : MediaLibraryService() {
 
     private fun updateWakeMode() {
         val p = player ?: return
-        val currentIsRemote = p.currentMediaItem?.mediaId?.startsWith("http") == true ||
-            p.currentMediaItem?.localConfiguration?.uri?.scheme?.startsWith("http") == true
+        val currentIsRemote =
+            p.currentMediaItem?.mediaId?.startsWith("http") == true ||
+                p.currentMediaItem
+                    ?.localConfiguration
+                    ?.uri
+                    ?.scheme
+                    ?.startsWith("http") == true
         val nextIndex = p.nextMediaItemIndex
-        val nextIsRemote = if (nextIndex != C.INDEX_UNSET && nextIndex < p.mediaItemCount) {
-            val nextItem = p.getMediaItemAt(nextIndex)
-            nextItem.mediaId.startsWith("http") == true ||
-                nextItem.localConfiguration?.uri?.scheme?.startsWith("http") == true
-        } else {
-            false
-        }
+        val nextIsRemote =
+            if (nextIndex != C.INDEX_UNSET && nextIndex < p.mediaItemCount) {
+                val nextItem = p.getMediaItemAt(nextIndex)
+                nextItem.mediaId.startsWith("http") == true ||
+                    nextItem.localConfiguration
+                        ?.uri
+                        ?.scheme
+                        ?.startsWith("http") == true
+            } else {
+                false
+            }
         p.setWakeMode(playbackWakeMode(currentIsRemote = currentIsRemote, nextIsRemote = nextIsRemote))
     }
 
     private fun acquireTransientWakeLock(timeoutMs: Long = 10_000L) {
         val powerManager = getSystemService(PowerManager::class.java) ?: return
         try {
-            val lock = serviceWakeLock ?: powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "BestiaPop:TransientTransition"
-            ).apply {
-                setReferenceCounted(false)
-                serviceWakeLock = this
-            }
+            val lock =
+                serviceWakeLock ?: powerManager
+                    .newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        "BestiaPop:TransientTransition",
+                    ).apply {
+                        setReferenceCounted(false)
+                        serviceWakeLock = this
+                    }
             lock.acquire(timeoutMs)
             PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Acquired transient WakeLock (${timeoutMs}ms)")
         } catch (e: Exception) {
@@ -646,7 +695,8 @@ class MusicService : MediaLibraryService() {
                 lock.release()
                 PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Released transient WakeLock")
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     private fun isPlaybackEngaged(): Boolean {
@@ -654,7 +704,7 @@ class MusicService : MediaLibraryService() {
         return PlaybackServiceLifetimePolicy.isPlaybackEngaged(
             playWhenReady = p.playWhenReady,
             mediaItemCount = p.mediaItemCount,
-            playbackState = p.playbackState
+            playbackState = p.playbackState,
         )
     }
 
@@ -670,15 +720,16 @@ class MusicService : MediaLibraryService() {
         val channelName = getString(R.string.playback_notification_channel)
         val existing = notificationManager.getNotificationChannel(PLAYBACK_CHANNEL_ID)
         if (existing == null) {
-            val channel = NotificationChannel(
-                PLAYBACK_CHANNEL_ID,
-                channelName,
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = getString(R.string.playback_notification_channel_description)
-                setShowBadge(false)
-                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
-            }
+            val channel =
+                NotificationChannel(
+                    PLAYBACK_CHANNEL_ID,
+                    channelName,
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply {
+                    description = getString(R.string.playback_notification_channel_description)
+                    setShowBadge(false)
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                }
             notificationManager.createNotificationChannel(channel)
         }
         if (notificationManager.getNotificationChannel(RESTRICTION_CHANNEL_ID) == null) {
@@ -686,26 +737,27 @@ class MusicService : MediaLibraryService() {
                 NotificationChannel(
                     RESTRICTION_CHANNEL_ID,
                     getString(R.string.playback_restricted_notification_channel),
-                    NotificationManager.IMPORTANCE_HIGH
+                    NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
                     description = getString(R.string.playback_restricted_notification_text)
                     setShowBadge(true)
                     lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
-                }
+                },
             )
         }
     }
 
     private fun mainActivityPendingIntent(): PendingIntent {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_OPEN_NOW_PLAYING, true)
-        }
+        val intent =
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_OPEN_NOW_PLAYING, true)
+            }
         return PendingIntent.getActivity(
             this,
             0,
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
@@ -715,35 +767,36 @@ class MusicService : MediaLibraryService() {
             PlaybackDiagnostics.TAG_SERVICE,
             "handleForegroundServiceStartDenied: Media3 foreground service start was DENIED! " +
                 "isPlaying=${player?.isPlaying}, playWhenReady=${player?.playWhenReady}, state=${player?.playbackState}, " +
-                "hasCachedNotification=${lastNotif != null}, retryAttempts=$foregroundPromoteRetryAttempts"
+                "hasCachedNotification=${lastNotif != null}, retryAttempts=$foregroundPromoteRetryAttempts",
         )
 
         // Attempt direct Service.startForeground using cached MediaNotification.
         // On Android 14+, updating an active service via ServiceCompat.startForeground is permitted,
         // whereas Media3's internal ContextCompat.startForegroundService is rejected from background.
         if (lastNotif != null && isPlaybackEngaged()) {
-            val fgsType = if (Build.VERSION.SDK_INT >= 29) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            } else {
-                0
-            }
+            val fgsType =
+                if (Build.VERSION.SDK_INT >= 29) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                } else {
+                    0
+                }
             try {
                 ServiceCompat.startForeground(
                     this,
                     lastNotif.notificationId,
                     lastNotif.notification,
-                    fgsType
+                    fgsType,
                 )
                 PlaybackDiagnostics.log(
                     PlaybackDiagnostics.TAG_SERVICE,
-                    "handleForegroundServiceStartDenied: successfully recovered foreground status directly"
+                    "handleForegroundServiceStartDenied: successfully recovered foreground status directly",
                 )
                 foregroundPromoteRetryAttempts = 0
                 return
             } catch (e: Exception) {
                 PlaybackDiagnostics.error(
                     PlaybackDiagnostics.TAG_SERVICE,
-                    "handleForegroundServiceStartDenied: direct startForeground recovery failed: ${e.message}"
+                    "handleForegroundServiceStartDenied: direct startForeground recovery failed: ${e.message}",
                 )
                 try {
                     val nm = getSystemService(NotificationManager::class.java)
@@ -758,8 +811,8 @@ class MusicService : MediaLibraryService() {
             mapOf(
                 "playback_phase" to "start_foreground",
                 "play_when_ready" to (player?.playWhenReady?.toString() ?: "null"),
-                "playback_state" to (player?.playbackState?.toString() ?: "null")
-            )
+                "playback_state" to (player?.playbackState?.toString() ?: "null"),
+            ),
         )
         if (BackgroundExecutionProbe.current(this).blocksBackgroundPlayback) {
             maybeNotifyBackgroundRestriction("startForegroundDenied")
@@ -776,13 +829,16 @@ class MusicService : MediaLibraryService() {
         foregroundPromoteRetryScheduled = true
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_SERVICE,
-            "handleForegroundServiceStartDenied: Scheduling retry attempt $foregroundPromoteRetryAttempts in ${retryDelay}ms"
+            "handleForegroundServiceStartDenied: Scheduling retry attempt $foregroundPromoteRetryAttempts in ${retryDelay}ms",
         )
         serviceScope.launch {
             delay(retryDelay)
             foregroundPromoteRetryScheduled = false
             if (isPlaybackEngaged()) {
-                PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "handleForegroundServiceStartDenied: Executing delayed notification refresh retry")
+                PlaybackDiagnostics.log(
+                    PlaybackDiagnostics.TAG_SERVICE,
+                    "handleForegroundServiceStartDenied: Executing delayed notification refresh retry",
+                )
                 triggerNotificationUpdate()
             }
         }
@@ -802,15 +858,16 @@ class MusicService : MediaLibraryService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
         val appOps = getSystemService(AppOpsManager::class.java) ?: return
         val watchedPackage = packageName
-        val watcher = AppOpsManager.OnOpChangedListener { _, changedPackage ->
-            if (changedPackage != null && changedPackage != watchedPackage) return@OnOpChangedListener
-            serviceScope.launch { maybeNotifyBackgroundRestriction("appops") }
-        }
+        val watcher =
+            AppOpsManager.OnOpChangedListener { _, changedPackage ->
+                if (changedPackage != null && changedPackage != watchedPackage) return@OnOpChangedListener
+                serviceScope.launch { maybeNotifyBackgroundRestriction("appops") }
+            }
         appOpsWatcher = watcher
         appOps.startWatchingMode(
             com.bestiapop.android.data.system.OPSTR_RUN_ANY_IN_BACKGROUND,
             packageName,
-            watcher
+            watcher,
         )
     }
 
@@ -839,45 +896,49 @@ class MusicService : MediaLibraryService() {
             return
         }
         if (restrictionConfirmJob?.isActive == true) return
-        restrictionConfirmJob = serviceScope.launch {
-            delay(BACKGROUND_RESTRICTION_CONFIRM_MS)
-            val confirmed = BackgroundExecutionProbe.current(this@MusicService)
-            if (!confirmed.blocksBackgroundPlayback) return@launch
-            if (!isPlaybackEngaged() && !wasPlaybackEngaged()) return@launch
-            if (restrictionNoticePosted) return@launch
-            postBackgroundRestrictionNotice(source)
-        }
+        restrictionConfirmJob =
+            serviceScope.launch {
+                delay(BACKGROUND_RESTRICTION_CONFIRM_MS)
+                val confirmed = BackgroundExecutionProbe.current(this@MusicService)
+                if (!confirmed.blocksBackgroundPlayback) return@launch
+                if (!isPlaybackEngaged() && !wasPlaybackEngaged()) return@launch
+                if (restrictionNoticePosted) return@launch
+                postBackgroundRestrictionNotice(source)
+            }
     }
 
     private fun postBackgroundRestrictionNotice(source: String) {
         restrictionNoticePosted = true
         PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_SERVICE,
-            "MusicService: background execution blocked while engaged (source=$source)"
+            "MusicService: background execution blocked while engaged (source=$source)",
         )
         notifyBackgroundRestrictionBlockedForeground()
     }
 
     private fun notifyBackgroundRestrictionBlockedForeground() {
         val notificationManager = getSystemService(NotificationManager::class.java) ?: return
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            1,
-            BackgroundExecutionProbe.applicationDetailsIntent(this, newTask = true),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notification = Notification.Builder(this, RESTRICTION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_bestiapop)
-            .setContentTitle(getString(R.string.playback_restricted_notification_title))
-            .setContentText(getString(R.string.playback_restricted_notification_text))
-            .setStyle(
-                Notification.BigTextStyle()
-                    .bigText(getString(R.string.playback_restricted_notification_text))
+        val contentIntent =
+            PendingIntent.getActivity(
+                this,
+                1,
+                BackgroundExecutionProbe.applicationDetailsIntent(this, newTask = true),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            .setContentIntent(contentIntent)
-            .setAutoCancel(false)
-            .setOngoing(true)
-            .build()
+        val notification =
+            Notification
+                .Builder(this, RESTRICTION_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_bestiapop)
+                .setContentTitle(getString(R.string.playback_restricted_notification_title))
+                .setContentText(getString(R.string.playback_restricted_notification_text))
+                .setStyle(
+                    Notification
+                        .BigTextStyle()
+                        .bigText(getString(R.string.playback_restricted_notification_text)),
+                ).setContentIntent(contentIntent)
+                .setAutoCancel(false)
+                .setOngoing(true)
+                .build()
         notificationManager.notify(RESTRICTION_NOTIFICATION_ID, notification)
     }
 
@@ -888,6 +949,7 @@ class MusicService : MediaLibraryService() {
         const val ACTION_SET_SHUFFLE_ORDER = "com.bestiapop.android.SET_SHUFFLE_ORDER"
         const val EXTRA_SHUFFLE_ORDER = "shuffle_order"
         const val PAUSE_GRACE_PERIOD_MS = 10 * 60 * 1000L
+
         /** Head start buffered for upcoming queue items (10s). */
         private const val PRELOAD_TARGET_DURATION_US = 10_000_000L
         private val FOREGROUND_RETRY_DELAYS_MS = longArrayOf(750L, 2_000L, 5_000L)
@@ -923,7 +985,7 @@ class MusicService : MediaLibraryService() {
             } catch (e: Exception) {
                 PlaybackDiagnostics.warn(
                     PlaybackDiagnostics.TAG_SERVICE,
-                    "Failed to apply identity shuffle order: ${e.message}"
+                    "Failed to apply identity shuffle order: ${e.message}",
                 )
             }
         }
@@ -950,7 +1012,6 @@ class MusicService : MediaLibraryService() {
         }
         session.setSessionExtras(extras)
     }
-
 }
 
 /**
@@ -959,38 +1020,43 @@ class MusicService : MediaLibraryService() {
  */
 @UnstableApi
 internal class UserAgentMediaSourceFactory(
-    private val context: Context
+    private val context: Context,
 ) : MediaSource.Factory {
-
     private val extractorsFactory = DefaultExtractorsFactory()
 
     override fun setDrmSessionManagerProvider(
-        drmSessionManagerProvider: androidx.media3.exoplayer.drm.DrmSessionManagerProvider
+        drmSessionManagerProvider: androidx.media3.exoplayer.drm.DrmSessionManagerProvider,
     ): MediaSource.Factory = this
 
     override fun setLoadErrorHandlingPolicy(
-        loadErrorHandlingPolicy: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+        loadErrorHandlingPolicy: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy,
     ): MediaSource.Factory = this
 
-    override fun getSupportedTypes(): IntArray =
-        intArrayOf(C.CONTENT_TYPE_OTHER, C.CONTENT_TYPE_HLS, C.CONTENT_TYPE_DASH)
+    override fun getSupportedTypes(): IntArray = intArrayOf(C.CONTENT_TYPE_OTHER, C.CONTENT_TYPE_HLS, C.CONTENT_TYPE_DASH)
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val tag = mediaItem.streamPlaybackTag()
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
+        val httpFactory =
+            DefaultHttpDataSource
+                .Factory()
+                .setAllowCrossProtocolRedirects(true)
         if (tag != null && tag.userAgent.isNotBlank()) {
             httpFactory.setUserAgent(tag.userAgent)
         }
         val upstreamFactory = DefaultDataSource.Factory(context, httpFactory)
-        val dataSourceFactory = ResolvingDataSource.Factory(
-            upstreamFactory,
-            ::boundGoogleVideoRequest
-        )
-        val cacheKey = tag?.videoId?.takeIf { it.isNotBlank() }
-            ?.let(com.bestiapop.android.data.stream.BestiaPopMediaCache::cacheKey)
-        val cachedFactory = com.bestiapop.android.data.stream.BestiaPopMediaCache
-            .createCacheDataSourceFactory(context, dataSourceFactory, cacheKey)
+        val dataSourceFactory =
+            ResolvingDataSource.Factory(
+                upstreamFactory,
+                ::boundGoogleVideoRequest,
+            )
+        val cacheKey =
+            tag
+                ?.videoId
+                ?.takeIf { it.isNotBlank() }
+                ?.let(com.bestiapop.android.data.stream.BestiaPopMediaCache::cacheKey)
+        val cachedFactory =
+            com.bestiapop.android.data.stream.BestiaPopMediaCache
+                .createCacheDataSourceFactory(context, dataSourceFactory, cacheKey)
         return DefaultMediaSourceFactory(cachedFactory, extractorsFactory)
             .createMediaSource(mediaItem)
     }
@@ -998,14 +1064,14 @@ internal class UserAgentMediaSourceFactory(
 
 internal fun shouldResumeAfterStickyRestart(
     intentNull: Boolean,
-    wasEngaged: Boolean
+    wasEngaged: Boolean,
 ): Boolean = false
 
 /** Local files: AudioTrack holds the native lock; a Java WakeLock trips OEM killers. */
 @OptIn(UnstableApi::class)
 internal fun playbackWakeMode(
     currentIsRemote: Boolean,
-    nextIsRemote: Boolean = false
+    nextIsRemote: Boolean = false,
 ): Int = if (currentIsRemote) C.WAKE_MODE_NETWORK else C.WAKE_MODE_NONE
 
 internal fun playbackForegroundRequired(
@@ -1013,20 +1079,22 @@ internal fun playbackForegroundRequired(
     playWhenReady: Boolean,
     mediaItemCount: Int,
     playbackState: Int,
-    isWithinPauseGracePeriod: Boolean = false
-): Boolean = startInForegroundRequired ||
-    (playWhenReady && mediaItemCount > 0) ||
-    (isWithinPauseGracePeriod && mediaItemCount > 0 && playbackState != Player.STATE_ENDED)
+    isWithinPauseGracePeriod: Boolean = false,
+): Boolean =
+    startInForegroundRequired ||
+        (playWhenReady && mediaItemCount > 0) ||
+        (isWithinPauseGracePeriod && mediaItemCount > 0 && playbackState != Player.STATE_ENDED)
 
 @OptIn(UnstableApi::class)
 internal fun boundGoogleVideoRequest(dataSpec: DataSpec): DataSpec {
     val uri = dataSpec.uri
-    val remainingLength = googleVideoBoundedLength(
-        host = uri.host,
-        contentLengthParam = uri.getQueryParameter("clen"),
-        position = dataSpec.position,
-        requestedLength = dataSpec.length
-    ) ?: return dataSpec
+    val remainingLength =
+        googleVideoBoundedLength(
+            host = uri.host,
+            contentLengthParam = uri.getQueryParameter("clen"),
+            position = dataSpec.position,
+            requestedLength = dataSpec.length,
+        ) ?: return dataSpec
     return dataSpec.subrange(0L, remainingLength)
 }
 
@@ -1034,12 +1102,12 @@ internal fun googleVideoBoundedLength(
     host: String?,
     contentLengthParam: String?,
     position: Long,
-    requestedLength: Long
+    requestedLength: Long,
 ): Long? {
     if (requestedLength != C.LENGTH_UNSET.toLong()) return null
     return GoogleVideoRange.remainingLength(
         host,
         contentLengthParam,
-        position
+        position,
     )
 }

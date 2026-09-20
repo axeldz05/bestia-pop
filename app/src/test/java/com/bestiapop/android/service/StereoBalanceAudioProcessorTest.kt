@@ -3,14 +3,13 @@ package com.bestiapop.android.service
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 @UnstableApi
 class StereoBalanceAudioProcessorTest {
-
     @Test
     fun stereoInput_appliesIndependentLeftAndRightGains() {
         val processor = configuredProcessor(channels = 2, leftGain = 0.5f, rightGain = 0.25f)
@@ -19,7 +18,7 @@ class StereoBalanceAudioProcessorTest {
 
         assertEquals(
             listOf(5_000, 2_500, -4_000, -2_000).map(Int::toShort),
-            output
+            output,
         )
     }
 
@@ -29,7 +28,7 @@ class StereoBalanceAudioProcessorTest {
 
         assertEquals(
             listOf(10_000, -10_000).map(Int::toShort),
-            queue(processor, 20_000, -20_000)
+            queue(processor, 20_000, -20_000),
         )
     }
 
@@ -46,9 +45,10 @@ class StereoBalanceAudioProcessorTest {
 
     @Test
     fun boostGain_scalesLinearRegionAndSoftSaturatesPeaks() {
-        val processor = configuredProcessor(channels = 2, leftGain = 1f, rightGain = 1f).apply {
-            boostGain = 1.5f
-        }
+        val processor =
+            configuredProcessor(channels = 2, leftGain = 1f, rightGain = 1f).apply {
+                boostGain = 1.5f
+            }
 
         val output = queue(processor, 10_000, 20_000, -10_000, 30_000)
 
@@ -65,7 +65,7 @@ class StereoBalanceAudioProcessorTest {
     private fun configuredProcessor(
         channels: Int,
         leftGain: Float,
-        rightGain: Float
+        rightGain: Float,
     ) = StereoBalanceAudioProcessor().apply {
         configure(AudioProcessor.AudioFormat(48_000, channels, C.ENCODING_PCM_16BIT))
         this.leftGain = leftGain
@@ -75,10 +75,12 @@ class StereoBalanceAudioProcessorTest {
 
     private fun queue(
         processor: StereoBalanceAudioProcessor,
-        vararg samples: Int
+        vararg samples: Int,
     ): List<Short> {
-        val input = ByteBuffer.allocateDirect(samples.size * Short.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder())
+        val input =
+            ByteBuffer
+                .allocateDirect(samples.size * Short.SIZE_BYTES)
+                .order(ByteOrder.nativeOrder())
         samples.forEach { input.putShort(it.toShort()) }
         input.flip()
 

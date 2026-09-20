@@ -8,7 +8,10 @@ import kotlin.math.sin
 internal object PcmWavFixture {
     const val HEADER_SIZE_BYTES = 44
 
-    fun generate(durationMs: Int, toneHz: Double? = null): ByteArray {
+    fun generate(
+        durationMs: Int,
+        toneHz: Double? = null,
+    ): ByteArray {
         require(durationMs > 0) { "durationMs must be positive" }
         require(toneHz == null || toneHz > 0.0) { "toneHz must be positive when provided" }
 
@@ -41,7 +44,11 @@ internal object PcmWavFixture {
         }
     }
 
-    fun write(file: File, durationMs: Int, toneHz: Double? = null) {
+    fun write(
+        file: File,
+        durationMs: Int,
+        toneHz: Double? = null,
+    ) {
         file.writeBytes(generate(durationMs, toneHz))
     }
 

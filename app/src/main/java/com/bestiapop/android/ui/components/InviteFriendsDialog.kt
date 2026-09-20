@@ -45,16 +45,17 @@ fun InviteFriendsDialog(
     url: String,
     onShare: () -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val qrBitmap = remember(url) {
-        if (url.isNotBlank()) {
-            QrCodeGenerator.generateBitmap(content = url, sizePx = 640)
-        } else {
-            null
+    val qrBitmap =
+        remember(url) {
+            if (url.isNotBlank()) {
+                QrCodeGenerator.generateBitmap(content = url, sizePx = 640)
+            } else {
+                null
+            }
         }
-    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -63,19 +64,19 @@ fun InviteFriendsDialog(
             Text(
                 text = "Invitar amigos",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     text = "Escaneá el código QR para descargar el APK de la app.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -84,24 +85,24 @@ fun InviteFriendsDialog(
                     shape = RoundedCornerShape(16.dp),
                     color = Color.White,
                     shadowElevation = 2.dp,
-                    modifier = Modifier.size(220.dp)
+                    modifier = Modifier.size(220.dp),
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier.padding(12.dp)
+                        modifier = Modifier.padding(12.dp),
                     ) {
                         if (qrBitmap != null) {
                             Image(
                                 bitmap = qrBitmap.asImageBitmap(),
                                 contentDescription = "Código QR para descargar BestiaPop",
-                                modifier = Modifier.size(196.dp)
+                                modifier = Modifier.size(196.dp),
                             )
                         } else {
                             Text(
                                 text = "No se pudo generar el código QR",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.Gray,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
                             )
                         }
                     }
@@ -112,21 +113,23 @@ fun InviteFriendsDialog(
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("BestiaPop APK Link", url))
-                                Toast.makeText(context, "Link copiado", Toast.LENGTH_SHORT).show()
-                            }
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("BestiaPop APK Link", url))
+                                    Toast.makeText(context, "Link copiado", Toast.LENGTH_SHORT).show()
+                                },
                     ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
                                 text = url,
@@ -134,14 +137,14 @@ fun InviteFriendsDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
+                                modifier = Modifier.weight(1f, fill = false),
                             )
                             Spacer(modifier = Modifier.size(8.dp))
                             Icon(
                                 imageVector = Icons.Default.ContentCopy,
                                 contentDescription = "Copiar link",
                                 modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.primary,
                             )
                         }
                     }
@@ -153,7 +156,7 @@ fun InviteFriendsDialog(
                 Icon(
                     imageVector = Icons.Default.Share,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(18.dp),
                 )
                 Spacer(modifier = Modifier.size(8.dp))
                 Text("Compartir")
@@ -163,6 +166,6 @@ fun InviteFriendsDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cerrar")
             }
-        }
+        },
     )
 }

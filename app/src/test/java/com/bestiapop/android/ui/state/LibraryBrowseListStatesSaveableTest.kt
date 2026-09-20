@@ -9,24 +9,26 @@ import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class LibraryBrowseListStatesSaveableTest {
-
-    private val dummyScope = object : SaverScope {
-        override fun canBeSaved(value: Any): Boolean = true
-    }
+    private val dummyScope =
+        object : SaverScope {
+            override fun canBeSaved(value: Any): Boolean = true
+        }
 
     @Suppress("UNCHECKED_CAST")
     private val saver = LazyListState.Saver as Saver<LazyListState, Any>
 
     @Test
     fun lazyListStateSaver_preservesFirstVisibleItemIndexAndOffset() {
-        val originalState = LazyListState(
-            firstVisibleItemIndex = 35,
-            firstVisibleItemScrollOffset = 120
-        )
+        val originalState =
+            LazyListState(
+                firstVisibleItemIndex = 35,
+                firstVisibleItemScrollOffset = 120,
+            )
 
-        val saved = with(saver) {
-            dummyScope.save(originalState)
-        }
+        val saved =
+            with(saver) {
+                dummyScope.save(originalState)
+            }
         assertNotNull("Saved state must not be null", saved)
 
         val restoredState = saver.restore(saved!!)
@@ -38,10 +40,11 @@ class LibraryBrowseListStatesSaveableTest {
     @Test
     fun browseTabStates_savedAndRestoredThroughRegistry_preservesAlbumScrollPosition() {
         // 1. User scrolls albums list to index 28, offset 50
-        val albumListState = LazyListState(
-            firstVisibleItemIndex = 28,
-            firstVisibleItemScrollOffset = 50
-        )
+        val albumListState =
+            LazyListState(
+                firstVisibleItemIndex = 28,
+                firstVisibleItemScrollOffset = 50,
+            )
         val songsListState = LazyListState(firstVisibleItemIndex = 5, firstVisibleItemScrollOffset = 0)
 
         // 2. Simulated tab 0 (Biblioteca) SaveableStateRegistry

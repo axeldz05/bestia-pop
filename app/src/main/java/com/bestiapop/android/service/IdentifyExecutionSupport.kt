@@ -11,17 +11,18 @@ import kotlinx.coroutines.launch
 internal fun CoroutineScope.collectIdentifyNotifications(
     progress: StateFlow<LibraryJobProgress?>,
     helper: IdentifyNotificationHelper,
-    publish: (Notification) -> Unit
-): Job = launch {
-    progress.collect { current ->
-        helper.build(current, ongoing = true)?.let(publish)
+    publish: (Notification) -> Unit,
+): Job =
+    launch {
+        progress.collect { current ->
+            helper.build(current, ongoing = true)?.let(publish)
+        }
     }
-}
 
 internal suspend fun settleIdentifyLifetime(
     runtime: ProcessIdentifyRuntime,
     backend: IdentifyExecutionBackend,
-    autoResume: Boolean
+    autoResume: Boolean,
 ) {
     runtime.settle(autoResume)
     IdentifyExecutionLauncher.settleBackend(backend)
@@ -31,7 +32,7 @@ internal fun handleIdentifyJobStop(
     backend: IdentifyExecutionBackend,
     userStopped: Boolean,
     cancelUser: () -> Unit,
-    interruptNow: () -> Unit
+    interruptNow: () -> Unit,
 ): Boolean {
     IdentifyExecutionLauncher.markRunning(backend, false)
     if (userStopped) {

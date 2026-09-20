@@ -8,7 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LyricsPhoneticProcessorTest {
-
     @Test
     fun hasNonLatinScript_distinguishesScripts() {
         assertFalse(LyricsPhoneticProcessor.hasNonLatinScript("Hello world!"))
@@ -55,32 +54,35 @@ class LyricsPhoneticProcessorTest {
             LyricsPhoneticProcessor.formatPhoneticLine(
                 original = "Hello world",
                 romanizedCandidate = "Hello world",
-                japaneseMode = JapanesePhoneticMode.ROMAJI
-            )
+                japaneseMode = JapanesePhoneticMode.ROMAJI,
+            ),
         )
 
         // Modo Romaji
-        val romajiResult = LyricsPhoneticProcessor.formatPhoneticLine(
-            original = "夜に駆ける",
-            romanizedCandidate = "Yoru ni kakeru",
-            japaneseMode = JapanesePhoneticMode.ROMAJI
-        )
+        val romajiResult =
+            LyricsPhoneticProcessor.formatPhoneticLine(
+                original = "夜に駆ける",
+                romanizedCandidate = "Yoru ni kakeru",
+                japaneseMode = JapanesePhoneticMode.ROMAJI,
+            )
         assertEquals("Yoru ni kakeru", romajiResult)
 
         // Modo Hiragana
-        val hiraganaResult = LyricsPhoneticProcessor.formatPhoneticLine(
-            original = "夜に駆ける",
-            romanizedCandidate = "Yoru ni kakeru",
-            japaneseMode = JapanesePhoneticMode.HIRAGANA
-        )
+        val hiraganaResult =
+            LyricsPhoneticProcessor.formatPhoneticLine(
+                original = "夜に駆ける",
+                romanizedCandidate = "Yoru ni kakeru",
+                japaneseMode = JapanesePhoneticMode.HIRAGANA,
+            )
         assertEquals("よる に かける", hiraganaResult)
 
         // Cirílico en modo Romaji
-        val cyrillicResult = LyricsPhoneticProcessor.formatPhoneticLine(
-            original = "Группа крови",
-            romanizedCandidate = "Gruppa krovi",
-            japaneseMode = JapanesePhoneticMode.ROMAJI
-        )
+        val cyrillicResult =
+            LyricsPhoneticProcessor.formatPhoneticLine(
+                original = "Группа крови",
+                romanizedCandidate = "Gruppa krovi",
+                japaneseMode = JapanesePhoneticMode.ROMAJI,
+            )
         assertEquals("Gruppa krovi", cyrillicResult)
     }
 }

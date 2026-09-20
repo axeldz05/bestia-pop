@@ -65,15 +65,16 @@ fun CircleActionBox(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     boxSize: Dp = 36.dp,
-    content: @Composable BoxScope.() -> Unit
+    content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
-        modifier = modifier
-            .size(boxSize)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
+        modifier =
+            modifier
+                .size(boxSize)
+                .clip(CircleShape)
+                .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-        content = content
+        content = content,
     )
 }
 
@@ -88,18 +89,18 @@ fun HeaderActionIcon(
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     iconSize: Dp = 20.dp,
-    boxSize: Dp = 36.dp
+    boxSize: Dp = 36.dp,
 ) {
     CircleActionBox(
         onClick = onClick,
         modifier = modifier,
-        boxSize = boxSize
+        boxSize = boxSize,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
-            modifier = Modifier.size(iconSize)
+            modifier = Modifier.size(iconSize),
         )
     }
 }
@@ -133,12 +134,13 @@ fun CollectionHeader(
     onOpen: () -> Unit = {},
     menuContent: (@Composable ColumnScope.(dismissMenu: () -> Unit) -> Unit)? = null,
     swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
-    onSwipeAction: (() -> Unit)? = null
+    onSwipeAction: (() -> Unit)? = null,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    val handleHeaderClick = remember(isSelectionMode, onToggleSelect, onOpen) {
-        if (isSelectionMode) onToggleSelect else onOpen
-    }
+    val handleHeaderClick =
+        remember(isSelectionMode, onToggleSelect, onOpen) {
+            if (isSelectionMode) onToggleSelect else onOpen
+        }
     val onOpenMenu = remember { { menuExpanded = true } }
     val onDismissMenu = remember { { menuExpanded = false } }
 
@@ -148,97 +150,97 @@ fun CollectionHeader(
         action = swipeAction,
         onSwipeAction = { onSwipeAction?.invoke() },
         enabled = canSwipe,
-        modifier = modifier
+        modifier = modifier,
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = ListDensity.rowHorizontalPadding,
-                    vertical = ListDensity.rowVerticalPadding
-                )
-                .clip(RoundedCornerShape(ListDensity.corner))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                .combinedClickable(
-                    onClick = handleHeaderClick,
-                    onLongClick = onLongClick
-                )
-                .padding(ListDensity.rowInnerPadding),
-            verticalAlignment = Alignment.CenterVertically
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = ListDensity.rowHorizontalPadding,
+                        vertical = ListDensity.rowVerticalPadding,
+                    ).clip(RoundedCornerShape(ListDensity.corner))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .combinedClickable(
+                        onClick = handleHeaderClick,
+                        onLongClick = onLongClick,
+                    ).padding(ListDensity.rowInnerPadding),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-        if (isSelectionMode) {
-            TriStateCheckbox(
-                state = selectionState,
-                onClick = onToggleSelect,
-                colors = CheckboxDefaults.colors(
-                    checkedColor = MaterialTheme.colorScheme.primary
+            if (isSelectionMode) {
+                TriStateCheckbox(
+                    state = selectionState,
+                    onClick = onToggleSelect,
+                    colors =
+                        CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                        ),
                 )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            ArtworkThumbnail(
+                artworkUri = artworkUri,
+                size = ListDensity.artworkAlbumHeader,
+                cornerRadius = ListDensity.corner,
+                fallbackIcon = fallbackIcon,
             )
-            Spacer(modifier = Modifier.width(4.dp))
-        }
-        ArtworkThumbnail(
-            artworkUri = artworkUri,
-            size = ListDensity.artworkAlbumHeader,
-            cornerRadius = ListDensity.corner,
-            fallbackIcon = fallbackIcon
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = ListDensity.titleStyle,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                style = ListDensity.subtitleStyle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        if (showCollapseToggle) {
-            HeaderActionIcon(
-                onClick = onToggleCollapse,
-                icon = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
-                contentDescription = collapseContentDescription
-            )
-        }
-        if (!isSelectionMode) {
-            if (menuContent != null) {
-                Box {
-                    HeaderActionIcon(
-                        onClick = onOpenMenu,
-                        icon = Icons.Default.MoreVert,
-                        contentDescription = menuContentDescription
-                    )
-                    if (menuExpanded) {
-                        DropdownMenu(
-                            expanded = true,
-                            onDismissRequest = onDismissMenu
-                        ) {
-                            menuContent(onDismissMenu)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = ListDensity.titleStyle,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    style = ListDensity.subtitleStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (showCollapseToggle) {
+                HeaderActionIcon(
+                    onClick = onToggleCollapse,
+                    icon = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                    contentDescription = collapseContentDescription,
+                )
+            }
+            if (!isSelectionMode) {
+                if (menuContent != null) {
+                    Box {
+                        HeaderActionIcon(
+                            onClick = onOpenMenu,
+                            icon = Icons.Default.MoreVert,
+                            contentDescription = menuContentDescription,
+                        )
+                        if (menuExpanded) {
+                            DropdownMenu(
+                                expanded = true,
+                                onDismissRequest = onDismissMenu,
+                            ) {
+                                menuContent(onDismissMenu)
+                            }
                         }
                     }
                 }
+                HeaderActionIcon(
+                    onClick = onPlay,
+                    icon = Icons.Default.PlayArrow,
+                    contentDescription = playContentDescription,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                HeaderActionIcon(
+                    onClick = onShuffle,
+                    icon = Icons.Default.Shuffle,
+                    contentDescription = shuffleContentDescription,
+                )
             }
-            HeaderActionIcon(
-                onClick = onPlay,
-                icon = Icons.Default.PlayArrow,
-                contentDescription = playContentDescription,
-                tint = MaterialTheme.colorScheme.primary
-            )
-            HeaderActionIcon(
-                onClick = onShuffle,
-                icon = Icons.Default.Shuffle,
-                contentDescription = shuffleContentDescription
-            )
         }
     }
-}
 }
 
 /**
@@ -255,7 +257,7 @@ data class AlbumHeaderActions(
     val onToggleSelect: () -> Unit = {},
     val onLongClick: () -> Unit = {},
     val onToggleCollapse: () -> Unit = {},
-    val onSwipeAction: (() -> Unit)? = null
+    val onSwipeAction: (() -> Unit)? = null,
 )
 
 /**
@@ -270,7 +272,7 @@ fun AlbumHeader(
     isCollapsed: Boolean = false,
     isSelectionMode: Boolean = false,
     selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
-    showCollapseToggle: Boolean = true
+    showCollapseToggle: Boolean = true,
 ) {
     AlbumHeader(
         title = album.displayName,
@@ -283,7 +285,7 @@ fun AlbumHeader(
         isCollapsed = isCollapsed,
         isSelectionMode = isSelectionMode,
         selectionState = selectionState,
-        showCollapseToggle = showCollapseToggle
+        showCollapseToggle = showCollapseToggle,
     )
 }
 
@@ -303,7 +305,7 @@ fun AlbumHeader(
     isCollapsed: Boolean = false,
     isSelectionMode: Boolean = false,
     selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
-    showCollapseToggle: Boolean = true
+    showCollapseToggle: Boolean = true,
 ) {
     AlbumHeader(
         title = title,
@@ -326,7 +328,7 @@ fun AlbumHeader(
         onIdentifyAlbum = actions.onIdentify,
         onOpenAlbum = actions.onOpen,
         onSwipeAction = actions.onSwipeAction,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -356,16 +358,18 @@ fun AlbumHeader(
     onOpenAlbum: () -> Unit = {},
     swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val toggleState = when (selectionState) {
-        AlbumHeaderSelectionState.NONE -> ToggleableState.Off
-        AlbumHeaderSelectionState.PARTIAL -> ToggleableState.Indeterminate
-        AlbumHeaderSelectionState.ALL -> ToggleableState.On
-    }
-    val effectiveSubtitle = remember(subtitle, sortHint) {
-        if (sortHint.isNullOrBlank()) subtitle else "$subtitle • $sortHint"
-    }
+    val toggleState =
+        when (selectionState) {
+            AlbumHeaderSelectionState.NONE -> ToggleableState.Off
+            AlbumHeaderSelectionState.PARTIAL -> ToggleableState.Indeterminate
+            AlbumHeaderSelectionState.ALL -> ToggleableState.On
+        }
+    val effectiveSubtitle =
+        remember(subtitle, sortHint) {
+            if (sortHint.isNullOrBlank()) subtitle else "$subtitle • $sortHint"
+        }
     CollectionHeader(
         title = title,
         subtitle = effectiveSubtitle,
@@ -397,14 +401,15 @@ fun AlbumHeader(
                     dismissMenu()
                     onChangeAlbumCover()
                 },
-                onIdentifyAlbum = onIdentifyAlbum?.let { action ->
-                    {
-                        dismissMenu()
-                        action()
-                    }
-                }
+                onIdentifyAlbum =
+                    onIdentifyAlbum?.let { action ->
+                        {
+                            dismissMenu()
+                            action()
+                        }
+                    },
             )
-        }
+        },
     )
 }
 
@@ -420,7 +425,7 @@ data class PlaylistHeaderActions(
     val onDelete: (Playlist) -> Unit,
     val onPlayNext: ((Playlist) -> Unit)? = null,
     val onAddToQueue: ((Playlist) -> Unit)? = null,
-    val onSwipeAction: (() -> Unit)? = null
+    val onSwipeAction: (() -> Unit)? = null,
 )
 
 /**
@@ -430,14 +435,15 @@ data class PlaylistHeaderActions(
 fun PlaylistHeader(
     playlist: Playlist,
     actions: PlaylistHeaderActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val swipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction
-    val resolvedSwipeAction = actions.onSwipeAction ?: when (swipeAction) {
-        SubmenuSwipeAction.ENQUEUE_ALL -> actions.onAddToQueue?.let { cb -> { cb(playlist) } }
-        SubmenuSwipeAction.PLAY_NEXT -> actions.onPlayNext?.let { cb -> { cb(playlist) } }
-        else -> null
-    }
+    val resolvedSwipeAction =
+        actions.onSwipeAction ?: when (swipeAction) {
+            SubmenuSwipeAction.ENQUEUE_ALL -> actions.onAddToQueue?.let { cb -> { cb(playlist) } }
+            SubmenuSwipeAction.PLAY_NEXT -> actions.onPlayNext?.let { cb -> { cb(playlist) } }
+            else -> null
+        }
     PlaylistHeader(
         playlist = playlist,
         onPlayPlaylist = { actions.onPlay(playlist) },
@@ -449,7 +455,7 @@ fun PlaylistHeader(
         onAddToQueue = actions.onAddToQueue?.let { action -> { action(playlist) } },
         swipeAction = swipeAction,
         onSwipeAction = resolvedSwipeAction,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -468,16 +474,17 @@ fun PlaylistHeader(
     onPlayNext: (() -> Unit)? = null,
     onAddToQueue: (() -> Unit)? = null,
     swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
-    onSwipeAction: (() -> Unit)? = null
+    onSwipeAction: (() -> Unit)? = null,
 ) {
-    val subtitle = remember(playlist.songCount, playlist.description) {
-        val countText = if (playlist.songCount == 1) "1 canción" else "${playlist.songCount} canciones"
-        if (playlist.description.isNullOrBlank()) {
-            countText
-        } else {
-            "$countText • ${playlist.description}"
+    val subtitle =
+        remember(playlist.songCount, playlist.description) {
+            val countText = if (playlist.songCount == 1) "1 canción" else "${playlist.songCount} canciones"
+            if (playlist.description.isNullOrBlank()) {
+                countText
+            } else {
+                "$countText • ${playlist.description}"
+            }
         }
-    }
     CollectionHeader(
         title = playlist.name,
         subtitle = subtitle,
@@ -492,11 +499,12 @@ fun PlaylistHeader(
         onToggleCollapse = {},
         onOpen = onOpenPlaylist,
         swipeAction = swipeAction,
-        onSwipeAction = onSwipeAction ?: when (swipeAction) {
-            SubmenuSwipeAction.ENQUEUE_ALL -> onAddToQueue
-            SubmenuSwipeAction.PLAY_NEXT -> onPlayNext
-            else -> null
-        },
+        onSwipeAction =
+            onSwipeAction ?: when (swipeAction) {
+                SubmenuSwipeAction.ENQUEUE_ALL -> onAddToQueue
+                SubmenuSwipeAction.PLAY_NEXT -> onPlayNext
+                else -> null
+            },
         menuContent = { dismissMenu ->
             DropdownMenuItem(
                 text = { Text("Editar playlist") },
@@ -504,7 +512,7 @@ fun PlaylistHeader(
                 onClick = {
                     dismissMenu()
                     onEditPlaylist()
-                }
+                },
             )
             if (onPlayNext != null) {
                 DropdownMenuItem(
@@ -513,7 +521,7 @@ fun PlaylistHeader(
                     onClick = {
                         dismissMenu()
                         onPlayNext()
-                    }
+                    },
                 )
             }
             if (onAddToQueue != null) {
@@ -523,7 +531,7 @@ fun PlaylistHeader(
                     onClick = {
                         dismissMenu()
                         onAddToQueue()
-                    }
+                    },
                 )
             }
             DropdownMenuItem(
@@ -532,14 +540,14 @@ fun PlaylistHeader(
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
+                        tint = MaterialTheme.colorScheme.error,
                     )
                 },
                 onClick = {
                     dismissMenu()
                     onDeletePlaylist()
-                }
+                },
             )
-        }
+        },
     )
 }

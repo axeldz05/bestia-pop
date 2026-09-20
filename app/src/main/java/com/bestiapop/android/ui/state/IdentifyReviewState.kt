@@ -20,29 +20,29 @@ import com.bestiapop.android.domain.util.promoteKnownAlbumMatches
 
 enum class IdentifyReviewPhase {
     Overview,
-    Item
+    Item,
 }
 
 /** One song awaiting manual identify review. Lyrics stay out of this overlay snapshot. */
 data class IdentifyReviewItem(
     val song: Song,
-    val proposal: IdentifyProposal
+    val proposal: IdentifyProposal,
 )
 
-fun List<IdentifyReviewItem>.toAlbumGroupSources(): List<IdentifyAlbumGroupSource> =
-    map { IdentifyAlbumGroupSource(it.song, it.proposal) }
+fun List<IdentifyReviewItem>.toAlbumGroupSources(): List<IdentifyAlbumGroupSource> = map { IdentifyAlbumGroupSource(it.song, it.proposal) }
 
 /** Level 2 continuous granularity: clusters album groups directly from UI review items. */
 fun List<IdentifyReviewItem>.clusterAlbumGroups(
     applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
     searchedCandidates: Map<String, List<CatalogAlbum>> = emptyMap(),
-    selectedCandidateIndices: Map<String, Int> = emptyMap()
-): List<IdentifyAlbumGroup> = clusterIdentifyAlbumGroupsFromSources(
-    sources = toAlbumGroupSources(),
-    applyFields = applyFields,
-    searchedCandidates = searchedCandidates,
-    selectedCandidateIndices = selectedCandidateIndices
-)
+    selectedCandidateIndices: Map<String, Int> = emptyMap(),
+): List<IdentifyAlbumGroup> =
+    clusterIdentifyAlbumGroupsFromSources(
+        sources = toAlbumGroupSources(),
+        applyFields = applyFields,
+        searchedCandidates = searchedCandidates,
+        selectedCandidateIndices = selectedCandidateIndices,
+    )
 
 fun Song.forIdentifyReview(): Song = if (lyrics == null) this else copy(lyrics = null)
 
@@ -73,7 +73,7 @@ data class IdentifyReviewState(
     val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
     val isApplying: Boolean = false,
     val albumGroupCandidates: Map<String, List<CatalogAlbum>> = emptyMap(),
-    val albumGroupSelectedIndices: Map<String, Int> = emptyMap()
+    val albumGroupSelectedIndices: Map<String, Int> = emptyMap(),
 ) {
     val current: IdentifyReviewItem?
         get() = items.getOrNull(currentIndex)
@@ -97,10 +97,9 @@ data class IdentifyReviewState(
         remaining.clusterAlbumGroups(
             applyFields = applyFields,
             searchedCandidates = albumGroupCandidates,
-            selectedCandidateIndices = albumGroupSelectedIndices
+            selectedCandidateIndices = albumGroupSelectedIndices,
         )
     }
-
 
     val ungroupedCount: Int by lazy {
         val groupedIds = albumGroups.flatMap { it.songIds }.toSet()
@@ -108,12 +107,16 @@ data class IdentifyReviewState(
     }
 
     val headerSubtitle: String
-        get() = when (phase) {
-            IdentifyReviewPhase.Overview ->
-                if (pendingCount == 1) "1 para revisar" else "$pendingCount para revisar"
-            IdentifyReviewPhase.Item ->
-                "Revisar $reviewOrdinal de $reviewTotal"
-        }
+        get() =
+            when (phase) {
+                IdentifyReviewPhase.Overview -> {
+                    if (pendingCount == 1) "1 para revisar" else "$pendingCount para revisar"
+                }
+
+                IdentifyReviewPhase.Item -> {
+                    "Revisar $reviewOrdinal de $reviewTotal"
+                }
+            }
 
     val canApplyRemaining: Boolean
         get() = !isApplying && applyFields.hasAny && remaining.any { it.proposal.hasMediumSuggestion }
@@ -125,11 +128,12 @@ data class IdentifyReviewState(
         get() = remaining.map { it.song.id }.toSet()
 
     val searchFilters: IdentifySearchFilters
-        get() = IdentifySearchFilters(
-            artist = searchFilterArtist,
-            album = searchFilterAlbum,
-            year = searchFilterYear.toIntOrNull() ?: 0
-        )
+        get() =
+            IdentifySearchFilters(
+                artist = searchFilterArtist,
+                album = searchFilterAlbum,
+                year = searchFilterYear.toIntOrNull() ?: 0,
+            )
 
     val visibleCandidates: List<IdentifyCandidate>
         get() {
@@ -149,27 +153,38 @@ val IdentifyProposal.hasMediumSuggestion: Boolean
     get() = confidence == IdentifyConfidence.MEDIUM && suggested != null
 
 fun identifySearchDraft(item: IdentifyReviewItem): String {
-    val title = item.proposal.queryTitle.trim()
-        .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
-        ?: item.song.title.trim().takeUnless { it.isBlank() || looksLikeStoragePath(it) }
-        .orEmpty()
+    val title =
+        item.proposal.queryTitle
+            .trim()
+            .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
+            ?: item.song.title
+                .trim()
+                .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
+                .orEmpty()
     return title
 }
 
 fun identifySearchFilterArtist(item: IdentifyReviewItem): String =
     item.proposal.queryArtist.trim().takeUnless {
         it.isBlank() || IdentifyRanking.isPlaceholderArtist(it) || looksLikeStoragePath(it)
-    } ?: item.song.artist.trim().takeUnless {
-        IdentifyRanking.isPlaceholderArtist(it) || looksLikeStoragePath(it)
-    }.orEmpty()
+    } ?: item.song.artist
+        .trim()
+        .takeUnless {
+            IdentifyRanking.isPlaceholderArtist(it) || looksLikeStoragePath(it)
+        }.orEmpty()
 
 fun identifySearchFilterAlbum(item: IdentifyReviewItem): String =
-    item.song.album.trim().takeUnless {
-        it.isBlank() || IdentifyRanking.isGenericAlbum(it)
-    }.orEmpty()
+    item.song.album
+        .trim()
+        .takeUnless {
+            it.isBlank() || IdentifyRanking.isGenericAlbum(it)
+        }.orEmpty()
 
 fun identifySearchFilterYear(item: IdentifyReviewItem): String =
-    item.song.year.takeIf { it in 1000..9999 }?.toString().orEmpty()
+    item.song.year
+        .takeIf { it in 1000..9999 }
+        ?.toString()
+        .orEmpty()
 
 /**
  * Title in the free-text box; artist/album/year in dedicated filters.
@@ -177,7 +192,7 @@ fun identifySearchFilterYear(item: IdentifyReviewItem): String =
  */
 fun IdentifyReviewState.seedIdentifySearch(
     item: IdentifyReviewItem,
-    forceShowSearch: Boolean? = null
+    forceShowSearch: Boolean? = null,
 ): IdentifyReviewState {
     val showSearch = forceShowSearch ?: item.proposal.candidates.isEmpty()
     val artist = identifySearchFilterArtist(item)
@@ -190,19 +205,21 @@ fun IdentifyReviewState.seedIdentifySearch(
         showSearchFilters = showSearch && hasFilters,
         searchFilterArtist = artist,
         searchFilterAlbum = album,
-        searchFilterYear = year
+        searchFilterYear = year,
     )
 }
 
 fun IdentifyReviewState.withItemSearchChrome(
     item: IdentifyReviewItem,
-    forceShowSearch: Boolean? = null
-): IdentifyReviewState = seedIdentifySearch(item, forceShowSearch).copy(
-    isSearching = false,
-    isLoadingMore = false,
-    visibleCandidateCount = IdentifyRanking.TOP_N,
-    selectedCandidateIndex = 0
-).withGapApplyFields(item)
+    forceShowSearch: Boolean? = null,
+): IdentifyReviewState =
+    seedIdentifySearch(item, forceShowSearch)
+        .copy(
+            isSearching = false,
+            isLoadingMore = false,
+            visibleCandidateCount = IdentifyRanking.TOP_N,
+            selectedCandidateIndex = 0,
+        ).withGapApplyFields(item)
 
 fun IdentifyReviewState.withGapApplyFields(item: IdentifyReviewItem): IdentifyReviewState =
     if (item.proposal.fillGapsOnly) copy(applyFields = gapApplyFields(item.song)) else this
@@ -213,13 +230,14 @@ fun IdentifyReviewState.withGapApplyFields(item: IdentifyReviewItem): IdentifyRe
  */
 fun IdentifyReviewState.mergeIncomingReviewItems(
     incoming: List<IdentifyReviewItem>,
-    droppedIds: Set<Long>
+    droppedIds: Set<Long>,
 ): IdentifyReviewState {
     if (!isVisible || items.isEmpty()) return this
     val existingIds = items.map { it.song.id }.toSet()
-    val extras = incoming.filter { item ->
-        item.song.id !in existingIds && item.song.id !in droppedIds
-    }
+    val extras =
+        incoming.filter { item ->
+            item.song.id !in existingIds && item.song.id !in droppedIds
+        }
     if (extras.isEmpty()) return this
     return copy(items = items + extras)
 }
@@ -230,32 +248,35 @@ fun leftoverIdentifyReview(
     sessionSkipped: Int,
     applyFields: IdentifyApplyFields,
     isVisible: Boolean = true,
-    isApplying: Boolean = false
+    isApplying: Boolean = false,
 ): IdentifyReviewState {
     if (leftover.isEmpty()) {
         return IdentifyReviewState(applyFields = applyFields)
     }
-    val phase = if (leftover.clusterAlbumGroups(applyFields).isNotEmpty()) {
-        IdentifyReviewPhase.Overview
-    } else {
-        IdentifyReviewPhase.Item
-    }
+    val phase =
+        if (leftover.clusterAlbumGroups(applyFields).isNotEmpty()) {
+            IdentifyReviewPhase.Overview
+        } else {
+            IdentifyReviewPhase.Item
+        }
     val first = leftover.first()
-    val base = IdentifyReviewState(
-        items = leftover,
-        currentIndex = 0,
-        sessionApplied = sessionApplied,
-        sessionSkipped = sessionSkipped,
-        isVisible = isVisible,
-        phase = phase,
-        applyFields = applyFields,
-        isApplying = isApplying
-    )
+    val base =
+        IdentifyReviewState(
+            items = leftover,
+            currentIndex = 0,
+            sessionApplied = sessionApplied,
+            sessionSkipped = sessionSkipped,
+            isVisible = isVisible,
+            phase = phase,
+            applyFields = applyFields,
+            isApplying = isApplying,
+        )
     return if (phase == IdentifyReviewPhase.Item) {
-        base.withItemSearchChrome(
-            first,
-            forceShowSearch = first.proposal.candidates.isEmpty()
-        ).copy(applyFields = applyFields)
+        base
+            .withItemSearchChrome(
+                first,
+                forceShowSearch = first.proposal.candidates.isEmpty(),
+            ).copy(applyFields = applyFields)
     } else {
         base
     }
@@ -264,8 +285,14 @@ fun leftoverIdentifyReview(
 /** How a DataStore snapshot should land on an already-open overlay vs cold hydrate. */
 sealed class IdentifyPersistEcho {
     data object Skip : IdentifyPersistEcho()
-    data class MergeExtras(val songIds: List<Long>) : IdentifyPersistEcho()
-    data class Hydrate(val songIds: List<Long>) : IdentifyPersistEcho()
+
+    data class MergeExtras(
+        val songIds: List<Long>,
+    ) : IdentifyPersistEcho()
+
+    data class Hydrate(
+        val songIds: List<Long>,
+    ) : IdentifyPersistEcho()
 }
 
 /**
@@ -276,12 +303,15 @@ fun identifyPersistEcho(
     overlayOpen: Boolean,
     itemIds: Set<Long>,
     snapSongIds: List<Long>,
-    droppedIds: Set<Long>
+    droppedIds: Set<Long>,
 ): IdentifyPersistEcho {
     if (overlayOpen) {
         val extras = snapSongIds.filter { it !in itemIds && it !in droppedIds }
-        return if (extras.isEmpty()) IdentifyPersistEcho.Skip
-        else IdentifyPersistEcho.MergeExtras(extras)
+        return if (extras.isEmpty()) {
+            IdentifyPersistEcho.Skip
+        } else {
+            IdentifyPersistEcho.MergeExtras(extras)
+        }
     }
     return IdentifyPersistEcho.Hydrate(snapSongIds)
 }
@@ -297,35 +327,37 @@ fun identifyReviewFromPersisted(
     proposals: List<IdentifyProposal>,
     phaseName: String,
     songs: List<Song>,
-    applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL
+    applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
 ): IdentifyReviewState {
     if (proposals.isEmpty()) return IdentifyReviewState(applyFields = applyFields)
     val byId = songs.associateBy { it.id }
-    val items = proposals.mapNotNull { proposal ->
-        byId[proposal.songId]?.let { IdentifyReviewItem(it.forIdentifyReview(), proposal) }
-    }
+    val items =
+        proposals.mapNotNull { proposal ->
+            byId[proposal.songId]?.let { IdentifyReviewItem(it.forIdentifyReview(), proposal) }
+        }
     if (items.isEmpty()) return IdentifyReviewState(applyFields = applyFields)
     val attached = attachKnownAlbumMatches(items, songs)
     val requested = identifyReviewPhaseOrItem(phaseName)
-    val phase = if (requested == IdentifyReviewPhase.Overview &&
-        attached.clusterAlbumGroups(applyFields).isEmpty()
-    ) {
-        IdentifyReviewPhase.Item
-    } else {
-        requested
-    }
+    val phase =
+        if (requested == IdentifyReviewPhase.Overview &&
+            attached.clusterAlbumGroups(applyFields).isEmpty()
+        ) {
+            IdentifyReviewPhase.Item
+        } else {
+            requested
+        }
     return IdentifyReviewState(
         items = attached,
         currentIndex = 0,
         phase = phase,
         isVisible = false,
-        applyFields = applyFields
+        applyFields = applyFields,
     )
 }
 
 fun attachKnownAlbumMatches(
     items: List<IdentifyReviewItem>,
-    librarySongs: List<Song>
+    librarySongs: List<Song>,
 ): List<IdentifyReviewItem> {
     if (items.isEmpty()) return items
     val albums = knownAlbumsFromLibrary(librarySongs)

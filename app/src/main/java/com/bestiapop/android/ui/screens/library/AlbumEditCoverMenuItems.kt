@@ -14,23 +14,23 @@ import androidx.compose.runtime.Composable
 fun AlbumEditCoverMenuItems(
     onEditAlbum: () -> Unit,
     onChangeCover: () -> Unit,
-    onIdentifyAlbum: (() -> Unit)? = null
+    onIdentifyAlbum: (() -> Unit)? = null,
 ) {
     if (onIdentifyAlbum != null) {
         DropdownMenuItem(
             text = { Text("Identificar álbum") },
             leadingIcon = { Icon(Icons.Default.AutoFixHigh, contentDescription = null) },
-            onClick = onIdentifyAlbum
+            onClick = onIdentifyAlbum,
         )
     }
     DropdownMenuItem(
         text = { Text("Editar álbum") },
         leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-        onClick = onEditAlbum
+        onClick = onEditAlbum,
     )
     DropdownMenuItem(
         text = { Text("Cambiar portada") },
         leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, contentDescription = null) },
-        onClick = onChangeCover
+        onClick = onChangeCover,
     )
 }

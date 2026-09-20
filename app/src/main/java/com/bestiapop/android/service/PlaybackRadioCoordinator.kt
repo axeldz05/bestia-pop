@@ -32,7 +32,7 @@ internal class PlaybackRadioCoordinator(
     private val onReplaceUpcomingWithRadio: (List<PlayableItem>) -> Unit,
     private val onPlayPlayableCollection: (List<PlayableItem>, fromRadio: Boolean, rotate: Boolean) -> Unit,
     private val onAddPlayableBatch: (List<PlayableItem>) -> Unit,
-    private val onPrefetchAround: (Int) -> Unit
+    private val onPrefetchAround: (Int) -> Unit,
 ) {
     private val _radioActive = MutableStateFlow(false)
     val radioActive = _radioActive.asStateFlow()
@@ -88,77 +88,81 @@ internal class PlaybackRadioCoordinator(
         seedSong: Song? = null,
         mode: RadioMode? = null,
         auto: Boolean = false,
-        announceMode: Boolean = false
+        announceMode: Boolean = false,
     ) {
-        val seed = seedSong?.toPlayable() ?: getCurrentItem() ?: run {
-            if (!auto) onEmitEvent("Elegí una canción para iniciar la radio")
-            return
-        }
+        val seed =
+            seedSong?.toPlayable() ?: getCurrentItem() ?: run {
+                if (!auto) onEmitEvent("Elegí una canción para iniciar la radio")
+                return
+            }
         if (seed.artist.isBlank() || seed.title.isBlank()) return
         if (_radioLoading.value) return
         if (mode != null) radioPreferredMode = mode
-        val resolvedMode = mode ?: radioPreferredMode
-            ?: if (dependencies.isOnline()) RadioMode.BOTH else RadioMode.KNOWN
+        val resolvedMode =
+            mode ?: radioPreferredMode
+                ?: if (dependencies.isOnline()) RadioMode.BOTH else RadioMode.KNOWN
         val keepCurrent = !auto && canKeepCurrent()
         radioStartJob?.cancel()
-        radioStartJob = scope.launch {
-            dependencies.listenSettingsReady.first { it }
-            if (!isActive) return@launch
-            _radioLoading.value = true
-            try {
-                val exclude = buildRadioExcludeKeys(seed, includeQueue = true, getCurrentItem())
-                val batch = suggestRadioWithRetry(
-                    PlaybackRuntimeRadioRequest(
-                        seed = seed,
-                        library = getLibrary(),
-                        mode = resolvedMode,
-                        excludeKeys = exclude,
-                        settings = dependencies.listenSettings.value,
-                        timeoutMs = RADIO_START_TIMEOUT_MS,
-                        coPlaylistSongIds = dependencies.resolveCoPlaylistSongIds(seed)
-                    )
-                )
+        radioStartJob =
+            scope.launch {
+                dependencies.listenSettingsReady.first { it }
                 if (!isActive) return@launch
-                if (batch.items.isEmpty()) {
-                    if (!auto) {
-                        onEmitEvent(
-                            if (resolvedMode == RadioMode.NEW) {
-                                "Radio online no disponible"
-                            } else {
-                                "No encontré canciones parecidas"
-                            }
+                _radioLoading.value = true
+                try {
+                    val exclude = buildRadioExcludeKeys(seed, includeQueue = true, getCurrentItem())
+                    val batch =
+                        suggestRadioWithRetry(
+                            PlaybackRuntimeRadioRequest(
+                                seed = seed,
+                                library = getLibrary(),
+                                mode = resolvedMode,
+                                excludeKeys = exclude,
+                                settings = dependencies.listenSettings.value,
+                                timeoutMs = RADIO_START_TIMEOUT_MS,
+                                coPlaylistSongIds = dependencies.resolveCoPlaylistSongIds(seed),
+                            ),
+                        )
+                    if (!isActive) return@launch
+                    if (batch.items.isEmpty()) {
+                        if (!auto) {
+                            onEmitEvent(
+                                if (resolvedMode == RadioMode.NEW) {
+                                    "Radio online no disponible"
+                                } else {
+                                    "No encontré canciones parecidas"
+                                },
+                            )
+                        }
+                        return@launch
+                    }
+                    lastEmptyRadioRefillAtMs = 0L
+                    onClearDiscoverPlaybackOrigin()
+                    onApplyRadioStartModes()
+                    val previousPlayed =
+                        if (_radioActive.value) playedInRadioSession.toSet() else emptySet()
+                    clearRadioSessionKeepPreference()
+                    _radioMode.value = resolvedMode
+                    playedInRadioSession += previousPlayed
+                    playedInRadioSession += exclude
+                    rememberRadioPlayed(seed)
+                    _radioActive.value = true
+                    updateRadioStatusLabel()
+                    if (announceMode && !auto) onEmitEvent(radioModeLabel(resolvedMode))
+                    if (keepCurrent) {
+                        onReplaceUpcomingWithRadio(batch.items)
+                        onEmitEvent("Se agregaron canciones de la radio a la cola")
+                        onPrefetchAround(getCurrentIndex())
+                    } else {
+                        onPlayPlayableCollection(
+                            batch.items,
+                            true,
+                            false,
                         )
                     }
-                    return@launch
+                } finally {
+                    _radioLoading.value = false
                 }
-                lastEmptyRadioRefillAtMs = 0L
-                onClearDiscoverPlaybackOrigin()
-                onApplyRadioStartModes()
-                val previousPlayed =
-                    if (_radioActive.value) playedInRadioSession.toSet() else emptySet()
-                clearRadioSessionKeepPreference()
-                _radioMode.value = resolvedMode
-                playedInRadioSession += previousPlayed
-                playedInRadioSession += exclude
-                rememberRadioPlayed(seed)
-                _radioActive.value = true
-                updateRadioStatusLabel()
-                if (announceMode && !auto) onEmitEvent(radioModeLabel(resolvedMode))
-                if (keepCurrent) {
-                    onReplaceUpcomingWithRadio(batch.items)
-                    onEmitEvent("Se agregaron canciones de la radio a la cola")
-                    onPrefetchAround(getCurrentIndex())
-                } else {
-                    onPlayPlayableCollection(
-                        batch.items,
-                        true,
-                        false
-                    )
-                }
-            } finally {
-                _radioLoading.value = false
             }
-        }
     }
 
     fun maybeAutoStartRadioOnQueueEnd() {
@@ -176,31 +180,31 @@ internal class PlaybackRadioCoordinator(
         val seed = getCurrentItem() ?: return
         val sinceEmpty = dependencies.clockMs() - lastEmptyRadioRefillAtMs
         if (lastEmptyRadioRefillAtMs > 0L && sinceEmpty < RADIO_EMPTY_COOLDOWN_MS) return
-        radioRefillJob = scope.launch {
-            val batch = suggestRadioWithRetry(
-                PlaybackRuntimeRadioRequest(
-                    seed = seed,
-                    library = getLibrary(),
-                    mode = _radioMode.value,
-                    excludeKeys = buildRadioExcludeKeys(seed),
-                    settings = dependencies.listenSettings.value,
-                    timeoutMs = RADIO_REFILL_TIMEOUT_MS,
-                    coPlaylistSongIds = dependencies.resolveCoPlaylistSongIds(seed)
-                )
-            )
-            if (!isActive || !_radioActive.value) return@launch
-            if (batch.items.isNotEmpty()) {
-                lastEmptyRadioRefillAtMs = 0L
-                onAddPlayableBatch(batch.items)
-            } else if (batch.items.isEmpty()) {
-                lastEmptyRadioRefillAtMs = dependencies.clockMs()
+        radioRefillJob =
+            scope.launch {
+                val batch =
+                    suggestRadioWithRetry(
+                        PlaybackRuntimeRadioRequest(
+                            seed = seed,
+                            library = getLibrary(),
+                            mode = _radioMode.value,
+                            excludeKeys = buildRadioExcludeKeys(seed),
+                            settings = dependencies.listenSettings.value,
+                            timeoutMs = RADIO_REFILL_TIMEOUT_MS,
+                            coPlaylistSongIds = dependencies.resolveCoPlaylistSongIds(seed),
+                        ),
+                    )
+                if (!isActive || !_radioActive.value) return@launch
+                if (batch.items.isNotEmpty()) {
+                    lastEmptyRadioRefillAtMs = 0L
+                    onAddPlayableBatch(batch.items)
+                } else if (batch.items.isEmpty()) {
+                    lastEmptyRadioRefillAtMs = dependencies.clockMs()
+                }
             }
-        }
     }
 
-    suspend fun suggestRadioWithRetry(
-        request: PlaybackRuntimeRadioRequest
-    ): RadioSuggestResult {
+    suspend fun suggestRadioWithRetry(request: PlaybackRuntimeRadioRequest): RadioSuggestResult {
         suspend fun once(): RadioSuggestResult = dependencies.radioSuggester.suggest(request)
         if (request.mode != RadioMode.NEW) return once()
 
@@ -216,7 +220,8 @@ internal class PlaybackRadioCoordinator(
     }
 
     fun rememberRadioPlayed(item: PlayableItem) {
-        TrackMatchKeys.matchKey(item.artist, item.title)
+        TrackMatchKeys
+            .matchKey(item.artist, item.title)
             .takeIf { it.isNotEmpty() }
             ?.let(playedInRadioSession::add)
         playedInRadioSession += item.mediaId
@@ -225,11 +230,13 @@ internal class PlaybackRadioCoordinator(
     private fun buildRadioExcludeKeys(
         seed: PlayableItem,
         includeQueue: Boolean = true,
-        extra: PlayableItem? = null
+        extra: PlayableItem? = null,
     ): MutableSet<String> {
         val exclude = playedInRadioSession.toMutableSet()
+
         fun add(item: PlayableItem) {
-            TrackMatchKeys.matchKey(item.artist, item.title)
+            TrackMatchKeys
+                .matchKey(item.artist, item.title)
                 .takeIf { it.isNotEmpty() }
                 ?.let(exclude::add)
             exclude += item.mediaId
@@ -245,11 +252,12 @@ internal class PlaybackRadioCoordinator(
             if (_radioActive.value) radioModeLabel(_radioMode.value) else null
     }
 
-    private fun radioModeLabel(mode: RadioMode): String = when (mode) {
-        RadioMode.KNOWN -> "Radio · Solo conocidos"
-        RadioMode.NEW -> "Radio · Solo nuevos"
-        RadioMode.BOTH -> "Radio · Ambos"
-    }
+    private fun radioModeLabel(mode: RadioMode): String =
+        when (mode) {
+            RadioMode.KNOWN -> "Radio · Solo conocidos"
+            RadioMode.NEW -> "Radio · Solo nuevos"
+            RadioMode.BOTH -> "Radio · Ambos"
+        }
 
     companion object {
         private const val RADIO_REFILL_THRESHOLD = 5

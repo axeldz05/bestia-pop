@@ -39,8 +39,9 @@ fun TelemetrySettingsScreen(viewModel: MusicPlayerViewModel) {
     val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
 
     SettingsScrollColumn(
-        intro = "BestiaPop incluye telemetría técnica para diagnosticar problemas de estabilidad, " +
-            "cierres del sistema operativo y consumo crítico de memoria."
+        intro =
+            "BestiaPop incluye telemetría técnica para diagnosticar problemas de estabilidad, " +
+                "cierres del sistema operativo y consumo crítico de memoria.",
     ) {
         if (isOfflineMode) {
             OfflineNoticeBanner(text = OfflineMessages.telemetryPausedBanner)
@@ -49,15 +50,16 @@ fun TelemetrySettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Diagnósticos y estabilidad",
-            subtitle = if (isOfflineMode) {
-                OfflineMessages.telemetryPausedSubtitle
-            } else if (telemetryEnabled) {
-                "Activo — se transmiten reportes anónimos de cierres inesperados y memoria crítica"
-            } else {
-                "Desactivado — ninguna métrica técnica se recopila ni envía al servidor"
-            },
+            subtitle =
+                if (isOfflineMode) {
+                    OfflineMessages.telemetryPausedSubtitle
+                } else if (telemetryEnabled) {
+                    "Activo — se transmiten reportes anónimos de cierres inesperados y memoria crítica"
+                } else {
+                    "Desactivado — ninguna métrica técnica se recopila ni envía al servidor"
+                },
             checked = telemetryEnabled,
-            onCheckedChange = { viewModel.setTelemetryEnabled(it) }
+            onCheckedChange = { viewModel.setTelemetryEnabled(it) },
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -65,11 +67,12 @@ fun TelemetrySettingsScreen(viewModel: MusicPlayerViewModel) {
         TelemetryInfoCard(
             title = "¿Qué se recolecta?",
             icon = Icons.Default.Analytics,
-            items = listOf(
-                "Cierres del sistema: Low Memory Killer (LMK), límites de CPU o batería excedidos según Android, bloqueos ANR y cierres nativos.",
-                "Presión crítica de RAM: advertencias extremas del kernel (onTrimMemory severo y onLowMemory) para prevenir fallos antes de que ocurran.",
-                "Métricas del proceso: consumo de memoria física (PSS / RSS en MB), estado de ejecución (primer plano / segundo plano) y descripción del error del sistema."
-            )
+            items =
+                listOf(
+                    "Cierres del sistema: Low Memory Killer (LMK), límites de CPU o batería excedidos según Android, bloqueos ANR y cierres nativos.",
+                    "Presión crítica de RAM: advertencias extremas del kernel (onTrimMemory severo y onLowMemory) para prevenir fallos antes de que ocurran.",
+                    "Métricas del proceso: consumo de memoria física (PSS / RSS en MB), estado de ejecución (primer plano / segundo plano) y descripción del error del sistema.",
+                ),
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -77,11 +80,12 @@ fun TelemetrySettingsScreen(viewModel: MusicPlayerViewModel) {
         TelemetryInfoCard(
             title = "¿Cuándo se envía?",
             icon = Icons.Default.Schedule,
-            items = listOf(
-                "Post-mortem al iniciar: si la app fue cerrada forzosamente por el sistema operativo, se evalúa en el siguiente inicio y se reporta una única vez.",
-                "Cierres de usuario ignorados: cuando cerrás la app manualmente (deslizando de recientes o botón atrás) no se envía absolutamente nada.",
-                "Canal seguro: los reportes se envían a través de Firebase Crashlytics con cifrado en tránsito."
-            )
+            items =
+                listOf(
+                    "Post-mortem al iniciar: si la app fue cerrada forzosamente por el sistema operativo, se evalúa en el siguiente inicio y se reporta una única vez.",
+                    "Cierres de usuario ignorados: cuando cerrás la app manualmente (deslizando de recientes o botón atrás) no se envía absolutamente nada.",
+                    "Canal seguro: los reportes se envían a través de Firebase Crashlytics con cifrado en tránsito.",
+                ),
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -89,11 +93,12 @@ fun TelemetrySettingsScreen(viewModel: MusicPlayerViewModel) {
         TelemetryInfoCard(
             title = "Privacidad garantizada",
             icon = Icons.Default.Lock,
-            items = listOf(
-                "Cero datos personales: no se recolectan cuentas, nombres, correos ni datos identificatorios del usuario.",
-                "Cero contenido multimedia: ningún nombre de archivo de audio, canción, artista, álbum o playlist es enviado jamás.",
-                "Sin rastreo publicitario: BestiaPop no incluye Google Analytics ni identificadores de publicidad (Advertising ID)."
-            )
+            items =
+                listOf(
+                    "Cero datos personales: no se recolectan cuentas, nombres, correos ni datos identificatorios del usuario.",
+                    "Cero contenido multimedia: ningún nombre de archivo de audio, canción, artista, álbum o playlist es enviado jamás.",
+                    "Sin rastreo publicitario: BestiaPop no incluye Google Analytics ni identificadores de publicidad (Advertising ID).",
+                ),
         )
     }
 }
@@ -102,30 +107,31 @@ fun TelemetrySettingsScreen(viewModel: MusicPlayerViewModel) {
 private fun TelemetryInfoCard(
     title: String,
     icon: ImageVector,
-    items: List<String>
+    items: List<String>,
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-        ),
-        modifier = Modifier.fillMaxWidth()
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+            ),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(24.dp),
                 )
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -134,18 +140,18 @@ private fun TelemetryInfoCard(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = "•",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
                         text = item,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }

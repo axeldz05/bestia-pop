@@ -15,11 +15,11 @@ import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.testutil.PcmWavFixture
-import java.io.File
-import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import java.io.File
+import java.util.UUID
 
 /**
  * Exact persistent-state owner for the visible playlist CRUD journey.
@@ -33,17 +33,23 @@ internal class PlaylistCrudTestFixture : AutoCloseable {
     private val application = context.applicationContext as BestiaPopApplication
     private val repository = application.musicRepository
     private val libraryPreferences = LibraryPreferencesRepository(context)
-    private val token = UUID.randomUUID().toString().replace("-", "").take(10)
+    private val token =
+        UUID
+            .randomUUID()
+            .toString()
+            .replace("-", "")
+            .take(10)
     private val fixtureDir = File(context.cacheDir, "$FIXTURE_DIR_PREFIX$token")
 
     val playlistName = "$PLAYLIST_PREFIX$token"
-    val renamedPlaylistName = "$PLAYLIST_PREFIX${token} Renombrada"
+    val renamedPlaylistName = "$PLAYLIST_PREFIX$token Renombrada"
     val playlistDescription = "Descripción E2E $token"
     val renamedDescription = "Descripción actualizada $token"
-    val songTitles = listOf(
-        "$SONG_PREFIX${token} A",
-        "$SONG_PREFIX${token} B"
-    )
+    val songTitles =
+        listOf(
+            "$SONG_PREFIX$token A",
+            "$SONG_PREFIX$token B",
+        )
 
     private var scenario: ActivityScenario<MainActivity>? = null
     private var previousInitialScanCompleted: Boolean? = null
@@ -70,9 +76,10 @@ internal class PlaylistCrudTestFixture : AutoCloseable {
     }
 
     fun launchMainActivity() {
-        scenario = ActivityScenario.launch(MainActivity::class.java).also {
-            it.moveToState(Lifecycle.State.RESUMED)
-        }
+        scenario =
+            ActivityScenario.launch(MainActivity::class.java).also {
+                it.moveToState(Lifecycle.State.RESUMED)
+            }
     }
 
     fun verifyRenamedPlaylist() {
@@ -87,13 +94,14 @@ internal class PlaylistCrudTestFixture : AutoCloseable {
 
     fun verifyPlaylistMembership(expectedCount: Int) {
         val playlist = requireFixturePlaylist()
-        val details = runBlocking {
-            withTimeout(STATE_TIMEOUT_MS) {
-                repository.getPlaylistDetailsFlow(playlist.id).first { pair ->
-                    pair?.second?.size == expectedCount
+        val details =
+            runBlocking {
+                withTimeout(STATE_TIMEOUT_MS) {
+                    repository.getPlaylistDetailsFlow(playlist.id).first { pair ->
+                        pair?.second?.size == expectedCount
+                    }
                 }
-            }
-        } ?: error("Fixture playlist disappeared while checking membership")
+            } ?: error("Fixture playlist disappeared while checking membership")
         check(details.second.all { it.title in songTitles }) {
             "Unexpected playlist members: ${details.second.map { it.title }}"
         }
@@ -111,25 +119,32 @@ internal class PlaylistCrudTestFixture : AutoCloseable {
     }
 
     fun diagnostic(): String {
-        val playlists = runCatching {
-            runBlocking {
-                repository.playlistsFlow.first()
-                    .filter { it.name == playlistName || it.name == renamedPlaylistName }
-                    .joinToString { "${it.id}:${it.name}" }
-            }
-        }.getOrElse { "Room playlist diagnostic failed: ${it.message}" }
-        val songs = runCatching {
-            runBlocking { fixtureSongs() }.joinToString { "${it.id}:${it.title}" }
-        }.getOrElse { "Room Song diagnostic failed: ${it.message}" }
+        val playlists =
+            runCatching {
+                runBlocking {
+                    repository.playlistsFlow
+                        .first()
+                        .filter { it.name == playlistName || it.name == renamedPlaylistName }
+                        .joinToString { "${it.id}:${it.name}" }
+                }
+            }.getOrElse { "Room playlist diagnostic failed: ${it.message}" }
+        val songs =
+            runCatching {
+                runBlocking { fixtureSongs() }.joinToString { "${it.id}:${it.title}" }
+            }.getOrElse { "Room Song diagnostic failed: ${it.message}" }
         return "playlists=[$playlists], songs=[$songs], fixtureDir=${fixtureDir.exists()}"
     }
 
     override fun close() {
         var firstFailure: Throwable? = null
+
         fun cleanup(block: () -> Unit) {
             runCatching(block).exceptionOrNull()?.let { failure ->
-                if (firstFailure == null) firstFailure = failure
-                else firstFailure?.addSuppressed(failure)
+                if (firstFailure == null) {
+                    firstFailure = failure
+                } else {
+                    firstFailure?.addSuppressed(failure)
+                }
             }
         }
 
@@ -150,7 +165,7 @@ internal class PlaylistCrudTestFixture : AutoCloseable {
                     libraryPreferences.setSortOptionName(previous.sortOptionName)
                     libraryPreferences.setSortDirectionName(
                         previous.sortDirectionName,
-                        previous.sortOptionName
+                        previous.sortOptionName,
                     )
                     libraryPreferences.setViewModeName(previous.viewModeName)
                 }
@@ -169,30 +184,33 @@ internal class PlaylistCrudTestFixture : AutoCloseable {
             PcmWavFixture.write(
                 file = file,
                 durationMs = WAV_DURATION_MS,
-                toneHz = 330.0 + (index * 110.0)
+                toneHz = 330.0 + (index * 110.0),
             )
-            val song = Song(
-                uriString = file.absolutePath,
-                title = title,
-                artist = "$ARTIST_PREFIX$token",
-                album = "$ALBUM_PREFIX$token",
-                genre = "Fixture",
-                durationMs = WAV_DURATION_MS.toLong(),
-                folderPath = fixtureDir.absolutePath,
-                dateAdded = Long.MAX_VALUE - 1000L + index
-            )
+            val song =
+                Song(
+                    uriString = file.absolutePath,
+                    title = title,
+                    artist = "$ARTIST_PREFIX$token",
+                    album = "$ALBUM_PREFIX$token",
+                    genre = "Fixture",
+                    durationMs = WAV_DURATION_MS.toLong(),
+                    folderPath = fixtureDir.absolutePath,
+                    dateAdded = Long.MAX_VALUE - 1000L + index,
+                )
             val id = repository.saveUploadedSong(song)
             check(id > 0L) { "Could not persist fixture Song $title (id=$id)" }
         }
     }
 
-    private fun requireFixturePlaylist(): Playlist = runBlocking {
-        withTimeout(STATE_TIMEOUT_MS) {
-            repository.playlistsFlow.first { playlists ->
-                playlists.any { it.name == playlistName || it.name == renamedPlaylistName }
-            }.first { it.name == playlistName || it.name == renamedPlaylistName }
+    private fun requireFixturePlaylist(): Playlist =
+        runBlocking {
+            withTimeout(STATE_TIMEOUT_MS) {
+                repository.playlistsFlow
+                    .first { playlists ->
+                        playlists.any { it.name == playlistName || it.name == renamedPlaylistName }
+                    }.first { it.name == playlistName || it.name == renamedPlaylistName }
+            }
         }
-    }
 
     private suspend fun fixtureSongs(): List<Song> =
         repository.getAllSongsSync().filter {
@@ -200,13 +218,15 @@ internal class PlaylistCrudTestFixture : AutoCloseable {
         }
 
     private suspend fun deleteFixtureArtifacts() {
-        repository.playlistsFlow.first()
+        repository.playlistsFlow
+            .first()
             .filter { it.name == playlistName || it.name == renamedPlaylistName }
             .forEach { repository.deletePlaylist(it.id) }
 
-        val songs = repository.getAllSongsSync().filter {
-            it.artist == "$ARTIST_PREFIX$token" && it.title in songTitles
-        }
+        val songs =
+            repository.getAllSongsSync().filter {
+                it.artist == "$ARTIST_PREFIX$token" && it.title in songTitles
+            }
         if (songs.isNotEmpty()) repository.deleteSongsFromDevice(songs)
 
         check(!fixtureDir.exists() || fixtureDir.deleteRecursively()) {
@@ -215,16 +235,17 @@ internal class PlaylistCrudTestFixture : AutoCloseable {
     }
 
     private fun grantStartupPermissions() {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            listOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+        val permissions =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                listOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
         permissions.forEach { permission ->
             if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_DENIED) {
                 instrumentation.uiAutomation.grantRuntimePermission(
                     context.packageName,
-                    permission
+                    permission,
                 )
             }
         }

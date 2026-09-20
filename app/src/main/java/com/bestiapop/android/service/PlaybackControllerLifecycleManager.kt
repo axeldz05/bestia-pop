@@ -23,7 +23,7 @@ internal class PlaybackControllerLifecycleManager(
     private val onControllerDisconnectedCleanup: (PlaybackControllerFacade) -> Unit,
     private val onTaskRemovedCleanup: () -> Unit,
     private val onIdleReleasedCleanup: () -> Unit,
-    private val samplePositionAndOwnership: suspend () -> Unit
+    private val samplePositionAndOwnership: suspend () -> Unit,
 ) {
     private val warmingUp = AtomicBoolean(false)
     private val uiAttachments = AtomicInteger(0)
@@ -55,7 +55,7 @@ internal class PlaybackControllerLifecycleManager(
         if (controller != null || uiAttachments.get() > 0) return
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.warmUpController() - eagerly connecting controller"
+            "PlaybackRuntime.warmUpController() - eagerly connecting controller",
         )
         warmingUp.set(true)
         ensureControllerConnection()
@@ -65,7 +65,7 @@ internal class PlaybackControllerLifecycleManager(
         if (!warmingUp.getAndSet(false)) return
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.markWarmUpFinished() - releasing warmup lock"
+            "PlaybackRuntime.markWarmUpFinished() - releasing warmup lock",
         )
         postOrRunReleaseControllerIfIdle()
     }
@@ -75,7 +75,7 @@ internal class PlaybackControllerLifecycleManager(
         val count = uiAttachments.incrementAndGet()
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.attachUi() (uiAttachments=$count)"
+            "PlaybackRuntime.attachUi() (uiAttachments=$count)",
         )
         ensureControllerConnection()
         updateTickerLifecycle()
@@ -85,7 +85,7 @@ internal class PlaybackControllerLifecycleManager(
         val count = uiAttachments.updateAndGet { c -> (c - 1).coerceAtLeast(0) }
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.detachUi() (uiAttachments=$count)"
+            "PlaybackRuntime.detachUi() (uiAttachments=$count)",
         )
         updateTickerLifecycle()
         if (count == 0) {
@@ -105,10 +105,11 @@ internal class PlaybackControllerLifecycleManager(
             return
         }
         val connector = controllerConnector ?: return
-        val future = runCatching(connector::connect).getOrElse {
-            onControllerConnectionFailed()
-            return
-        }
+        val future =
+            runCatching(connector::connect).getOrElse {
+                onControllerConnectionFailed()
+                return
+            }
         controllerFuture = future
         future.addListener {
             scope.launch {
@@ -123,7 +124,7 @@ internal class PlaybackControllerLifecycleManager(
                             connected.release()
                         }
                     },
-                    onFailure = { onControllerConnectionFailed() }
+                    onFailure = { onControllerConnectionFailed() },
                 )
             }
         }
@@ -135,13 +136,16 @@ internal class PlaybackControllerLifecycleManager(
             emitEvent("No se pudo conectar la reproducción")
         }
         if (!shouldRetainController() || controllerReconnectJob?.isActive == true) return
-        val delayMs = dependencies.controllerReconnectBackoffMs(consecutiveControllerFailures)
-            .coerceAtLeast(0L)
-        controllerReconnectJob = scope.launch {
-            delay(delayMs)
-            controllerReconnectJob = null
-            ensureControllerConnection()
-        }
+        val delayMs =
+            dependencies
+                .controllerReconnectBackoffMs(consecutiveControllerFailures)
+                .coerceAtLeast(0L)
+        controllerReconnectJob =
+            scope.launch {
+                delay(delayMs)
+                controllerReconnectJob = null
+                ensureControllerConnection()
+            }
     }
 
     private fun attachController(newController: PlaybackControllerFacade) {
@@ -166,7 +170,7 @@ internal class PlaybackControllerLifecycleManager(
     fun onTaskRemovedNotEngaged() {
         PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.onTaskRemovedNotEngaged: task removed while not engaged, releasing controller"
+            "PlaybackRuntime.onTaskRemovedNotEngaged: task removed while not engaged, releasing controller",
         )
         warmingUp.set(false)
         uiAttachments.set(0)
@@ -186,23 +190,23 @@ internal class PlaybackControllerLifecycleManager(
 
     fun shouldRetainController(): Boolean =
         warmingUp.get() ||
-                uiAttachments.get() > 0 ||
-                getPlayWhenReadyIntent() ||
-                getIsPlaying()
+            uiAttachments.get() > 0 ||
+            getPlayWhenReadyIntent() ||
+            getIsPlaying()
 
     fun releaseControllerIfIdle() {
         val shouldRetain = shouldRetainController()
         if (shouldRetain) {
             PlaybackDiagnostics.log(
                 PlaybackDiagnostics.TAG_RUNTIME,
-                "PlaybackRuntime.releaseControllerIfIdle: RETAINING controller (uiAttachments=${uiAttachments.get()}, queueSize=${getQueueSize()}, playWhenReadyIntent=${getPlayWhenReadyIntent()}, isPlaying=${getIsPlaying()})"
+                "PlaybackRuntime.releaseControllerIfIdle: RETAINING controller (uiAttachments=${uiAttachments.get()}, queueSize=${getQueueSize()}, playWhenReadyIntent=${getPlayWhenReadyIntent()}, isPlaying=${getIsPlaying()})",
             )
             ensureControllerConnection()
             return
         }
         PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.releaseControllerIfIdle: RELEASING controller (idle, no UI, no playback)"
+            "PlaybackRuntime.releaseControllerIfIdle: RELEASING controller (idle, no UI, no playback)",
         )
         controllerReconnectJob?.cancel()
         controllerReconnectJob = null
@@ -219,25 +223,27 @@ internal class PlaybackControllerLifecycleManager(
     }
 
     fun postOrRunReleaseControllerIfIdle() {
-        val posted = try {
-            val looper = android.os.Looper.myLooper()
-            if (looper != null) {
-                android.os.Handler(looper).post {
-                    releaseControllerIfIdle()
+        val posted =
+            try {
+                val looper = android.os.Looper.myLooper()
+                if (looper != null) {
+                    android.os.Handler(looper).post {
+                        releaseControllerIfIdle()
+                    }
+                } else {
+                    false
                 }
-            } else {
+            } catch (_: Throwable) {
                 false
             }
-        } catch (_: Throwable) {
-            false
-        }
         if (!posted) {
             releaseControllerIfIdle()
         }
     }
 
     fun updateTickerLifecycle() {
-        val shouldTick = dependencies.startTicker &&
+        val shouldTick =
+            dependencies.startTicker &&
                 controller?.isPlaying == true &&
                 uiAttachments.get() > 0
         if (!shouldTick) {
@@ -246,12 +252,13 @@ internal class PlaybackControllerLifecycleManager(
             return
         }
         if (tickerJob?.isActive == true) return
-        tickerJob = scope.launch {
-            while (isActive && controller?.isPlaying == true && uiAttachments.get() > 0) {
-                samplePositionAndOwnership()
-                delay(POSITION_TICK_MS)
+        tickerJob =
+            scope.launch {
+                while (isActive && controller?.isPlaying == true && uiAttachments.get() > 0) {
+                    samplePositionAndOwnership()
+                    delay(POSITION_TICK_MS)
+                }
+                tickerJob = null
             }
-            tickerJob = null
-        }
     }
 }

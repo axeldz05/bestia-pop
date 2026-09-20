@@ -19,7 +19,6 @@ import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.service.ProcessDownloadRequest
 import com.bestiapop.android.service.ProcessDownloadRuntime
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -27,18 +26,19 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicInteger
 
 data class TrackedBatchItem(
     val track: OnlineCatalogTrack,
     val candidates: List<OnlineCatalogTrack> = listOf(track),
     val currentCandidateIndex: Int = 0,
     val idHint: String? = null,
-    val lookupIdentity: TrackIdentity? = null
+    val lookupIdentity: TrackIdentity? = null,
 )
 
 internal data class CatalogBatchPlaylistTarget(
     val selectionKey: String,
-    val playlistId: Long
+    val playlistId: Long,
 )
 
 /**
@@ -60,9 +60,9 @@ internal class CatalogDownloadCoordinator(
         query: String,
         current: List<OnlineCatalogTrack>,
         wasPreviewing: Boolean,
-        apply: suspend (List<OnlineCatalogTrack>) -> OnlineCatalogTrack?
+        apply: suspend (List<OnlineCatalogTrack>) -> OnlineCatalogTrack?,
     ) -> Unit,
-    private val isOnline: () -> Boolean = { true }
+    private val isOnline: () -> Boolean = { true },
 ) {
     private val catalogBatchPlaylistMutex = Mutex()
     private var catalogBatchPlaylistTarget: CatalogBatchPlaylistTarget? = null
@@ -78,7 +78,10 @@ internal class CatalogDownloadCoordinator(
         processDownloadRuntime.resolveConflictOverwrite(applyToRemainingBatch)
     }
 
-    fun resolveDownloadConflictSaveAs(newTitle: String, applyToRemainingBatch: Boolean = false) {
+    fun resolveDownloadConflictSaveAs(
+        newTitle: String,
+        applyToRemainingBatch: Boolean = false,
+    ) {
         processDownloadRuntime.resolveConflictSaveAs(newTitle, applyToRemainingBatch)
     }
 
@@ -93,7 +96,7 @@ internal class CatalogDownloadCoordinator(
     fun activeDownloadIdFor(
         track: OnlineCatalogTrack,
         source: ActiveDownloadSource,
-        explicitId: String? = null
+        explicitId: String? = null,
     ): String {
         explicitId?.takeIf { it.isNotBlank() }?.let { return it }
         val match = TrackMatchKeys.downloadIdFor(track.artist, track.title)
@@ -112,21 +115,23 @@ internal class CatalogDownloadCoordinator(
         conflictPolicy: DownloadConflictPolicy? = null,
         lookupIdentity: TrackIdentity? = null,
         batchId: String? = null,
-        titleOverride: String? = null
-    ): Result<Song> = processDownloadRuntime.submit(
-        ProcessDownloadRequest(
-            downloadId = downloadId,
-            source = source,
-            track = track,
-            candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track),
-            currentCandidateIndex = currentCandidateIndex,
-            targetPlaylistId = targetPlaylistId,
-            conflictPolicy = conflictPolicy,
-            lookupIdentity = lookupIdentity,
-            batchId = batchId,
-            titleOverride = titleOverride
-        )
-    ).await()
+        titleOverride: String? = null,
+    ): Result<Song> =
+        processDownloadRuntime
+            .submit(
+                ProcessDownloadRequest(
+                    downloadId = downloadId,
+                    source = source,
+                    track = track,
+                    candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track),
+                    currentCandidateIndex = currentCandidateIndex,
+                    targetPlaylistId = targetPlaylistId,
+                    conflictPolicy = conflictPolicy,
+                    lookupIdentity = lookupIdentity,
+                    batchId = batchId,
+                    titleOverride = titleOverride,
+                ),
+            ).await()
 
     private fun checkOnline(): Boolean {
         if (!isOnline()) {
@@ -142,7 +147,7 @@ internal class CatalogDownloadCoordinator(
     fun preflightOnlineTrackDownload(
         meta: TrackMeta,
         source: ActiveDownloadSource,
-        enqueue: suspend () -> Unit
+        enqueue: suspend () -> Unit,
     ): Boolean {
         if (!checkOnline()) return false
         val key = TrackMatchKeys.downloadIdFor(meta.artist, meta.title)
@@ -150,11 +155,12 @@ internal class CatalogDownloadCoordinator(
             toast(DownloadMessages.missingArtistOrTitle)
             return false
         }
-        val existing = processDownloadRuntime.findClaimedDownload(
-            key,
-            meta.artist,
-            meta.title
-        )
+        val existing =
+            processDownloadRuntime.findClaimedDownload(
+                key,
+                meta.artist,
+                meta.title,
+            )
         if (processDownloadRuntime.isRunning(key, meta.artist, meta.title)) {
             toastDownloadsQueued(true, 1)
             return false
@@ -173,7 +179,10 @@ internal class CatalogDownloadCoordinator(
                 }
                 return true
             }
-            else -> Unit
+
+            else -> {
+                Unit
+            }
         }
 
         scope.launch {
@@ -194,7 +203,7 @@ internal class CatalogDownloadCoordinator(
 
     suspend fun enqueueRemoteDownload(
         remote: PlayableItem.Remote,
-        source: ActiveDownloadSource
+        source: ActiveDownloadSource,
     ): Result<Song> {
         val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
         val track = remote.toOnlineCatalogTrack(provider = "YouTube")
@@ -214,21 +223,24 @@ internal class CatalogDownloadCoordinator(
     fun cycleActiveDownload(
         id: String,
         activeDownloads: List<ActiveDownload>,
-        catalogPreviewKey: String?
+        catalogPreviewKey: String?,
     ) {
         val download = activeDownloads.find { it.id == id } ?: return
         val current = download.currentTrack ?: return
-        val wasPreviewing = catalogPreviewKey == catalogPreviewKeyFor(current) ||
+        val wasPreviewing =
+            catalogPreviewKey == catalogPreviewKeyFor(current) ||
                 download.candidates.any { catalogPreviewKeyFor(it) == catalogPreviewKey }
-        val query = download.youtubeSearchQuery()
-            .ifBlank { current.title.trim() }
-            .ifBlank { current.id.ifBlank { current.audioUrl } }
+        val query =
+            download
+                .youtubeSearchQuery()
+                .ifBlank { current.title.trim() }
+                .ifBlank { current.id.ifBlank { current.audioUrl } }
         if (query.isBlank()) return
 
         launchCycleYouTubeMatch(
             query,
             download.candidates,
-            wasPreviewing
+            wasPreviewing,
         ) { candidatesList ->
             val cycled = ActiveDownload.withCycledCandidate(download, candidatesList)
             processDownloadRuntime.upsertRow(cycled)
@@ -236,12 +248,18 @@ internal class CatalogDownloadCoordinator(
         }
     }
 
-    fun previewActiveDownload(id: String, activeDownloads: List<ActiveDownload>) {
+    fun previewActiveDownload(
+        id: String,
+        activeDownloads: List<ActiveDownload>,
+    ) {
         val track = activeDownloads.find { it.id == id }?.currentTrack ?: return
         playOnlineCatalogTrackAsStream(track, false)
     }
 
-    fun playActiveDownload(id: String, activeDownloads: List<ActiveDownload>) {
+    fun playActiveDownload(
+        id: String,
+        activeDownloads: List<ActiveDownload>,
+    ) {
         val download = activeDownloads.find { it.id == id } ?: return
         val songId = download.resultSongId ?: return
         scope.launch {
@@ -260,7 +278,7 @@ internal class CatalogDownloadCoordinator(
 
     fun downloadSingleCandidate(
         index: Int,
-        collection: CatalogCollectionUiState
+        collection: CatalogCollectionUiState,
     ) {
         val list = collection.candidates
         if (index !in list.indices) return
@@ -275,31 +293,33 @@ internal class CatalogDownloadCoordinator(
                 existingCandidates = candidate.candidates,
                 currentCandidateIndex = candidate.currentCandidateIndex,
                 lookupIdentity = candidate.identity,
-                explicitId = TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title)
+                explicitId = TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title),
             )
         }
     }
 
     fun downloadSelectedCandidatesBatch(collection: CatalogCollectionUiState) {
         if (!checkOnline()) return
-        val selected = collection.candidates.filter {
-            it.isSelected && it.currentTrack != null
-        }
+        val selected =
+            collection.candidates.filter {
+                it.isSelected && it.currentTrack != null
+            }
         if (selected.isEmpty()) return
 
         scope.launch {
             clearBatchConflictPolicy()
             val targetPlaylistId = ensureCatalogPlaylistForBatch(collection)
-            val items = selected.mapNotNull { candidate ->
-                val track = candidate.currentTrack ?: return@mapNotNull null
-                TrackedBatchItem(
-                    track = track,
-                    candidates = candidate.candidates,
-                    currentCandidateIndex = candidate.currentCandidateIndex,
-                    idHint = TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title),
-                    lookupIdentity = candidate.identity
-                )
-            }
+            val items =
+                selected.mapNotNull { candidate ->
+                    val track = candidate.currentTrack ?: return@mapNotNull null
+                    TrackedBatchItem(
+                        track = track,
+                        candidates = candidate.candidates,
+                        currentCandidateIndex = candidate.currentCandidateIndex,
+                        idHint = TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title),
+                        lookupIdentity = candidate.identity,
+                    )
+                }
             enqueueTrackedBatch(
                 items = items,
                 source = ActiveDownloadSource.BATCH,
@@ -307,36 +327,35 @@ internal class CatalogDownloadCoordinator(
                     activeDownloadIdFor(
                         it.track,
                         ActiveDownloadSource.BATCH,
-                        explicitId = it.idHint
+                        explicitId = it.idHint,
                     )
                 },
-                playlistId = targetPlaylistId
+                playlistId = targetPlaylistId,
             )
         }
     }
 
-    suspend fun ensureCatalogPlaylistForBatch(
-        collection: CatalogCollectionUiState
-    ): Long? = catalogBatchPlaylistMutex.withLock {
-        val selectionKey = collection.selectionKey ?: return@withLock null
-        if (collection.kind != CatalogCollectionKind.PLAYLIST) return@withLock null
-        catalogBatchPlaylistTarget
-            ?.takeIf { it.selectionKey == selectionKey }
-            ?.let { return@withLock it.playlistId }
-        val name = collection.title?.takeIf { it.isNotBlank() } ?: "Playlist"
-        val id = repository.createPlaylist(name, coverUri = collection.coverUrl)
-        if (collection.selectionKey == selectionKey) {
-            catalogBatchPlaylistTarget = CatalogBatchPlaylistTarget(selectionKey, id)
+    suspend fun ensureCatalogPlaylistForBatch(collection: CatalogCollectionUiState): Long? =
+        catalogBatchPlaylistMutex.withLock {
+            val selectionKey = collection.selectionKey ?: return@withLock null
+            if (collection.kind != CatalogCollectionKind.PLAYLIST) return@withLock null
+            catalogBatchPlaylistTarget
+                ?.takeIf { it.selectionKey == selectionKey }
+                ?.let { return@withLock it.playlistId }
+            val name = collection.title?.takeIf { it.isNotBlank() } ?: "Playlist"
+            val id = repository.createPlaylist(name, coverUri = collection.coverUrl)
+            if (collection.selectionKey == selectionKey) {
+                catalogBatchPlaylistTarget = CatalogBatchPlaylistTarget(selectionKey, id)
+            }
+            id
         }
-        id
-    }
 
     fun downloadFromUrl(url: String) {
         val trimmed = url.trim()
         if (trimmed.isBlank()) return
         downloadOnlineTrack(
             OnlineCatalogTrack.fromUrl(trimmed),
-            source = ActiveDownloadSource.LINK
+            source = ActiveDownloadSource.LINK,
         )
     }
 
@@ -350,7 +369,7 @@ internal class CatalogDownloadCoordinator(
         existingCandidates: List<OnlineCatalogTrack>? = null,
         currentCandidateIndex: Int = 0,
         lookupIdentity: TrackIdentity? = null,
-        explicitId: String? = null
+        explicitId: String? = null,
     ) {
         preflightOnlineTrackDownload(lookupIdentity ?: track.identity, source) {
             val downloadId = activeDownloadIdFor(track, source, explicitId)
@@ -361,7 +380,7 @@ internal class CatalogDownloadCoordinator(
                 existingCandidates = existingCandidates,
                 currentCandidateIndex = currentCandidateIndex,
                 targetPlaylistId = targetPlaylistId,
-                lookupIdentity = lookupIdentity
+                lookupIdentity = lookupIdentity,
             )
         }
     }
@@ -371,7 +390,7 @@ internal class CatalogDownloadCoordinator(
         source: ActiveDownloadSource,
         idStrategy: (TrackedBatchItem) -> String,
         playlistId: Long?,
-        toastQueued: Boolean = false
+        toastQueued: Boolean = false,
     ) {
         if (items.isEmpty()) return
         if (toastQueued) {
@@ -379,45 +398,50 @@ internal class CatalogDownloadCoordinator(
         }
         val batchId = "${source.name}:${System.nanoTime()}"
 
-        val queued = items.mapNotNull { item ->
-            val downloadId = idStrategy(item)
-            if (downloadId.isBlank()) return@mapNotNull null
-            val lookup = item.lookupIdentity ?: item.track.identity
-            if (processDownloadRuntime.isRunning(downloadId, lookup.artist, lookup.title)) {
-                val attached = playlistId != null &&
-                        processDownloadRuntime.attachPlaylistDestination(
-                            downloadId = downloadId,
-                            artist = lookup.artist,
-                            title = lookup.title,
-                            destination = DownloadPlaylistDestination(
-                                playlistId = playlistId,
-                                identity = lookup
+        val queued =
+            items.mapNotNull { item ->
+                val downloadId = idStrategy(item)
+                if (downloadId.isBlank()) return@mapNotNull null
+                val lookup = item.lookupIdentity ?: item.track.identity
+                if (processDownloadRuntime.isRunning(downloadId, lookup.artist, lookup.title)) {
+                    val attached =
+                        playlistId != null &&
+                            processDownloadRuntime.attachPlaylistDestination(
+                                downloadId = downloadId,
+                                artist = lookup.artist,
+                                title = lookup.title,
+                                destination =
+                                    DownloadPlaylistDestination(
+                                        playlistId = playlistId,
+                                        identity = lookup,
+                                    ),
                             )
-                        )
-                if (playlistId == null || attached) return@mapNotNull null
+                    if (playlistId == null || attached) return@mapNotNull null
+                }
+                val candidates = item.candidates.ifEmpty { listOf(item.track) }
+                val safeIndex = item.currentCandidateIndex.coerceIn(0, candidates.lastIndex)
+                Triple(item, downloadId, safeIndex)
             }
-            val candidates = item.candidates.ifEmpty { listOf(item.track) }
-            val safeIndex = item.currentCandidateIndex.coerceIn(0, candidates.lastIndex)
-            Triple(item, downloadId, safeIndex)
-        }
 
         val successCount = AtomicInteger(0)
         coroutineScope {
-            queued.map { (item, downloadId, safeIndex) ->
-                async {
-                    val result = runTrackedDownload(
-                        downloadId = downloadId,
-                        source = source,
-                        track = item.track,
-                        existingCandidates = item.candidates,
-                        currentCandidateIndex = safeIndex,
-                        targetPlaylistId = playlistId,
-                        lookupIdentity = item.lookupIdentity,
-                        batchId = batchId
-                    )
-                    if (result.isSuccess) successCount.incrementAndGet()
-                }
-            }.awaitAll()
+            queued
+                .map { (item, downloadId, safeIndex) ->
+                    async {
+                        val result =
+                            runTrackedDownload(
+                                downloadId = downloadId,
+                                source = source,
+                                track = item.track,
+                                existingCandidates = item.candidates,
+                                currentCandidateIndex = safeIndex,
+                                targetPlaylistId = playlistId,
+                                lookupIdentity = item.lookupIdentity,
+                                batchId = batchId,
+                            )
+                        if (result.isSuccess) successCount.incrementAndGet()
+                    }
+                }.awaitAll()
         }
 
         toast(DownloadMessages.batchProcessed(successCount.get(), queued.size))
@@ -426,7 +450,7 @@ internal class CatalogDownloadCoordinator(
     suspend fun enqueuePendingDownloads(
         playlistId: Long,
         tracks: List<OnlineCatalogTrack>,
-        toastQueued: Boolean
+        toastQueued: Boolean,
     ) = enqueueTrackedBatch(
         items = tracks.map { TrackedBatchItem(track = it) },
         source = ActiveDownloadSource.LB_IMPORT,
@@ -434,6 +458,6 @@ internal class CatalogDownloadCoordinator(
             TrackMatchKeys.downloadIdFor(it.track.artist, it.track.title)
         },
         playlistId = playlistId,
-        toastQueued = toastQueued
+        toastQueued = toastQueued,
     )
 }

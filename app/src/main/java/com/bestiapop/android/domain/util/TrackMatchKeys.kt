@@ -17,11 +17,10 @@ object TrackMatchKeys {
 
     private const val MAX_NORMALIZE_CACHE_ENTRIES = 1000
 
-    private val normalizeCache = object : java.util.LinkedHashMap<String, String>(128, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean {
-            return size > MAX_NORMALIZE_CACHE_ENTRIES
+    private val normalizeCache =
+        object : java.util.LinkedHashMap<String, String>(128, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > MAX_NORMALIZE_CACHE_ENTRIES
         }
-    }
     private val cacheLock = Any()
 
     private fun hasNonAscii(s: String): Boolean {
@@ -40,17 +39,19 @@ object TrackMatchKeys {
             }
         }
 
-        val base = if (hasNonAscii(value)) {
-            Normalizer.normalize(value, Normalizer.Form.NFD).replace(COMBINING_MARKS, "")
-        } else {
-            value
-        }
+        val base =
+            if (hasNonAscii(value)) {
+                Normalizer.normalize(value, Normalizer.Form.NFD).replace(COMBINING_MARKS, "")
+            } else {
+                value
+            }
 
-        val result = base
-            .lowercase()
-            .replace(PUNCT, " ")
-            .replace(WHITESPACE, " ")
-            .trim()
+        val result =
+            base
+                .lowercase()
+                .replace(PUNCT, " ")
+                .replace(WHITESPACE, " ")
+                .trim()
 
         if (cacheCandidate) {
             synchronized(cacheLock) {
@@ -61,28 +62,39 @@ object TrackMatchKeys {
     }
 
     /** Substring match after [normalize] (blank [needle] matches everything). */
-    fun containsNormalized(haystack: String, needle: String): Boolean {
+    fun containsNormalized(
+        haystack: String,
+        needle: String,
+    ): Boolean {
         if (needle.isBlank()) return true
         val n = normalize(needle)
         if (n.isEmpty()) return false
         return normalize(haystack).contains(n)
     }
 
-    fun matchKey(artist: String, title: String): String {
+    fun matchKey(
+        artist: String,
+        title: String,
+    ): String {
         val a = normalize(artist)
         val t = normalize(title)
         return composeKey(a, t)
     }
 
     /** Level 1: Combines two pre-normalized strings into a composite key ($part1|$part2). */
-    fun composeKey(part1: String, part2: String): String {
+    fun composeKey(
+        part1: String,
+        part2: String,
+    ): String {
         if (part1.isEmpty() || part2.isEmpty()) return ""
         return "$part1|$part2"
     }
 
     /** Level 1: Combines pre-normalized components without re-executing Normalizer or Regex. */
-    fun matchKeyPreNormalized(normalizedArtist: String, normalizedTitle: String): String =
-        composeKey(normalizedArtist, normalizedTitle)
+    fun matchKeyPreNormalized(
+        normalizedArtist: String,
+        normalizedTitle: String,
+    ): String = composeKey(normalizedArtist, normalizedTitle)
 
     private val PARENTHESES_REGEX = Regex("""[\(\[\{]([^\)\]\}]+)[\)\]\}]""")
 
@@ -92,20 +104,27 @@ object TrackMatchKeys {
      * Japanese Romaji r/l variations, bilingual/parenthesized sub-parts,
      * and cosmetic-noise-stripped titles.
      */
-    fun candidateMatchKeys(artist: String, title: String): List<String> {
+    fun candidateMatchKeys(
+        artist: String,
+        title: String,
+    ): List<String> {
         val canonical = matchKey(artist, title)
         if (canonical.isEmpty()) return emptyList()
 
         val transArtist = NaturalTextOrder.transliterateToLatin(artist)
-        val artistVariants = if (transArtist.isNotBlank() && transArtist != artist) {
-            listOf(artist, transArtist)
-        } else {
-            listOf(artist)
-        }
+        val artistVariants =
+            if (transArtist.isNotBlank() && transArtist != artist) {
+                listOf(artist, transArtist)
+            } else {
+                listOf(artist)
+            }
 
         val out = LinkedHashSet<String>()
 
-        fun emitRlVariants(art: String, t: String) {
+        fun emitRlVariants(
+            art: String,
+            t: String,
+        ) {
             if (t.contains('r', ignoreCase = true) || t.contains('l', ignoreCase = true)) {
                 val rToL = t.replace('r', 'l').replace('R', 'L')
                 val lToR = t.replace('l', 'r').replace('L', 'R')
@@ -166,17 +185,22 @@ object TrackMatchKeys {
     }
 
     /** Level 2: Candidate match keys directly from [TrackMeta] without unpacking. */
-    fun candidateMatchKeys(meta: TrackMeta): List<String> =
-        candidateMatchKeys(meta.artist, meta.title)
+    fun candidateMatchKeys(meta: TrackMeta): List<String> = candidateMatchKeys(meta.artist, meta.title)
 
     /** L2: stable [ActiveDownload] / queue id from artist+title (empty if either blank). */
-    fun downloadIdFor(artist: String, title: String): String = matchKey(artist, title)
+    fun downloadIdFor(
+        artist: String,
+        title: String,
+    ): String = matchKey(artist, title)
 
     /** Level 2: stable download id directly from [TrackMeta] without unpacking. */
     fun downloadIdFor(meta: TrackMeta): String = meta.matchKey()
 
     /** Batch catalog job id; pairs with [downloadIdFor] for [findByTrack] lookup. */
-    fun batchDownloadIdFor(artist: String, title: String): String {
+    fun batchDownloadIdFor(
+        artist: String,
+        title: String,
+    ): String {
         val key = downloadIdFor(artist, title)
         return if (key.isEmpty()) "" else "batch:$key"
     }
@@ -186,7 +210,10 @@ object TrackMatchKeys {
      * resolve to the same destination filename, so any check for "is this track already downloading"
      * has to span the whole set — single source of truth for `findByTrack` and the enqueue gate.
      */
-    fun downloadIdVariantsFor(artist: String, title: String): List<String> {
+    fun downloadIdVariantsFor(
+        artist: String,
+        title: String,
+    ): List<String> {
         val keys = candidateMatchKeys(artist, title)
         if (keys.isEmpty()) return emptyList()
         val out = ArrayList<String>(keys.size * 2)
@@ -198,8 +225,7 @@ object TrackMatchKeys {
     }
 
     /** Level 2: Download ID variants directly from [TrackMeta] without unpacking. */
-    fun downloadIdVariantsFor(meta: TrackMeta): List<String> =
-        downloadIdVariantsFor(meta.artist, meta.title)
+    fun downloadIdVariantsFor(meta: TrackMeta): List<String> = downloadIdVariantsFor(meta.artist, meta.title)
 
     fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
         val map = HashMap<String, Song>(library.size * 2)
@@ -234,7 +260,7 @@ object TrackMatchKeys {
     fun <T> buildIndex(
         items: List<T>,
         artistOf: (T) -> String,
-        titleOf: (T) -> String
+        titleOf: (T) -> String,
     ): Map<String, T> {
         val map = HashMap<String, T>(items.size * 2)
         for (item in items) {
@@ -252,7 +278,10 @@ object TrackMatchKeys {
     }
 
     /** Resolve a library song from a pre-built [buildLibraryIndex] map, prioritizing local tracks. */
-    fun lookupLocalSong(index: Map<String, Song>, meta: TrackMeta): Song? {
+    fun lookupLocalSong(
+        index: Map<String, Song>,
+        meta: TrackMeta,
+    ): Song? {
         var remoteFallback: Song? = null
         for (candidate in candidateMatchKeys(meta)) {
             val found = index[candidate] ?: continue
@@ -272,7 +301,7 @@ object TrackMatchKeys {
         library: List<Song>,
         metaOf: (T) -> TrackMeta,
         skipBlank: Boolean = false,
-        transform: (T, Song?) -> R?
+        transform: (T, Song?) -> R?,
     ): List<R> {
         val index = buildLibraryIndex(library)
         val out = ArrayList<R>(items.size)
@@ -290,31 +319,33 @@ object TrackMatchKeys {
         items: List<T>,
         library: List<Song>,
         skipBlank: Boolean = false,
-        transform: (T, Song?) -> R?
-    ): List<R> = matchAgainstLibrary(
-        items = items,
-        library = library,
-        metaOf = { it },
-        skipBlank = skipBlank,
-        transform = transform
-    )
+        transform: (T, Song?) -> R?,
+    ): List<R> =
+        matchAgainstLibrary(
+            items = items,
+            library = library,
+            metaOf = { it },
+            skipBlank = skipBlank,
+            transform = transform,
+        )
 }
 
 fun TrackMeta.matchKey(): String = TrackMatchKeys.matchKey(artist, title)
 
 /** Level 1: Deduplicate any collection using an explicit track/album matching key. */
-inline fun <T> List<T>.distinctByTrackKey(limit: Int = size, crossinline keyOf: (T) -> String): List<T> =
-    distinctBy { keyOf(it).ifEmpty { it.hashCode().toString() } }.take(limit)
+inline fun <T> List<T>.distinctByTrackKey(
+    limit: Int = size,
+    crossinline keyOf: (T) -> String,
+): List<T> = distinctBy { keyOf(it).ifEmpty { it.hashCode().toString() } }.take(limit)
 
 /** Level 2: Deduplicate tracks that implement [TrackMeta] by artist + title match key. */
-fun <T : TrackMeta> List<T>.distinctCatalogTracks(limit: Int = size): List<T> =
-    distinctByTrackKey(limit) { it.matchKey() }
+fun <T : TrackMeta> List<T>.distinctCatalogTracks(limit: Int = size): List<T> = distinctByTrackKey(limit) { it.matchKey() }
 
 /** Level 2: Deduplicate albums by artist + title match key. */
 inline fun <T> List<T>.distinctCatalogAlbums(
     limit: Int = size,
     crossinline artistOf: (T) -> String,
-    crossinline titleOf: (T) -> String
+    crossinline titleOf: (T) -> String,
 ): List<T> = distinctByTrackKey(limit) { TrackMatchKeys.matchKey(artistOf(it), titleOf(it)) }
 
 /** Level 2: Match key for [CatalogAlbum] using normalized artist + title. */

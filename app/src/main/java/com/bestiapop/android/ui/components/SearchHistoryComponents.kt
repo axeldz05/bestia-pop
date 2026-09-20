@@ -42,20 +42,21 @@ fun SearchHistoryItemRow(
     query: String,
     onClick: () -> Unit,
     onRemove: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = Icons.Default.History,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(20.dp),
         )
         Spacer(modifier = Modifier.width(16.dp))
         Text(
@@ -64,17 +65,17 @@ fun SearchHistoryItemRow(
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
         )
         IconButton(
             onClick = onRemove,
-            modifier = Modifier.size(36.dp)
+            modifier = Modifier.size(36.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.Close,
                 contentDescription = "Eliminar de historial",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(18.dp),
             )
         }
     }
@@ -91,25 +92,26 @@ fun SearchRecentChipsRow(
     onClearAll: () -> Unit,
     modifier: Modifier = Modifier,
     onOpenFullHistory: (() -> Unit)? = null,
-    maxChips: Int = 10
+    maxChips: Int = 10,
 ) {
     if (recentSearches.isEmpty()) return
 
     val displayChips = recentSearches.take(maxChips)
 
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "Búsquedas recientes",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onOpenFullHistory != null) {
@@ -126,10 +128,11 @@ fun SearchRecentChipsRow(
         Spacer(modifier = Modifier.height(4.dp))
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             displayChips.forEach { query ->
                 InputChip(
@@ -139,18 +142,19 @@ fun SearchRecentChipsRow(
                         Text(
                             text = query,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
                         )
                     },
                     trailingIcon = {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Eliminar",
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clickable { onRemoveQuery(query) }
+                            modifier =
+                                Modifier
+                                    .size(16.dp)
+                                    .clickable { onRemoveQuery(query) },
                         )
-                    }
+                    },
                 )
             }
         }
@@ -168,38 +172,40 @@ fun SearchHistorySheet(
     onRemoveQuery: (String) -> Unit,
     onClearAll: () -> Unit,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        modifier = modifier
+        modifier = modifier,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 32.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 32.dp),
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.History,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(24.dp),
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = "Historial de búsqueda",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                     )
                 }
 
@@ -216,18 +222,19 @@ fun SearchHistorySheet(
                 EmptyListHint(
                     text = "No hay búsquedas recientes",
                     subtitle = "Tus búsquedas aparecerán acá para que puedas repetirlas fácilmente.",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp)
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
                 )
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(vertical = 4.dp)
+                    contentPadding = PaddingValues(vertical = 4.dp),
                 ) {
                     items(
                         items = recentSearches,
-                        key = { it }
+                        key = { it },
                     ) { query ->
                         SearchHistoryItemRow(
                             query = query,
@@ -235,7 +242,7 @@ fun SearchHistorySheet(
                                 onSelectQuery(query)
                                 onDismiss()
                             },
-                            onRemove = { onRemoveQuery(query) }
+                            onRemove = { onRemoveQuery(query) },
                         )
                     }
                 }

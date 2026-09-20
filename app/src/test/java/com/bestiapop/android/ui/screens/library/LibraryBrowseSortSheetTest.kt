@@ -7,14 +7,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LibraryBrowseSortSheetTest {
-
     @Test
     fun libraryFilterButtonLabel_recent_returnsRecientes() {
-        val label = libraryFilterButtonLabel(
-            browseFilter = LibraryBrowseFilter.RECENT,
-            sortOption = SortOption.DATE_ADDED,
-            sortDirection = SortDirection.DESC
-        )
+        val label =
+            libraryFilterButtonLabel(
+                browseFilter = LibraryBrowseFilter.RECENT,
+                sortOption = SortOption.DATE_ADDED,
+                sortDirection = SortDirection.DESC,
+            )
         assertEquals("Recientes", label)
     }
 
@@ -25,40 +25,40 @@ class LibraryBrowseSortSheetTest {
             libraryFilterButtonLabel(
                 browseFilter = LibraryBrowseFilter.SONGS,
                 sortOption = SortOption.TITLE,
-                sortDirection = SortDirection.ASC
-            )
+                sortDirection = SortDirection.ASC,
+            ),
         )
         assertEquals(
             "Título ↑",
             libraryFilterButtonLabel(
                 browseFilter = LibraryBrowseFilter.SONGS,
                 sortOption = SortOption.TITLE,
-                sortDirection = SortDirection.DESC
-            )
+                sortDirection = SortDirection.DESC,
+            ),
         )
         assertEquals(
             "Fecha ↑",
             libraryFilterButtonLabel(
                 browseFilter = LibraryBrowseFilter.SONGS,
                 sortOption = SortOption.DATE_ADDED,
-                sortDirection = SortDirection.DESC
-            )
+                sortDirection = SortDirection.DESC,
+            ),
         )
         assertEquals(
             "Fecha ↓",
             libraryFilterButtonLabel(
                 browseFilter = LibraryBrowseFilter.SONGS,
                 sortOption = SortOption.DATE_ADDED,
-                sortDirection = SortDirection.ASC
-            )
+                sortDirection = SortDirection.ASC,
+            ),
         )
         assertEquals(
             "Artista ↓",
             libraryFilterButtonLabel(
                 browseFilter = LibraryBrowseFilter.SONGS,
                 sortOption = SortOption.ARTIST,
-                sortDirection = SortDirection.ASC
-            )
+                sortDirection = SortDirection.ASC,
+            ),
         )
     }
 
@@ -70,8 +70,8 @@ class LibraryBrowseSortSheetTest {
                 browseFilter = LibraryBrowseFilter.SONGS,
                 sortOption = SortOption.TITLE,
                 sortDirection = SortDirection.ASC,
-                albumHeadersActive = true
-            )
+                albumHeadersActive = true,
+            ),
         )
         assertEquals(
             "Álbum · Artista ↑",
@@ -79,8 +79,8 @@ class LibraryBrowseSortSheetTest {
                 browseFilter = LibraryBrowseFilter.SONGS,
                 sortOption = SortOption.ARTIST,
                 sortDirection = SortDirection.DESC,
-                albumHeadersActive = true
-            )
+                albumHeadersActive = true,
+            ),
         )
     }
 
@@ -91,26 +91,27 @@ class LibraryBrowseSortSheetTest {
             libraryFilterButtonLabel(
                 browseFilter = LibraryBrowseFilter.ALBUMS,
                 sortOption = SortOption.ALBUM,
-                sortDirection = SortDirection.ASC
-            )
+                sortDirection = SortDirection.ASC,
+            ),
         )
         assertEquals(
             "Género ↓",
             libraryFilterButtonLabel(
                 browseFilter = LibraryBrowseFilter.GENRES,
                 sortOption = SortOption.GENRE,
-                sortDirection = SortDirection.ASC
-            )
+                sortDirection = SortDirection.ASC,
+            ),
         )
     }
 
     @Test
     fun libraryOrderSummary_and_tuneContentDescription() {
-        val summary = libraryOrderSummary(
-            browseFilter = LibraryBrowseFilter.SONGS,
-            sortOption = SortOption.TITLE,
-            sortDirection = SortDirection.ASC
-        )
+        val summary =
+            libraryOrderSummary(
+                browseFilter = LibraryBrowseFilter.SONGS,
+                sortOption = SortOption.TITLE,
+                sortDirection = SortDirection.ASC,
+            )
         assertEquals("Canciones · por título ↓", summary)
 
         val description = libraryTuneContentDescription(summary)

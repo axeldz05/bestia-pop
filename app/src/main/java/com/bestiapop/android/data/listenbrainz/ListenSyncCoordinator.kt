@@ -23,13 +23,13 @@ class ListenSyncCoordinator internal constructor(
     private val isOnline: () -> Boolean,
     private val submitListens: suspend (token: String, listens: List<ListenPayload>) -> SubmitListensResult,
     private val setLastSyncAt: suspend (Long) -> Unit = {},
-    private val batchDelayMs: Long = 0L
+    private val batchDelayMs: Long = 0L,
 ) {
     constructor(
         scope: CoroutineScope,
         pendingListenDao: PendingListenDao,
         preferences: ListenBrainzPreferencesRepository,
-        isOnline: () -> Boolean
+        isOnline: () -> Boolean,
     ) : this(
         scope = scope,
         pendingListenDao = pendingListenDao,
@@ -37,7 +37,7 @@ class ListenSyncCoordinator internal constructor(
         isOnline = isOnline,
         submitListens = { token, listens -> ListenBrainzClient.submitListens(token, listens) },
         setLastSyncAt = preferences::setLastSyncAt,
-        batchDelayMs = BATCH_DELAY_MS
+        batchDelayMs = BATCH_DELAY_MS,
     )
 
     private val mutex = Mutex()
@@ -45,11 +45,12 @@ class ListenSyncCoordinator internal constructor(
 
     fun requestSync() {
         if (syncJob?.isActive == true) return
-        syncJob = scope.launch {
-            mutex.withLock {
-                drainQueue()
+        syncJob =
+            scope.launch {
+                mutex.withLock {
+                    drainQueue()
+                }
             }
-        }
     }
 
     private suspend fun drainQueue() {
@@ -81,13 +82,15 @@ class ListenSyncCoordinator internal constructor(
                         delay(batchDelayMs)
                     }
                 }
+
                 is SubmitListensResult.RateLimited -> {
                     delay(result.resetInSec.coerceAtLeast(1) * 1000L)
                 }
+
                 is SubmitListensResult.Failure -> {
                     pendingListenDao.incrementAttempts(
                         ids = eligible.map { it.id },
-                        error = result.message
+                        error = result.message,
                     )
                     if (result.isNetworkError) return
                     // Soft-fail server errors: brief pause then continue with next attempt cycle.

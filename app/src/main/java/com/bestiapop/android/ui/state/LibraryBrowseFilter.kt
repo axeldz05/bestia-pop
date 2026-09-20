@@ -10,6 +10,7 @@ enum class LibraryBrowseFilter {
     ARTISTS,
     GENRES,
     PLAYLISTS,
+
     /** lastPlayedAt DESC (“Recientes”); never-played songs omitted. */
-    RECENT
+    RECENT,
 }

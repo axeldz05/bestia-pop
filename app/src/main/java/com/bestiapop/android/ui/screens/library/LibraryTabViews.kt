@@ -8,9 +8,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
-import com.bestiapop.android.data.preferences.FastScrollSettings
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
@@ -19,7 +19,7 @@ fun LibraryAlbumsTab(
     sortOption: SortOption,
     actions: AlbumBrowseActions,
     fastScrollSettings: FastScrollSettings,
-    listState: LazyListState
+    listState: LazyListState,
 ) {
     val albums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
     LibraryAlbumBrowseList(
@@ -27,7 +27,7 @@ fun LibraryAlbumsTab(
         actions = actions,
         sortOption = sortOption,
         fastScrollSettings = fastScrollSettings,
-        listState = listState
+        listState = listState,
     )
 }
 
@@ -42,17 +42,21 @@ fun LibraryRecentTab(
     searchQuery: String,
     listState: LazyListState,
     onToggleSelect: (Song) -> Unit,
-    fastScrollSettings: FastScrollSettings
+    fastScrollSettings: FastScrollSettings,
 ) {
     val recentSongs by viewModel.libraryProjection.recentSongs.collectAsStateWithLifecycle()
     val recentList by viewModel.libraryProjection.recentList.collectAsStateWithLifecycle()
     val recentEmptyFromSearch = searchQuery.isNotBlank()
-    val onSongClick = remember(isSelectionMode, recentSongs, onToggleSelect) {
-        { song: Song, index: Int ->
-            if (isSelectionMode) onToggleSelect(song)
-            else viewModel.playCollection(recentSongs, index)
+    val onSongClick =
+        remember(isSelectionMode, recentSongs, onToggleSelect) {
+            { song: Song, index: Int ->
+                if (isSelectionMode) {
+                    onToggleSelect(song)
+                } else {
+                    viewModel.playCollection(recentSongs, index)
+                }
+            }
         }
-    }
     LibrarySongListHost(
         list = recentList,
         currentSongId = null,
@@ -62,20 +66,22 @@ fun LibraryRecentTab(
         collapsedAlbumNames = emptySet(),
         sortOption = sortOption,
         emphasizeLastPlayed = true,
-        emptyText = if (recentEmptyFromSearch) {
-            "No se encontraron canciones"
-        } else {
-            "Todavía no hay recientes"
-        },
-        emptySubtitle = if (recentEmptyFromSearch) {
-            "Ningún resultado para esta búsqueda"
-        } else {
-            "Reproducí canciones para verlas acá"
-        },
+        emptyText =
+            if (recentEmptyFromSearch) {
+                "No se encontraron canciones"
+            } else {
+                "Todavía no hay recientes"
+            },
+        emptySubtitle =
+            if (recentEmptyFromSearch) {
+                "Ningún resultado para esta búsqueda"
+            } else {
+                "Reproducí canciones para verlas acá"
+            },
         actions = actions,
         onSongClick = onSongClick,
         fastScrollSettings = fastScrollSettings,
-        listState = listState
+        listState = listState,
     )
 }
 
@@ -85,7 +91,7 @@ fun LibraryArtistsTab(
     sortOption: SortOption,
     actions: AggregateBrowseActions<Artist>,
     fastScrollSettings: FastScrollSettings,
-    listState: LazyListState
+    listState: LazyListState,
 ) {
     val artists by viewModel.libraryProjection.artists.collectAsStateWithLifecycle()
     LibraryArtistList(
@@ -93,7 +99,7 @@ fun LibraryArtistsTab(
         actions = actions,
         sortOption = sortOption,
         fastScrollSettings = fastScrollSettings,
-        listState = listState
+        listState = listState,
     )
 }
 
@@ -103,7 +109,7 @@ fun LibraryGenresTab(
     sortOption: SortOption,
     actions: AggregateBrowseActions<GenreGroup>,
     fastScrollSettings: FastScrollSettings,
-    listState: LazyListState
+    listState: LazyListState,
 ) {
     val genres by viewModel.libraryProjection.genres.collectAsStateWithLifecycle()
     LibraryGenreList(
@@ -111,6 +117,6 @@ fun LibraryGenresTab(
         actions = actions,
         sortOption = sortOption,
         fastScrollSettings = fastScrollSettings,
-        listState = listState
+        listState = listState,
     )
 }

@@ -17,18 +17,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SimilarPlaylistCoordinatorTest {
-
-    private fun testSong(id: Long, title: String, artist: String): Song = Song(
-        id = id,
-        uriString = "content://music/$id",
-        title = title,
-        artist = artist,
-        album = "Album"
-    )
+    private fun testSong(
+        id: Long,
+        title: String,
+        artist: String,
+    ): Song =
+        Song(
+            id = id,
+            uriString = "content://music/$id",
+            title = title,
+            artist = artist,
+            album = "Album",
+        )
 
     private fun createCoordinator(
         isOnline: Boolean = true,
-        preferredMode: RadioMode = RadioMode.BOTH
+        preferredMode: RadioMode = RadioMode.BOTH,
     ): SimilarPlaylistCoordinator {
         val radioEngine = RadioEngine()
         val repository = FakeMusicRepository()
@@ -44,7 +48,7 @@ class SimilarPlaylistCoordinatorTest {
             onPlaylistCreated = { _, _, _, _ -> },
             playPlayableCollection = {},
             addPlayableBatch = {},
-            toast = {}
+            toast = {},
         )
     }
 
@@ -73,11 +77,19 @@ class SimilarPlaylistCoordinatorTest {
 
         // Toggle key1
         coordinator.toggleItem("item-1")
-        assertTrue(coordinator.state.value?.selectedKeys?.contains("item-1") == true)
+        assertTrue(
+            coordinator.state.value
+                ?.selectedKeys
+                ?.contains("item-1") == true,
+        )
 
         // Toggle key1 again -> removes it
         coordinator.toggleItem("item-1")
-        assertFalse(coordinator.state.value?.selectedKeys?.contains("item-1") == true)
+        assertFalse(
+            coordinator.state.value
+                ?.selectedKeys
+                ?.contains("item-1") == true,
+        )
     }
 
     @Test

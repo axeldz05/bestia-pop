@@ -24,7 +24,7 @@ data class RelatedArtistItem(
     val name: String,
     val playCount: Long = 0,
     val source: String, // "Local", "ListenBrainz", "Local + ListenBrainz"
-    val artworkUri: String? = null
+    val artworkUri: String? = null,
 )
 
 data class RelatedAlbumItem(
@@ -32,14 +32,14 @@ data class RelatedAlbumItem(
     val artist: String,
     val playCount: Long = 0,
     val source: String, // "Local", "ListenBrainz", "Local + ListenBrainz"
-    val artworkUri: String? = null
+    val artworkUri: String? = null,
 )
 
 data class RelatedTrackItem(
     val identity: TrackIdentity,
     val playCount: Long = 0,
     val source: String, // "Local", "ListenBrainz", "Local + ListenBrainz"
-    val localSong: Song? = null
+    val localSong: Song? = null,
 ) : TrackMeta by identity {
     constructor(
         title: String,
@@ -48,17 +48,18 @@ data class RelatedTrackItem(
         playCount: Long = 0,
         source: String,
         artworkUri: String? = null,
-        localSong: Song? = null
+        localSong: Song? = null,
     ) : this(
-        identity = localSong?.toIdentity() ?: TrackIdentity(
-            title = title,
-            artist = artist,
-            album = album,
-            artworkUri = artworkUri
-        ),
+        identity =
+            localSong?.toIdentity() ?: TrackIdentity(
+                title = title,
+                artist = artist,
+                album = album,
+                artworkUri = artworkUri,
+            ),
         playCount = playCount,
         source = source,
-        localSong = localSong
+        localSong = localSong,
     )
 }
 
@@ -66,177 +67,198 @@ data class TopRelatedFeed(
     val topArtists: List<RelatedArtistItem> = emptyList(),
     val topAlbums: List<RelatedAlbumItem> = emptyList(),
     val topTracks: List<RelatedTrackItem> = emptyList(),
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
 )
 
 class GetTopRelatedItemsUseCase {
-
     suspend fun execute(
         librarySongs: List<Song>,
         playStats: Map<Long, Long>,
         username: String?,
-        token: String?
-    ): TopRelatedFeed = withContext(Dispatchers.IO) {
-        coroutineScope {
-            val lbUser = username?.takeIf { it.isNotBlank() }
-            val lbToken = token?.takeIf { it.isNotBlank() }
+        token: String?,
+    ): TopRelatedFeed =
+        withContext(Dispatchers.IO) {
+            coroutineScope {
+                val lbUser = username?.takeIf { it.isNotBlank() }
+                val lbToken = token?.takeIf { it.isNotBlank() }
 
-            // 1. Single deferred fetch for recent listens as fallback for all stats
-            val recentListensDeferred = async {
-                if (lbUser == null) return@async emptyList<ListenPayload>()
-                try {
-                    val listensRes = ListenBrainzClient.fetchUserRecentListens(lbUser, count = 30, token = lbToken)
-                    (listensRes as? LbApiResult.Success)?.data.orEmpty()
-                } catch (_: Exception) {
-                    emptyList()
-                }
-            }
+                // 1. Single deferred fetch for recent listens as fallback for all stats
+                val recentListensDeferred =
+                    async {
+                        if (lbUser == null) return@async emptyList<ListenPayload>()
+                        try {
+                            val listensRes = ListenBrainzClient.fetchUserRecentListens(lbUser, count = 30, token = lbToken)
+                            (listensRes as? LbApiResult.Success)?.data.orEmpty()
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    }
 
-            // Fetch ListenBrainz stats async with shared fallback helper
-            val lbArtistsDeferred = async {
-                fetchLbStatWithFallback(
-                    lbUser = lbUser,
-                    fetchRemote = { ListenBrainzClient.fetchUserTopArtists(lbUser!!, count = 25, token = lbToken) },
-                    recentListensDeferred = recentListensDeferred,
-                    extractFallbackKey = { it.artistName.takeIf { a -> a.isNotBlank() } },
-                    createFallbackItem = { artist, count -> LbUserStatArtist(artistName = artist, listenCount = count) }
+                // Fetch ListenBrainz stats async with shared fallback helper
+                val lbArtistsDeferred =
+                    async {
+                        fetchLbStatWithFallback(
+                            lbUser = lbUser,
+                            fetchRemote = { ListenBrainzClient.fetchUserTopArtists(lbUser!!, count = 25, token = lbToken) },
+                            recentListensDeferred = recentListensDeferred,
+                            extractFallbackKey = { it.artistName.takeIf { a -> a.isNotBlank() } },
+                            createFallbackItem = { artist, count -> LbUserStatArtist(artistName = artist, listenCount = count) },
+                        )
+                    }
+
+                val lbReleasesDeferred =
+                    async {
+                        fetchLbStatWithFallback(
+                            lbUser = lbUser,
+                            fetchRemote = { ListenBrainzClient.fetchUserTopReleases(lbUser!!, count = 25, token = lbToken) },
+                            recentListensDeferred = recentListensDeferred,
+                            extractFallbackKey = { l -> l.releaseName?.takeIf { it.isNotBlank() }?.let { it to l.artistName } },
+                            createFallbackItem = {
+                                key,
+                                count,
+                                ->
+                                LbUserStatRelease(releaseName = key.first, artistName = key.second, listenCount = count)
+                            },
+                        )
+                    }
+
+                val lbRecordingsDeferred =
+                    async {
+                        fetchLbStatWithFallback(
+                            lbUser = lbUser,
+                            fetchRemote = { ListenBrainzClient.fetchUserTopRecordings(lbUser!!, count = 25, token = lbToken) },
+                            recentListensDeferred = recentListensDeferred,
+                            extractFallbackKey = { l -> (l.trackName to l.artistName).takeIf { l.trackName.isNotBlank() } },
+                            createFallbackItem = {
+                                key,
+                                count,
+                                ->
+                                LbUserStatRecording(trackName = key.first, artistName = key.second, listenCount = count)
+                            },
+                        )
+                    }
+
+                val lbArtists = lbArtistsDeferred.await()
+                val lbReleases = lbReleasesDeferred.await()
+                val lbRecordings = lbRecordingsDeferred.await()
+
+                // 2. Local stats processing
+                val localArtists =
+                    CollectionUtils.scoreLocalArtists(
+                        librarySongs = librarySongs,
+                        playStats = playStats,
+                        playedWeight = 5L,
+                    )
+                val localAlbums =
+                    CollectionUtils.scoreLocalAlbums(
+                        librarySongs = librarySongs,
+                        playStats = playStats,
+                        playedWeight = 5L,
+                    )
+                val localTracks =
+                    CollectionUtils.scoreLocalTracks(
+                        librarySongs = librarySongs,
+                        playStats = playStats,
+                        playedWeight = 10L,
+                    )
+
+                // 3. Merges using semantic compression helper
+                val finalArtists =
+                    mergeLocalAndRemoteStats(
+                        localMap = localArtists,
+                        remoteList = lbArtists,
+                        remoteKey = { TrackMatchKeys.normalize(it.artistName) },
+                        remoteCount = { it.listenCount },
+                        localScore = { it.score },
+                        mergeExisting = { acc, totalScore, source ->
+                            RelatedArtistItem(
+                                name = acc.displayName,
+                                playCount = totalScore,
+                                source = source,
+                                artworkUri = acc.artworkUri,
+                            )
+                        },
+                        createRemoteOnly = { lb, score, source ->
+                            RelatedArtistItem(
+                                name = lb.artistName,
+                                playCount = score,
+                                source = source,
+                                artworkUri = null,
+                            )
+                        },
+                        itemScore = { it.playCount },
+                        limit = 20,
+                    )
+
+                val finalAlbums =
+                    mergeLocalAndRemoteStats(
+                        localMap = localAlbums,
+                        remoteList = lbReleases,
+                        remoteKey = { TrackMatchKeys.matchKey(it.artistName, it.releaseName) },
+                        remoteCount = { it.listenCount },
+                        localScore = { it.score },
+                        mergeExisting = { acc, totalScore, source ->
+                            RelatedAlbumItem(
+                                title = acc.title,
+                                artist = acc.artist,
+                                playCount = totalScore,
+                                source = source,
+                                artworkUri = acc.artworkUri,
+                            )
+                        },
+                        createRemoteOnly = { lb, score, source ->
+                            RelatedAlbumItem(
+                                title = lb.releaseName,
+                                artist = lb.artistName,
+                                playCount = score,
+                                source = source,
+                                artworkUri = null,
+                            )
+                        },
+                        itemScore = { it.playCount },
+                        limit = 20,
+                    )
+
+                val finalTracks =
+                    mergeLocalAndRemoteStats(
+                        localMap = localTracks,
+                        remoteList = lbRecordings,
+                        remoteKey = { TrackMatchKeys.matchKey(it.artistName, it.trackName) },
+                        remoteCount = { it.listenCount },
+                        localScore = { it.score },
+                        mergeExisting = { acc, totalScore, source ->
+                            RelatedTrackItem(
+                                identity = acc.song.toIdentity(),
+                                playCount = totalScore,
+                                source = source,
+                                localSong = acc.song,
+                            )
+                        },
+                        createRemoteOnly = { lb, score, source ->
+                            RelatedTrackItem(
+                                identity =
+                                    TrackIdentity(
+                                        title = lb.trackName,
+                                        artist = lb.artistName,
+                                        album = lb.releaseName.orEmpty(),
+                                    ),
+                                playCount = score,
+                                source = source,
+                                localSong = null,
+                            )
+                        },
+                        itemScore = { it.playCount },
+                        limit = 25,
+                    )
+
+                TopRelatedFeed(
+                    topArtists = finalArtists,
+                    topAlbums = finalAlbums,
+                    topTracks = finalTracks,
+                    isLoading = false,
                 )
             }
-
-            val lbReleasesDeferred = async {
-                fetchLbStatWithFallback(
-                    lbUser = lbUser,
-                    fetchRemote = { ListenBrainzClient.fetchUserTopReleases(lbUser!!, count = 25, token = lbToken) },
-                    recentListensDeferred = recentListensDeferred,
-                    extractFallbackKey = { l -> l.releaseName?.takeIf { it.isNotBlank() }?.let { it to l.artistName } },
-                    createFallbackItem = { key, count -> LbUserStatRelease(releaseName = key.first, artistName = key.second, listenCount = count) }
-                )
-            }
-
-            val lbRecordingsDeferred = async {
-                fetchLbStatWithFallback(
-                    lbUser = lbUser,
-                    fetchRemote = { ListenBrainzClient.fetchUserTopRecordings(lbUser!!, count = 25, token = lbToken) },
-                    recentListensDeferred = recentListensDeferred,
-                    extractFallbackKey = { l -> (l.trackName to l.artistName).takeIf { l.trackName.isNotBlank() } },
-                    createFallbackItem = { key, count -> LbUserStatRecording(trackName = key.first, artistName = key.second, listenCount = count) }
-                )
-            }
-
-            val lbArtists = lbArtistsDeferred.await()
-            val lbReleases = lbReleasesDeferred.await()
-            val lbRecordings = lbRecordingsDeferred.await()
-
-            // 2. Local stats processing
-            val localArtists = CollectionUtils.scoreLocalArtists(
-                librarySongs = librarySongs,
-                playStats = playStats,
-                playedWeight = 5L
-            )
-            val localAlbums = CollectionUtils.scoreLocalAlbums(
-                librarySongs = librarySongs,
-                playStats = playStats,
-                playedWeight = 5L
-            )
-            val localTracks = CollectionUtils.scoreLocalTracks(
-                librarySongs = librarySongs,
-                playStats = playStats,
-                playedWeight = 10L
-            )
-
-            // 3. Merges using semantic compression helper
-            val finalArtists = mergeLocalAndRemoteStats(
-                localMap = localArtists,
-                remoteList = lbArtists,
-                remoteKey = { TrackMatchKeys.normalize(it.artistName) },
-                remoteCount = { it.listenCount },
-                localScore = { it.score },
-                mergeExisting = { acc, totalScore, source ->
-                    RelatedArtistItem(
-                        name = acc.displayName,
-                        playCount = totalScore,
-                        source = source,
-                        artworkUri = acc.artworkUri
-                    )
-                },
-                createRemoteOnly = { lb, score, source ->
-                    RelatedArtistItem(
-                        name = lb.artistName,
-                        playCount = score,
-                        source = source,
-                        artworkUri = null
-                    )
-                },
-                itemScore = { it.playCount },
-                limit = 20
-            )
-
-            val finalAlbums = mergeLocalAndRemoteStats(
-                localMap = localAlbums,
-                remoteList = lbReleases,
-                remoteKey = { TrackMatchKeys.matchKey(it.artistName, it.releaseName) },
-                remoteCount = { it.listenCount },
-                localScore = { it.score },
-                mergeExisting = { acc, totalScore, source ->
-                    RelatedAlbumItem(
-                        title = acc.title,
-                        artist = acc.artist,
-                        playCount = totalScore,
-                        source = source,
-                        artworkUri = acc.artworkUri
-                    )
-                },
-                createRemoteOnly = { lb, score, source ->
-                    RelatedAlbumItem(
-                        title = lb.releaseName,
-                        artist = lb.artistName,
-                        playCount = score,
-                        source = source,
-                        artworkUri = null
-                    )
-                },
-                itemScore = { it.playCount },
-                limit = 20
-            )
-
-            val finalTracks = mergeLocalAndRemoteStats(
-                localMap = localTracks,
-                remoteList = lbRecordings,
-                remoteKey = { TrackMatchKeys.matchKey(it.artistName, it.trackName) },
-                remoteCount = { it.listenCount },
-                localScore = { it.score },
-                mergeExisting = { acc, totalScore, source ->
-                    RelatedTrackItem(
-                        identity = acc.song.toIdentity(),
-                        playCount = totalScore,
-                        source = source,
-                        localSong = acc.song
-                    )
-                },
-                createRemoteOnly = { lb, score, source ->
-                    RelatedTrackItem(
-                        identity = TrackIdentity(
-                            title = lb.trackName,
-                            artist = lb.artistName,
-                            album = lb.releaseName.orEmpty()
-                        ),
-                        playCount = score,
-                        source = source,
-                        localSong = null
-                    )
-                },
-                itemScore = { it.playCount },
-                limit = 25
-            )
-
-            TopRelatedFeed(
-                topArtists = finalArtists,
-                topAlbums = finalAlbums,
-                topTracks = finalTracks,
-                isLoading = false
-            )
         }
-    }
 }
 
 private suspend fun <T, K> fetchLbStatWithFallback(
@@ -244,7 +266,7 @@ private suspend fun <T, K> fetchLbStatWithFallback(
     fetchRemote: suspend () -> LbApiResult<List<T>>,
     recentListensDeferred: Deferred<List<ListenPayload>>,
     extractFallbackKey: (ListenPayload) -> K?,
-    createFallbackItem: (K, Long) -> T
+    createFallbackItem: (K, Long) -> T,
 ): List<T> {
     if (lbUser == null) return emptyList()
     return try {
@@ -278,7 +300,7 @@ private inline fun <K, L, R, T> mergeLocalAndRemoteStats(
     crossinline mergeExisting: (local: L, totalScore: Long, source: String) -> T,
     crossinline createRemoteOnly: (remote: R, score: Long, source: String) -> T,
     crossinline itemScore: (T) -> Long,
-    limit: Int
+    limit: Int,
 ): List<T> {
     val remoteByKey = HashMap<K, R>(remoteList.size)
     for (remote in remoteList) {
@@ -294,11 +316,12 @@ private inline fun <K, L, R, T> mergeLocalAndRemoteStats(
     for ((key, local) in localMap) {
         val matchingRemote = remoteByKey[key]
         val baseScore = localScore(local)
-        val (source, totalScore) = if (matchingRemote != null) {
-            "Local + ListenBrainz" to (baseScore + remoteCount(matchingRemote) * 2)
-        } else {
-            "Local" to baseScore
-        }
+        val (source, totalScore) =
+            if (matchingRemote != null) {
+                "Local + ListenBrainz" to (baseScore + remoteCount(matchingRemote) * 2)
+            } else {
+                "Local" to baseScore
+            }
         merged[key] = mergeExisting(local, totalScore, source)
         processedKeys.add(key)
     }

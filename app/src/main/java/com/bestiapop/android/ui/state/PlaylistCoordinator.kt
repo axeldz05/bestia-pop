@@ -17,13 +17,11 @@ import kotlinx.coroutines.launch
 class PlaylistCoordinator(
     private val scope: CoroutineScope,
     private val repository: IMusicRepository,
-    private val onPlaylistDeleted: (Long) -> Unit = {}
+    private val onPlaylistDeleted: (Long) -> Unit = {},
 ) {
-    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> =
-        repository.getPlaylistSongsFlow(playlistId)
+    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> = repository.getPlaylistSongsFlow(playlistId)
 
-    fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> =
-        repository.getPlaylistDetailsFlow(playlistId)
+    fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> = repository.getPlaylistDetailsFlow(playlistId)
 
     fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
         repository.getPlaylistPendingTracksFlow(playlistId)
@@ -33,7 +31,7 @@ class PlaylistCoordinator(
         description: String? = null,
         coverUri: String? = null,
         initialSongIds: List<Long> = emptyList(),
-        onCreated: ((Long) -> Unit)? = null
+        onCreated: ((Long) -> Unit)? = null,
     ) {
         scope.launch {
             val id = repository.createPlaylist(name, description, coverUri)
@@ -48,7 +46,7 @@ class PlaylistCoordinator(
         id: Long,
         name: String,
         description: String? = null,
-        coverUri: String? = null
+        coverUri: String? = null,
     ) {
         scope.launch {
             repository.updatePlaylist(id, name, description, coverUri)
@@ -62,25 +60,37 @@ class PlaylistCoordinator(
         }
     }
 
-    fun addSongToPlaylist(playlistId: Long, song: Song) {
+    fun addSongToPlaylist(
+        playlistId: Long,
+        song: Song,
+    ) {
         scope.launch {
             repository.addSongToPlaylist(playlistId, song.id)
         }
     }
 
-    fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
+    fun removeSongFromPlaylist(
+        playlistId: Long,
+        songId: Long,
+    ) {
         scope.launch {
             repository.removeSongFromPlaylist(playlistId, songId)
         }
     }
 
-    fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) {
+    fun reorderPlaylistSongs(
+        playlistId: Long,
+        songIds: List<Long>,
+    ) {
         scope.launch {
             repository.reorderPlaylistSongs(playlistId, songIds)
         }
     }
 
-    fun runWithPlaylistSongs(playlistId: Long, action: (List<Song>) -> Unit) {
+    fun runWithPlaylistSongs(
+        playlistId: Long,
+        action: (List<Song>) -> Unit,
+    ) {
         scope.launch {
             val songs = repository.getPlaylistSongsOrdered(playlistId)
             if (songs.isNotEmpty()) {
@@ -89,7 +99,10 @@ class PlaylistCoordinator(
         }
     }
 
-    fun runWithPlaylistPlayables(playlistId: Long, action: (List<PlayableItem>) -> Unit) {
+    fun runWithPlaylistPlayables(
+        playlistId: Long,
+        action: (List<PlayableItem>) -> Unit,
+    ) {
         scope.launch {
             val playables = repository.getPlaylistPlayables(playlistId)
             if (playables.isNotEmpty()) {

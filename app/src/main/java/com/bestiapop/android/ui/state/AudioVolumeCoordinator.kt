@@ -21,7 +21,7 @@ class AudioVolumeCoordinator(
     private val playbackPreferences: PlaybackPreferencesRepository,
     private val scope: CoroutineScope,
     private val isBoostPrefEnabled: () -> Boolean,
-    private val getPlaybackSettings: () -> PlaybackSettings
+    private val getPlaybackSettings: () -> PlaybackSettings,
 ) {
     companion object {
         const val VOLUME_BOOST_HUD_DURATION_MS = 2000L
@@ -46,7 +46,8 @@ class AudioVolumeCoordinator(
         val targetVolume = (systemRatio.coerceIn(0f, 1f) * max).toInt().coerceIn(0, max)
         try {
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
     }
 
     fun setVolume(ratio: Float) {
@@ -106,10 +107,11 @@ class AudioVolumeCoordinator(
     fun showVolumeBoostHud() {
         hudHideJob?.cancel()
         _volumeBoostHudVisible.value = true
-        hudHideJob = scope.launch {
-            delay(VOLUME_BOOST_HUD_DURATION_MS)
-            _volumeBoostHudVisible.value = false
-        }
+        hudHideJob =
+            scope.launch {
+                delay(VOLUME_BOOST_HUD_DURATION_MS)
+                _volumeBoostHudVisible.value = false
+            }
     }
 
     fun hideVolumeBoostHud() {
@@ -117,9 +119,7 @@ class AudioVolumeCoordinator(
         _volumeBoostHudVisible.value = false
     }
 
-    fun isVolumeBoostActive(): Boolean {
-        return isBoostPrefEnabled() && _volumeLevel.value > 1.0f
-    }
+    fun isVolumeBoostActive(): Boolean = isBoostPrefEnabled() && _volumeLevel.value > 1.0f
 
     fun setStereoLeftGain(gain: Float) {
         scope.launch { playbackPreferences.setStereoLeftGain(gain) }

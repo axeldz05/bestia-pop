@@ -15,26 +15,27 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class MediaLibraryBrowseMapperTest {
-
     @Test
     fun songIsPlayableLeafAndAlbumIsBrowsableContainer() {
-        val song = MediaLibraryBrowseMapper.song(
-            Song(
-                id = 3L,
-                uriString = "/music/song.mp3",
-                title = "Song",
-                artist = "Artist",
-                album = "Album"
+        val song =
+            MediaLibraryBrowseMapper.song(
+                Song(
+                    id = 3L,
+                    uriString = "/music/song.mp3",
+                    title = "Song",
+                    artist = "Artist",
+                    album = "Album",
+                ),
             )
-        )
-        val album = MediaLibraryBrowseMapper.album(
-            Album(
-                name = "stored",
-                displayName = "Visible",
-                artist = "Artist",
-                songCount = 1
+        val album =
+            MediaLibraryBrowseMapper.album(
+                Album(
+                    name = "stored",
+                    displayName = "Visible",
+                    artist = "Artist",
+                    songCount = 1,
+                ),
             )
-        )
 
         assertEquals(MediaLibraryIds.song(3L), song.mediaId)
         assertFalse(song.mediaMetadata.isBrowsable ?: true)

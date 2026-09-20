@@ -26,12 +26,12 @@ import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.StorageUtils
 import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.testutil.PcmWavFixture
+import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
-import kotlinx.coroutines.runBlocking
 
 internal object WebServerServiceTestContract {
     const val FILE_NAME = "__bestiapop_wifi_functional_fixture__.wav"
@@ -41,18 +41,18 @@ internal object WebServerServiceTestContract {
 
 internal data class TestHttpResponse(
     val code: Int,
-    val body: String
+    val body: String,
 )
 
 internal data class RunningWebServer(
     val serverState: String,
     val serviceInfo: ActivityManager.RunningServiceInfo,
-    val notification: Notification
+    val notification: Notification,
 )
 
 internal data class PlayableFixtureFile(
     val byteCount: Long,
-    val durationMs: Int
+    val durationMs: Int,
 )
 
 /**
@@ -82,20 +82,20 @@ internal class WebServerServiceTestFixture : AutoCloseable {
     fun startAndAwait(): RunningWebServer {
         ContextCompat.startForegroundService(
             context,
-            Intent(context, WebServerService::class.java)
+            Intent(context, WebServerService::class.java),
         )
 
         return awaitValue("WebServerService serverState, foreground flag and notification") {
             val state = WebServerService.serverState.value ?: return@awaitValue null
-            val info = serviceInfo()?.takeIf(ActivityManager.RunningServiceInfo::foreground)
-                ?: return@awaitValue null
+            val info =
+                serviceInfo()?.takeIf(ActivityManager.RunningServiceInfo::foreground)
+                    ?: return@awaitValue null
             val notification = webServerNotification() ?: return@awaitValue null
             RunningWebServer(state, info, notification)
         }
     }
 
-    fun getExistingFiles(): TestHttpResponse =
-        executeLocalHttp(method = "GET", path = "/existing-files")
+    fun getExistingFiles(): TestHttpResponse = executeLocalHttp(method = "GET", path = "/existing-files")
 
     fun uploadGeneratedPcmWav(): TestHttpResponse {
         val wav = PcmWavFixture.generate(durationMs = 750, toneHz = 440.0)
@@ -103,7 +103,7 @@ internal class WebServerServiceTestFixture : AutoCloseable {
             method = "POST",
             path = "/upload-file?name=${WebServerServiceTestContract.FILE_NAME}",
             body = wav,
-            contentType = "audio/wav"
+            contentType = "audio/wav",
         )
     }
 
@@ -122,9 +122,10 @@ internal class WebServerServiceTestFixture : AutoCloseable {
 
     fun verifyPlayable(song: Song): PlayableFixtureFile {
         val ref = audioStore.canonicalize(song.uriString, song.folderPath)
-        val byteCount = audioStore.openRead(ref).useOrThrow(song) { descriptor ->
-            descriptor.statSize
-        }
+        val byteCount =
+            audioStore.openRead(ref).useOrThrow(song) { descriptor ->
+                descriptor.statSize
+            }
         check(byteCount == -1L || byteCount > PcmWavFixture.HEADER_SIZE_BYTES) {
             "Fixture file is empty or truncated: bytes=$byteCount, uri=${song.uriString}"
         }
@@ -144,20 +145,23 @@ internal class WebServerServiceTestFixture : AutoCloseable {
     }
 
     fun deleteFixtureArtifacts() {
-        val rows = runBlocking {
-            repository.getAllSongsSync().filter(::isFixtureSong)
-        }
+        val rows =
+            runBlocking {
+                repository.getAllSongsSync().filter(::isFixtureSong)
+            }
         if (rows.isNotEmpty()) {
             runBlocking { repository.deleteSongsFromDevice(rows) }
         }
 
         // Also remove an orphan left between file publication and Room persistence.
-        val expectedFile = File(
-            StorageUtils.publicBestiaPopDir(),
-            WebServerServiceTestContract.FILE_NAME
-        )
+        val expectedFile =
+            File(
+                StorageUtils.publicBestiaPopDir(),
+                WebServerServiceTestContract.FILE_NAME,
+            )
         audioStore.delete(audioStore.canonicalize(expectedFile.absolutePath, expectedFile.parent.orEmpty()))
-        context.cacheDir.listFiles()
+        context.cacheDir
+            .listFiles()
             .orEmpty()
             .filter { it.name.endsWith("_${WebServerServiceTestContract.FILE_NAME}") }
             .forEach(File::delete)
@@ -166,8 +170,9 @@ internal class WebServerServiceTestFixture : AutoCloseable {
     fun awaitFixtureRemoved(songId: Long) {
         await("fixture Room row and managed file removal") {
             val rowRemoved = runBlocking { dao.getSongById(songId) } == null
-            val fileRemoved = WebServerServiceTestContract.FILE_NAME.lowercase() !in
-                audioStore.listManagedNames()
+            val fileRemoved =
+                WebServerServiceTestContract.FILE_NAME.lowercase() !in
+                    audioStore.listManagedNames()
             rowRemoved && fileRemoved
         }
     }
@@ -184,30 +189,35 @@ internal class WebServerServiceTestFixture : AutoCloseable {
     @Suppress("DEPRECATION")
     fun serviceInfo(): ActivityManager.RunningServiceInfo? {
         val component = ComponentName(context, WebServerService::class.java)
-        return context.getSystemService(ActivityManager::class.java)
+        return context
+            .getSystemService(ActivityManager::class.java)
             .getRunningServices(Int.MAX_VALUE)
             .firstOrNull { it.service == component }
     }
 
     fun webServerNotification(): Notification? =
-        context.getSystemService(NotificationManager::class.java)
+        context
+            .getSystemService(NotificationManager::class.java)
             .activeNotifications
             .firstOrNull { it.id == WebServerServiceTestContract.NOTIFICATION_ID }
             ?.notification
 
     fun diagnostics(): String {
         val info = runCatching { serviceInfo() }.getOrNull()
-        val notifications = runCatching {
-            context.getSystemService(NotificationManager::class.java)
-                .activeNotifications
-                .joinToString(prefix = "[", postfix = "]") {
-                    "${it.id}:${it.notification.channelId}"
-                }
-        }.getOrElse { "[error=${it.javaClass.simpleName}]" }
-        val transfers = WebServerService.transfers.value.joinToString(
-            prefix = "[",
-            postfix = "]"
-        ) { "${it.fileName}:${it.state}" }
+        val notifications =
+            runCatching {
+                context
+                    .getSystemService(NotificationManager::class.java)
+                    .activeNotifications
+                    .joinToString(prefix = "[", postfix = "]") {
+                        "${it.id}:${it.notification.channelId}"
+                    }
+            }.getOrElse { "[error=${it.javaClass.simpleName}]" }
+        val transfers =
+            WebServerService.transfers.value.joinToString(
+                prefix = "[",
+                postfix = "]",
+            ) { "${it.fileName}:${it.state}" }
         return "serverState=${WebServerService.serverState.value}, " +
             "serviceRunning=${info != null}, serviceForeground=${info?.foreground}, " +
             "servicePid=${info?.pid}, notifications=$notifications, transfers=$transfers, " +
@@ -226,64 +236,72 @@ internal class WebServerServiceTestFixture : AutoCloseable {
         method: String,
         path: String,
         body: ByteArray = ByteArray(0),
-        contentType: String? = null
+        contentType: String? = null,
     ): TestHttpResponse {
-        val responseBytes = Socket().use { socket ->
-            socket.connect(
-                InetSocketAddress(LOOPBACK_HOST, WebServerService.PORT),
-                HTTP_TIMEOUT_MS
-            )
-            socket.soTimeout = HTTP_TIMEOUT_MS
-            val requestHead = buildString {
-                append("$method $path HTTP/1.1\r\n")
-                append("Host: localhost:${WebServerService.PORT}\r\n")
-                append("Connection: close\r\n")
-                contentType?.let { append("Content-Type: $it\r\n") }
-                append("Content-Length: ${body.size}\r\n")
-                append("\r\n")
-            }.toByteArray(Charsets.US_ASCII)
-            val output = socket.getOutputStream().buffered()
-            output.write(requestHead)
-            output.write(body)
-            output.flush()
-            socket.getInputStream().readBytes()
-        }
+        val responseBytes =
+            Socket().use { socket ->
+                socket.connect(
+                    InetSocketAddress(LOOPBACK_HOST, WebServerService.PORT),
+                    HTTP_TIMEOUT_MS,
+                )
+                socket.soTimeout = HTTP_TIMEOUT_MS
+                val requestHead =
+                    buildString {
+                        append("$method $path HTTP/1.1\r\n")
+                        append("Host: localhost:${WebServerService.PORT}\r\n")
+                        append("Connection: close\r\n")
+                        contentType?.let { append("Content-Type: $it\r\n") }
+                        append("Content-Length: ${body.size}\r\n")
+                        append("\r\n")
+                    }.toByteArray(Charsets.US_ASCII)
+                val output = socket.getOutputStream().buffered()
+                output.write(requestHead)
+                output.write(body)
+                output.flush()
+                socket.getInputStream().readBytes()
+            }
         val headerEnd = responseBytes.indexOfHeaderEnd()
         check(headerEnd >= 0) { "Malformed localhost HTTP response: no header terminator" }
-        val headerText = responseBytes.copyOfRange(0, headerEnd)
-            .toString(Charsets.ISO_8859_1)
+        val headerText =
+            responseBytes
+                .copyOfRange(0, headerEnd)
+                .toString(Charsets.ISO_8859_1)
         val statusLine = headerText.lineSequence().firstOrNull().orEmpty()
-        val statusCode = statusLine.substringAfter(' ', missingDelimiterValue = "")
-            .substringBefore(' ')
-            .toIntOrNull()
-            ?: error("Malformed localhost HTTP status: $statusLine")
+        val statusCode =
+            statusLine
+                .substringAfter(' ', missingDelimiterValue = "")
+                .substringBefore(' ')
+                .toIntOrNull()
+                ?: error("Malformed localhost HTTP status: $statusLine")
         val encodedBody = responseBytes.copyOfRange(headerEnd + HTTP_HEADER_END.size, responseBytes.size)
-        val responseBody = if (
-            headerText.lineSequence().any {
-                it.equals("Transfer-Encoding: chunked", ignoreCase = true)
+        val responseBody =
+            if (
+                headerText.lineSequence().any {
+                    it.equals("Transfer-Encoding: chunked", ignoreCase = true)
+                }
+            ) {
+                encodedBody.decodeChunkedBody()
+            } else {
+                encodedBody
             }
-        ) {
-            encodedBody.decodeChunkedBody()
-        } else {
-            encodedBody
-        }
         return TestHttpResponse(statusCode, responseBody.toString(Charsets.UTF_8))
     }
 
     private fun grantStartupPermissions() {
-        val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            listOf(
-                Manifest.permission.READ_MEDIA_AUDIO,
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-        } else {
-            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+        val requiredPermissions =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                listOf(
+                    Manifest.permission.READ_MEDIA_AUDIO,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                )
+            } else {
+                listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
         requiredPermissions.forEach { permission ->
             if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_DENIED) {
                 instrumentation.uiAutomation.grantRuntimePermission(
                     context.packageName,
-                    permission
+                    permission,
                 )
             }
         }
@@ -319,13 +337,14 @@ internal class WebServerServiceTestFixture : AutoCloseable {
                 socket.bind(InetSocketAddress(WebServerService.PORT))
             }
         } catch (error: Exception) {
-            val localProbe = runCatching {
-                getExistingFiles().let { "HTTP ${it.code}: ${it.body.take(DIAGNOSTIC_BODY_LIMIT)}" }
-            }.getOrElse { "${it.javaClass.simpleName}: ${it.message}" }
+            val localProbe =
+                runCatching {
+                    getExistingFiles().let { "HTTP ${it.code}: ${it.body.take(DIAGNOSTIC_BODY_LIMIT)}" }
+                }.getOrElse { "${it.javaClass.simpleName}: ${it.message}" }
             throw AssertionError(
                 "TCP ${WebServerService.PORT} is occupied before WebServerService start; " +
                     "localhost probe=$localProbe; ${diagnostics()}",
-                error
+                error,
             )
         }
     }
@@ -337,10 +356,14 @@ internal class WebServerServiceTestFixture : AutoCloseable {
     }
 
     private fun isFixtureSong(song: Song): Boolean =
-        SongPathNormalizer.fileName(song.uriString, song.folderPath)
+        SongPathNormalizer
+            .fileName(song.uriString, song.folderPath)
             .equals(WebServerServiceTestContract.FILE_NAME, ignoreCase = true)
 
-    private fun await(description: String, condition: () -> Boolean) {
+    private fun await(
+        description: String,
+        condition: () -> Boolean,
+    ) {
         val deadline = SystemClock.elapsedRealtime() + ASYNC_TIMEOUT_MS
         while (SystemClock.elapsedRealtime() < deadline) {
             if (condition()) return
@@ -349,7 +372,10 @@ internal class WebServerServiceTestFixture : AutoCloseable {
         throw AssertionError("Timed out waiting for $description; ${diagnostics()}")
     }
 
-    private fun <T : Any> awaitValue(description: String, value: () -> T?): T {
+    private fun <T : Any> awaitValue(
+        description: String,
+        value: () -> T?,
+    ): T {
         var result: T? = null
         await(description) {
             value()?.also { result = it } != null
@@ -359,10 +385,11 @@ internal class WebServerServiceTestFixture : AutoCloseable {
 
     private fun <T> ParcelFileDescriptor?.useOrThrow(
         song: Song,
-        block: (ParcelFileDescriptor) -> T
+        block: (ParcelFileDescriptor) -> T,
     ): T {
-        val descriptor = this
-            ?: throw AssertionError("Fixture file does not exist or cannot be read: ${song.uriString}")
+        val descriptor =
+            this
+                ?: throw AssertionError("Fixture file does not exist or cannot be read: ${song.uriString}")
         return descriptor.use(block)
     }
 
@@ -396,11 +423,13 @@ private fun ByteArray.decodeChunkedBody(): ByteArray {
     while (offset < size) {
         val lineEnd = indexOfCrlf(offset)
         check(lineEnd >= 0) { "Malformed chunked localhost response: missing chunk size" }
-        val sizeText = copyOfRange(offset, lineEnd)
-            .toString(Charsets.US_ASCII)
-            .substringBefore(';')
-        val chunkSize = sizeText.toIntOrNull(16)
-            ?: error("Malformed chunk size: $sizeText")
+        val sizeText =
+            copyOfRange(offset, lineEnd)
+                .toString(Charsets.US_ASCII)
+                .substringBefore(';')
+        val chunkSize =
+            sizeText.toIntOrNull(16)
+                ?: error("Malformed chunk size: $sizeText")
         if (chunkSize == 0) break
         val chunkStart = lineEnd + 2
         val chunkEnd = chunkStart + chunkSize

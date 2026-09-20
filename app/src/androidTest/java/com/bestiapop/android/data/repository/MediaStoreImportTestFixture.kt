@@ -21,9 +21,9 @@ import com.bestiapop.android.data.util.AudioPersistRef
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.StorageUtils
 import com.bestiapop.android.testutil.PcmWavFixture
+import kotlinx.coroutines.flow.first
 import java.io.File
 import java.util.UUID
-import kotlinx.coroutines.flow.first
 
 internal data class FixtureMediaStoreRow(
     val id: Long,
@@ -33,7 +33,7 @@ internal data class FixtureMediaStoreRow(
     val durationMs: Long,
     val year: Int,
     val trackNumber: Int,
-    val absolutePath: String
+    val absolutePath: String,
 )
 
 /**
@@ -46,9 +46,8 @@ internal class MediaStoreAudioFixture private constructor(
     val uri: Uri,
     val token: String,
     val displayName: String,
-    val row: FixtureMediaStoreRow
+    val row: FixtureMediaStoreRow,
 ) : AutoCloseable {
-
     val expectedImportedUri: String =
         ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, row.id).toString()
 
@@ -77,27 +76,32 @@ internal class MediaStoreAudioFixture private constructor(
         private const val DURATION_MS = 31_250
         private const val SNAPSHOT_TIMEOUT_MS = 5_000L
 
-        fun create(context: Context, relativePath: String): MediaStoreAudioFixture {
+        fun create(
+            context: Context,
+            relativePath: String,
+        ): MediaStoreAudioFixture {
             val resolver = context.contentResolver
             val token = UUID.randomUUID().toString().replace("-", "")
             val displayName = "BPFixture$token.wav"
             val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            val values = ContentValues().apply {
-                put(MediaStore.Audio.Media.DISPLAY_NAME, displayName)
-                put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav")
-                put(MediaStore.Audio.Media.RELATIVE_PATH, relativePath)
-                put(MediaStore.Audio.Media.IS_PENDING, 1)
-                put(MediaStore.Audio.Media.IS_MUSIC, 1)
-                put(MediaStore.Audio.Media.TITLE, "BP Title $token")
-                put(MediaStore.Audio.Media.ARTIST, "BP Artist $token")
-                put(MediaStore.Audio.Media.ALBUM, "BP Album $token")
-                put(MediaStore.Audio.Media.DURATION, DURATION_MS.toLong())
-                put(MediaStore.Audio.Media.YEAR, 2026)
-                put(MediaStore.Audio.Media.TRACK, 7)
-            }
-            val uri = checkNotNull(resolver.insert(collection, values)) {
-                "MediaStore refused the test fixture"
-            }
+            val values =
+                ContentValues().apply {
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, displayName)
+                    put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav")
+                    put(MediaStore.Audio.Media.RELATIVE_PATH, relativePath)
+                    put(MediaStore.Audio.Media.IS_PENDING, 1)
+                    put(MediaStore.Audio.Media.IS_MUSIC, 1)
+                    put(MediaStore.Audio.Media.TITLE, "BP Title $token")
+                    put(MediaStore.Audio.Media.ARTIST, "BP Artist $token")
+                    put(MediaStore.Audio.Media.ALBUM, "BP Album $token")
+                    put(MediaStore.Audio.Media.DURATION, DURATION_MS.toLong())
+                    put(MediaStore.Audio.Media.YEAR, 2026)
+                    put(MediaStore.Audio.Media.TRACK, 7)
+                }
+            val uri =
+                checkNotNull(resolver.insert(collection, values)) {
+                    "MediaStore refused the test fixture"
+                }
             try {
                 checkNotNull(resolver.openOutputStream(uri, "w")).use { output ->
                     output.write(PcmWavFixture.generate(DURATION_MS, toneHz = 440.0))
@@ -106,7 +110,7 @@ internal class MediaStoreAudioFixture private constructor(
                     uri,
                     ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) },
                     null,
-                    null
+                    null,
                 )
                 val row = awaitFixtureRow(resolver, uri, token)
                 return MediaStoreAudioFixture(
@@ -114,7 +118,7 @@ internal class MediaStoreAudioFixture private constructor(
                     uri = uri,
                     token = token,
                     displayName = displayName,
-                    row = row
+                    row = row,
                 )
             } catch (error: Throwable) {
                 runCatching { resolver.delete(uri, null, null) }
@@ -125,7 +129,7 @@ internal class MediaStoreAudioFixture private constructor(
         private fun awaitFixtureRow(
             resolver: ContentResolver,
             uri: Uri,
-            token: String
+            token: String,
         ): FixtureMediaStoreRow {
             val deadline = SystemClock.uptimeMillis() + SNAPSHOT_TIMEOUT_MS
             var last: FixtureMediaStoreRow? = null
@@ -146,40 +150,47 @@ internal class MediaStoreAudioFixture private constructor(
 
         private fun queryFixtureRow(
             resolver: ContentResolver,
-            uri: Uri
+            uri: Uri,
         ): FixtureMediaStoreRow? {
-            val projection = arrayOf(
-                MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.ARTIST,
-                MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.DURATION,
-                MediaStore.Audio.Media.YEAR,
-                MediaStore.Audio.Media.TRACK,
-                MediaStore.Audio.Media.DATA
-            )
+            val projection =
+                arrayOf(
+                    MediaStore.Audio.Media._ID,
+                    MediaStore.Audio.Media.TITLE,
+                    MediaStore.Audio.Media.ARTIST,
+                    MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.DURATION,
+                    MediaStore.Audio.Media.YEAR,
+                    MediaStore.Audio.Media.TRACK,
+                    MediaStore.Audio.Media.DATA,
+                )
             return resolver.query(uri, projection, null, null, null)?.use { cursor ->
                 if (!cursor.moveToFirst()) return@use null
                 FixtureMediaStoreRow(
                     id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)),
-                    title = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE))
-                        ?: "Track ${ContentUris.parseId(uri)}",
-                    artist = cursor
-                        .getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST))
-                        .mediaStoreValueOr("Unknown Artist"),
-                    album = cursor
-                        .getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM))
-                        .mediaStoreValueOr("Unknown Album"),
-                    durationMs = cursor.getLong(
-                        cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                    ),
+                    title =
+                        cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE))
+                            ?: "Track ${ContentUris.parseId(uri)}",
+                    artist =
+                        cursor
+                            .getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST))
+                            .mediaStoreValueOr("Unknown Artist"),
+                    album =
+                        cursor
+                            .getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM))
+                            .mediaStoreValueOr("Unknown Album"),
+                    durationMs =
+                        cursor.getLong(
+                            cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION),
+                        ),
                     year = cursor.getInt(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)),
-                    trackNumber = cursor.getInt(
-                        cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
-                    ),
-                    absolutePath = cursor
-                        .getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA))
-                        .orEmpty()
+                    trackNumber =
+                        cursor.getInt(
+                            cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK),
+                        ),
+                    absolutePath =
+                        cursor
+                            .getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA))
+                            .orEmpty(),
                 )
             }
         }
@@ -198,16 +209,17 @@ internal class MediaStoreAudioFixture private constructor(
 internal class MediaStoreRepositoryHarness(
     context: Context,
     fixture: MediaStoreAudioFixture,
-    managedFixtureFile: File? = null
+    managedFixtureFile: File? = null,
 ) : AutoCloseable {
     private val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
     private val repositoryContext = FixtureOnlyMediaStoreContext(context, fixture.uri)
 
-    val repository = MusicRepository(
-        context = repositoryContext,
-        database = database,
-        audioStore = FixtureOnlyRepositoryFileStore(context, managedFixtureFile)
-    )
+    val repository =
+        MusicRepository(
+            context = repositoryContext,
+            database = database,
+            audioStore = FixtureOnlyRepositoryFileStore(context, managedFixtureFile),
+        )
 
     suspend fun removeFixtureRows(fixture: MediaStoreAudioFixture) {
         val rows = repository.allSongsFlow.first().filter(fixture::owns)
@@ -221,21 +233,22 @@ internal class MediaStoreRepositoryHarness(
 
 private class FixtureOnlyMediaStoreContext(
     base: Context,
-    fixtureUri: Uri
+    fixtureUri: Uri,
 ) : ContextWrapper(base) {
-    private val fixtureResolver = FixtureOnlyMediaStoreProvider(
-        base.contentResolver,
-        fixtureUri
-    ).let { provider ->
-        provider.attachInfo(
-            base,
-            ProviderInfo().apply {
-                authority = MediaStore.AUTHORITY
-                exported = false
-            }
-        )
-        ContentResolver.wrap(provider)
-    }
+    private val fixtureResolver =
+        FixtureOnlyMediaStoreProvider(
+            base.contentResolver,
+            fixtureUri,
+        ).let { provider ->
+            provider.attachInfo(
+                base,
+                ProviderInfo().apply {
+                    authority = MediaStore.AUTHORITY
+                    exported = false
+                },
+            )
+            ContentResolver.wrap(provider)
+        }
 
     override fun getApplicationContext(): Context = this
 
@@ -244,9 +257,8 @@ private class FixtureOnlyMediaStoreContext(
 
 private class FixtureOnlyMediaStoreProvider(
     private val realResolver: ContentResolver,
-    private val fixtureUri: Uri
+    private val fixtureUri: Uri,
 ) : ContentProvider() {
-
     override fun onCreate(): Boolean = true
 
     override fun query(
@@ -254,54 +266,69 @@ private class FixtureOnlyMediaStoreProvider(
         projection: Array<out String>?,
         selection: String?,
         selectionArgs: Array<out String>?,
-        sortOrder: String?
+        sortOrder: String?,
     ): Cursor? = realResolver.query(fixtureUri, projection, null, null, sortOrder)
 
     override fun getType(uri: Uri): String? = realResolver.getType(fixtureUri)
 
-    override fun insert(uri: Uri, values: ContentValues?): Uri =
-        error("Fixture-only provider is read-only")
+    override fun insert(
+        uri: Uri,
+        values: ContentValues?,
+    ): Uri = error("Fixture-only provider is read-only")
 
-    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int =
-        error("Fixture-only provider is read-only")
+    override fun delete(
+        uri: Uri,
+        selection: String?,
+        selectionArgs: Array<out String>?,
+    ): Int = error("Fixture-only provider is read-only")
 
     override fun update(
         uri: Uri,
         values: ContentValues?,
         selection: String?,
-        selectionArgs: Array<out String>?
+        selectionArgs: Array<out String>?,
     ): Int = error("Fixture-only provider is read-only")
 }
 
 private class FixtureOnlyRepositoryFileStore(
     context: Context,
-    private val managedFixtureFile: File?
+    private val managedFixtureFile: File?,
 ) : RepositoryFileStore {
     private val delegate = MusicFileStore(context)
 
-    override fun canonicalize(uriString: String, folderPath: String): AudioPersistRef =
-        delegate.canonicalize(uriString, folderPath)
+    override fun canonicalize(
+        uriString: String,
+        folderPath: String,
+    ): AudioPersistRef = delegate.canonicalize(uriString, folderPath)
 
-    override fun applyDataSource(retriever: MediaMetadataRetriever, ref: AudioPersistRef) =
-        delegate.applyDataSource(retriever, ref)
+    override fun applyDataSource(
+        retriever: MediaMetadataRetriever,
+        ref: AudioPersistRef,
+    ) = delegate.applyDataSource(retriever, ref)
 
-    override fun applyDataSource(extractor: MediaExtractor, ref: AudioPersistRef) =
-        delegate.applyDataSource(extractor, ref)
+    override fun applyDataSource(
+        extractor: MediaExtractor,
+        ref: AudioPersistRef,
+    ) = delegate.applyDataSource(extractor, ref)
 
-    override fun applyDataSource(player: MediaPlayer, ref: AudioPersistRef) =
-        delegate.applyDataSource(player, ref)
+    override fun applyDataSource(
+        player: MediaPlayer,
+        ref: AudioPersistRef,
+    ) = delegate.applyDataSource(player, ref)
 
-    override fun prepareWrite(displayName: String): StorageUtils.PendingWrite =
-        error("Fixture repository cannot write managed audio")
+    override fun prepareWrite(displayName: String): StorageUtils.PendingWrite = error("Fixture repository cannot write managed audio")
 
-    override fun delete(ref: AudioPersistRef): Nothing =
-        error("Fixture repository cannot delete audio")
+    override fun delete(ref: AudioPersistRef): Nothing = error("Fixture repository cannot delete audio")
 
     override fun listManaged(): List<File> = listOfNotNull(managedFixtureFile)
 
-    override fun writableFile(uriString: String, folderPath: String): File? =
-        delegate.writableFile(uriString, folderPath)
+    override fun writableFile(
+        uriString: String,
+        folderPath: String,
+    ): File? = delegate.writableFile(uriString, folderPath)
 
-    override fun readableFile(uriString: String, folderPath: String): File? =
-        delegate.readableFile(uriString, folderPath)
+    override fun readableFile(
+        uriString: String,
+        folderPath: String,
+    ): File? = delegate.readableFile(uriString, folderPath)
 }

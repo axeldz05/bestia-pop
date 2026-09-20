@@ -8,9 +8,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -21,18 +25,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.layout.width
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistMessages
@@ -49,7 +49,7 @@ import com.bestiapop.android.ui.components.rememberImagePicker
 fun EditSongMetadataDialog(
     song: Song,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int) -> Unit
+    onConfirm: (title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int) -> Unit,
 ) {
     var title by remember { mutableStateOf(song.title) }
     var artist by remember { mutableStateOf(song.artist) }
@@ -64,66 +64,68 @@ fun EditSongMetadataDialog(
         title = { Text("Editar información de canción") },
         text = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
                     label = { Text("Título") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = artist,
                     onValueChange = { artist = it },
                     label = { Text("Artista") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = album,
                     onValueChange = { album = it },
                     label = { Text("Álbum") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = genre,
                     onValueChange = { genre = it },
                     label = { Text("Género") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     OutlinedTextField(
                         value = yearText,
                         onValueChange = { yearText = it.filter { ch -> ch.isDigit() }.take(4) },
                         label = { Text("Año") },
                         singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                     OutlinedTextField(
                         value = trackText,
                         onValueChange = { trackText = it.filter { ch -> ch.isDigit() }.take(3) },
                         label = { Text("Nº de pista") },
                         singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
         },
         confirmButton = {
             Button(onClick = {
-                val track = encodeAlbumTrack(
-                    trackText.toIntOrNull() ?: 0,
-                    albumDiscNumber(song.trackNumber)
-                )
+                val track =
+                    encodeAlbumTrack(
+                        trackText.toIntOrNull() ?: 0,
+                        albumDiscNumber(song.trackNumber),
+                    )
                 onConfirm(title, artist, album, genre, yearText.toIntOrNull() ?: 0, track)
             }) {
                 Text("Guardar")
@@ -133,7 +135,7 @@ fun EditSongMetadataDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancelar")
             }
-        }
+        },
     )
 }
 
@@ -142,7 +144,7 @@ fun EditAlbumMetadataDialog(
     album: com.bestiapop.android.data.model.Album,
     onDismiss: () -> Unit,
     onSaveAlbumOnly: (displayName: String, artist: String, genre: String, year: Int, artworkUri: String?) -> Unit,
-    onSaveAlbumAndSongs: (displayName: String, artist: String, genre: String, year: Int, artworkUri: String?) -> Unit
+    onSaveAlbumAndSongs: (displayName: String, artist: String, genre: String, year: Int, artworkUri: String?) -> Unit,
 ) {
     var displayName by remember { mutableStateOf(album.displayName) }
     var artist by remember { mutableStateOf(album.artist) }
@@ -157,44 +159,45 @@ fun EditAlbumMetadataDialog(
         title = { Text("Editar álbum") },
         text = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 ArtworkPickerBlock(
                     artworkUri = selectedUri,
                     onPick = { imagePickerLauncher.launch("image/*") },
-                    buttonText = "Cambiar portada"
+                    buttonText = "Cambiar portada",
                 )
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
                     label = { Text("Nombre del álbum") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = artist,
                     onValueChange = { artist = it },
                     label = { Text("Artista") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = genre,
                     onValueChange = { genre = it },
                     label = { Text("Género") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = yearText,
                     onValueChange = { yearText = it.filter { ch -> ch.isDigit() }.take(4) },
                     label = { Text("Año") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
@@ -202,7 +205,7 @@ fun EditAlbumMetadataDialog(
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
-                horizontalAlignment = Alignment.End
+                horizontalAlignment = Alignment.End,
             ) {
                 Button(
                     onClick = {
@@ -211,10 +214,10 @@ fun EditAlbumMetadataDialog(
                             artist,
                             genre,
                             yearText.toIntOrNull() ?: 0,
-                            selectedUri
+                            selectedUri,
                         )
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Guardar para álbum y canciones")
                 }
@@ -225,21 +228,21 @@ fun EditAlbumMetadataDialog(
                             artist,
                             genre,
                             yearText.toIntOrNull() ?: 0,
-                            selectedUri
+                            selectedUri,
                         )
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Guardar para álbum")
                 }
                 TextButton(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Cancelar")
                 }
             }
-        }
+        },
     )
 }
 
@@ -248,7 +251,7 @@ fun ConfirmMergeAlbumsDialog(
     source: com.bestiapop.android.data.model.Album,
     target: com.bestiapop.android.data.model.Album,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
 ) {
     val yearLabel = if (target.year > 0) target.year.toString() else "—"
     val genreLabel = target.genre?.takeIf { it.isNotBlank() } ?: "—"
@@ -259,34 +262,39 @@ fun ConfirmMergeAlbumsDialog(
         title = { Text("Unir álbumes") },
         text = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    text = "«${source.displayName}» (${source.songCount} canciones) se unirá a «${target.displayName}» (${target.songCount} canciones).",
-                    style = MaterialTheme.typography.bodyMedium
+                    text =
+                        "«${source.displayName}» (${source.songCount} canciones) se unirá a " +
+                            "«${target.displayName}» (${target.songCount} canciones).",
+                    style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    text = "Las canciones de «${source.displayName}» adoptarán exactamente la metadata de «${target.displayName}». Los demás campos del formulario se descartarán.",
+                    text =
+                        "Las canciones de «${source.displayName}» adoptarán exactamente la metadata de " +
+                            "«${target.displayName}». Los demás campos del formulario se descartarán.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     ArtworkThumbnail(
                         artworkUri = target.artworkUri,
                         size = 64.dp,
-                        cornerRadius = 8.dp
+                        cornerRadius = 8.dp,
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
                             text = target.displayName,
                             style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                         Text("Artista: ${target.artist}", style = MaterialTheme.typography.bodySmall)
                         Text("Género: $genreLabel", style = MaterialTheme.typography.bodySmall)
@@ -294,7 +302,7 @@ fun ConfirmMergeAlbumsDialog(
                         Text(
                             text = "Resultado: $resultCount canciones",
                             style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
                         )
                     }
                 }
@@ -309,7 +317,7 @@ fun ConfirmMergeAlbumsDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancelar")
             }
-        }
+        },
     )
 }
 
@@ -318,7 +326,7 @@ fun SetAlbumArtworkDialog(
     albumName: String,
     currentArtworkUri: String?,
     onDismiss: () -> Unit,
-    onArtworkSelected: (String) -> Unit
+    onArtworkSelected: (String) -> Unit,
 ) {
     var selectedUri by remember { mutableStateOf(currentArtworkUri) }
 
@@ -329,22 +337,23 @@ fun SetAlbumArtworkDialog(
         title = { Text("Cambiar portada del álbum") },
         text = {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
                     text = "Asignar nueva portada para \"$albumName\". Todas las canciones del álbum heredarán esta imagen.",
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
                 )
 
                 ArtworkPickerBlock(
                     artworkUri = selectedUri,
                     onPick = { imagePickerLauncher.launch("image/*") },
                     buttonText = "Seleccionar imagen de la galería",
-                    spacing = 12.dp
+                    spacing = 12.dp,
                 )
             }
         },
@@ -353,7 +362,7 @@ fun SetAlbumArtworkDialog(
                 onClick = {
                     selectedUri?.let { onArtworkSelected(it) }
                 },
-                enabled = !selectedUri.isNullOrEmpty()
+                enabled = !selectedUri.isNullOrEmpty(),
             ) {
                 Text("Guardar Portada")
             }
@@ -362,7 +371,7 @@ fun SetAlbumArtworkDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancelar")
             }
-        }
+        },
     )
 }
 
@@ -373,7 +382,7 @@ fun AddToPlaylistDialog(
     defaultCoverUri: String? = null,
     onDismiss: () -> Unit,
     onSelectPlaylist: (playlist: Playlist, openAfter: Boolean) -> Unit,
-    onCreatePlaylist: (name: String, description: String?, coverUri: String?, openAfter: Boolean) -> Unit
+    onCreatePlaylist: (name: String, description: String?, coverUri: String?, openAfter: Boolean) -> Unit,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
 
@@ -391,7 +400,7 @@ fun AddToPlaylistDialog(
             onSaveAndOpen = { name, desc, cover ->
                 onCreatePlaylist(name, desc, cover, true)
                 showCreateDialog = false
-            }
+            },
         )
     }
 
@@ -404,7 +413,7 @@ fun AddToPlaylistDialog(
             Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
                     onClick = { showCreateDialog = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(PlaylistMessages.createNewPlaylistButton)
                 }
@@ -414,51 +423,53 @@ fun AddToPlaylistDialog(
                         text = PlaylistMessages.noPlaylistsYet,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(vertical = 16.dp)
+                        modifier = Modifier.padding(vertical = 16.dp),
                     )
                 } else {
                     LazyColumn(modifier = Modifier.height(260.dp)) {
                         items(playlists) { playlist ->
                             Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
                                 shape = RoundedCornerShape(8.dp),
-                                tonalElevation = 1.dp
+                                tonalElevation = 1.dp,
                             ) {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onSelectPlaylist(playlist, false) }
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onSelectPlaylist(playlist, false) }
+                                            .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     ArtworkThumbnail(
                                         artworkUri = playlist.coverUri,
-                                        size = 42.dp
+                                        size = 42.dp,
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = playlist.name,
                                             style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold
+                                            fontWeight = FontWeight.SemiBold,
                                         )
                                         Text(
                                             text = "${playlist.songCount} canciones",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                         )
                                     }
                                     IconButton(
                                         onClick = { onSelectPlaylist(playlist, true) },
-                                        modifier = Modifier.size(36.dp)
+                                        modifier = Modifier.size(36.dp),
                                     ) {
                                         Icon(
                                             imageVector = androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowForward,
                                             contentDescription = "Añadir y entrar",
                                             tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(20.dp),
                                         )
                                     }
                                 }
@@ -473,7 +484,7 @@ fun AddToPlaylistDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancelar")
             }
-        }
+        },
     )
 }
 
@@ -482,20 +493,23 @@ fun ConfirmDeleteSongsDialog(
     songCount: Int,
     onDismiss: () -> Unit,
     onConfirmDeleteFromApp: () -> Unit,
-    onConfirmDeleteFromDevice: () -> Unit
+    onConfirmDeleteFromDevice: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Eliminar canción(es)") },
         text = {
-            Text("¿Cómo deseas eliminar $songCount canción(es)?\n\n- Solo de la aplicación: Elimina el registro de la base de datos de BestiaPop.\n- Del dispositivo: Borra el archivo físico de audio de la memoria.")
+            Text(
+                "¿Cómo deseas eliminar $songCount canción(es)?\n\n- Solo de la aplicación: Elimina el registro de la base de datos de BestiaPop.\n- Del dispositivo: Borra el archivo físico de audio de la memoria.",
+            )
         },
         confirmButton = {
             Button(
                 onClick = onConfirmDeleteFromDevice,
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                )
+                colors =
+                    androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                    ),
             ) {
                 Text("Borrar del dispositivo")
             }
@@ -509,6 +523,6 @@ fun ConfirmDeleteSongsDialog(
                     Text("Solo de la app")
                 }
             }
-        }
+        },
     )
 }

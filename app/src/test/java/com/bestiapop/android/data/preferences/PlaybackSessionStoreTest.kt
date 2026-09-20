@@ -9,11 +9,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackSessionStoreTest {
-
     private fun song(
         id: Long,
         uri: String = "content://song/$id",
-        title: String = "Song $id"
+        title: String = "Song $id",
     ) = Song(
         id = id,
         uriString = uri,
@@ -21,23 +20,25 @@ class PlaybackSessionStoreTest {
         artist = "Artist",
         album = "Album",
         durationMs = 180_000L,
-        artworkUri = "file:///art/$id.jpg"
+        artworkUri = "file:///art/$id.jpg",
     )
 
     @Test
     fun codec_roundTrip_preservesFields() {
-        val original = LastPlayedSnapshot(
-            songId = 42L,
-            uriString = "content://music/42",
-            positionMs = 12_345L,
-            identity = TrackIdentity(
-                title = "Hello",
-                artist = "World",
-                album = "LP",
-                artworkUri = "file:///cover.jpg",
-                durationMs = 200_000L
+        val original =
+            LastPlayedSnapshot(
+                songId = 42L,
+                uriString = "content://music/42",
+                positionMs = 12_345L,
+                identity =
+                    TrackIdentity(
+                        title = "Hello",
+                        artist = "World",
+                        album = "LP",
+                        artworkUri = "file:///cover.jpg",
+                        durationMs = 200_000L,
+                    ),
             )
-        )
         val restored = LastPlayedCodec.decode(LastPlayedCodec.encode(original))
         assertEquals(original, restored)
     }
@@ -76,8 +77,8 @@ class PlaybackSessionStoreTest {
         assertNull(
             PlaybackHydration.resolveIdleSeed(
                 emptyList(),
-                LastPlayedSnapshot(1L, "uri")
-            )
+                LastPlayedSnapshot(1L, "uri"),
+            ),
         )
     }
 
@@ -96,12 +97,13 @@ class PlaybackSessionStoreTest {
     @Test
     fun resumePositionMs_onlyWhenMatchingAndCapped() {
         val s = song(5).copy(durationMs = 10_000L)
-        val last = LastPlayedSnapshot(
-            songId = 5L,
-            uriString = s.uriString,
-            positionMs = 50_000L,
-            identity = TrackIdentity(title = "", durationMs = 10_000L)
-        )
+        val last =
+            LastPlayedSnapshot(
+                songId = 5L,
+                uriString = s.uriString,
+                positionMs = 50_000L,
+                identity = TrackIdentity(title = "", durationMs = 10_000L),
+            )
         assertEquals(10_000L, PlaybackHydration.resumePositionMs(s, last))
         assertEquals(0L, PlaybackHydration.resumePositionMs(song(9), last))
         assertEquals(0L, PlaybackHydration.resumePositionMs(s, null))
@@ -119,15 +121,17 @@ class PlaybackSessionStoreTest {
     @Test
     fun hydrateQueue_matchesLocalByIdAndUri() {
         val library = listOf(song(1), song(2, uri = "content://x"), song(3))
-        val snapshot = QueueSnapshot(
-            currentIndex = 1,
-            positionMs = 4_000L,
-            items = listOf(
-                PersistedQueueItem.Local(songId = 1L, uriString = "content://song/1"),
-                PersistedQueueItem.Local(songId = 99L, uriString = "content://x"),
-                PersistedQueueItem.Local(songId = 3L, uriString = "content://song/3")
+        val snapshot =
+            QueueSnapshot(
+                currentIndex = 1,
+                positionMs = 4_000L,
+                items =
+                    listOf(
+                        PersistedQueueItem.Local(songId = 1L, uriString = "content://song/1"),
+                        PersistedQueueItem.Local(songId = 99L, uriString = "content://x"),
+                        PersistedQueueItem.Local(songId = 3L, uriString = "content://song/3"),
+                    ),
             )
-        )
         val hydrated = PlaybackHydration.hydrateQueue(snapshot, library)!!
         assertEquals(3, hydrated.items.size)
         assertEquals(1, hydrated.currentIndex)
@@ -138,15 +142,17 @@ class PlaybackSessionStoreTest {
     @Test
     fun hydrateQueue_skipsDeletedCurrent_advancesAndClearsPosition() {
         val library = listOf(song(1), song(3))
-        val snapshot = QueueSnapshot(
-            currentIndex = 1,
-            positionMs = 9_000L,
-            items = listOf(
-                PersistedQueueItem.Local(songId = 1L, uriString = "content://song/1"),
-                PersistedQueueItem.Local(songId = 2L, uriString = "content://song/2"),
-                PersistedQueueItem.Local(songId = 3L, uriString = "content://song/3")
+        val snapshot =
+            QueueSnapshot(
+                currentIndex = 1,
+                positionMs = 9_000L,
+                items =
+                    listOf(
+                        PersistedQueueItem.Local(songId = 1L, uriString = "content://song/1"),
+                        PersistedQueueItem.Local(songId = 2L, uriString = "content://song/2"),
+                        PersistedQueueItem.Local(songId = 3L, uriString = "content://song/3"),
+                    ),
             )
-        )
         val hydrated = PlaybackHydration.hydrateQueue(snapshot, library)!!
         assertEquals(2, hydrated.items.size)
         assertEquals(1, hydrated.currentIndex)
@@ -157,17 +163,19 @@ class PlaybackSessionStoreTest {
     @Test
     fun hydrateQueue_remapsShufflePlayOrderWhenLocalDropped() {
         val library = listOf(song(1), song(3), song(4))
-        val snapshot = QueueSnapshot(
-            currentIndex = 0,
-            positionMs = 0L,
-            items = listOf(
-                PersistedQueueItem.Local(songId = 1L, uriString = "content://song/1"),
-                PersistedQueueItem.Local(songId = 2L, uriString = "content://song/2"),
-                PersistedQueueItem.Local(songId = 3L, uriString = "content://song/3"),
-                PersistedQueueItem.Local(songId = 4L, uriString = "content://song/4")
-            ),
-            shufflePlayOrder = listOf(2, 0, 3, 1)
-        )
+        val snapshot =
+            QueueSnapshot(
+                currentIndex = 0,
+                positionMs = 0L,
+                items =
+                    listOf(
+                        PersistedQueueItem.Local(songId = 1L, uriString = "content://song/1"),
+                        PersistedQueueItem.Local(songId = 2L, uriString = "content://song/2"),
+                        PersistedQueueItem.Local(songId = 3L, uriString = "content://song/3"),
+                        PersistedQueueItem.Local(songId = 4L, uriString = "content://song/4"),
+                    ),
+                shufflePlayOrder = listOf(2, 0, 3, 1),
+            )
         val hydrated = PlaybackHydration.hydrateQueue(snapshot, library)!!
         assertEquals(3, hydrated.items.size)
         assertEquals(listOf(1, 0, 2), hydrated.shufflePlayOrder)
@@ -176,21 +184,23 @@ class PlaybackSessionStoreTest {
     @Test
     fun hydrateQueue_keepsRemoteAndCapsResumePosition() {
         val library = listOf(song(1).copy(durationMs = 10_000L))
-        val snapshot = QueueSnapshot(
-            currentIndex = 0,
-            positionMs = 50_000L,
-            items = listOf(
-                PersistedQueueItem.Local(
-                    songId = 1L,
-                    uriString = "content://song/1",
-                    identity = TrackIdentity(title = "", durationMs = 10_000L)
-                ),
-                PersistedQueueItem.Remote(
-                    identity = TrackIdentity(title = "R", artist = "A"),
-                    youtubeQueryOrId = "A R"
-                )
+        val snapshot =
+            QueueSnapshot(
+                currentIndex = 0,
+                positionMs = 50_000L,
+                items =
+                    listOf(
+                        PersistedQueueItem.Local(
+                            songId = 1L,
+                            uriString = "content://song/1",
+                            identity = TrackIdentity(title = "", durationMs = 10_000L),
+                        ),
+                        PersistedQueueItem.Remote(
+                            identity = TrackIdentity(title = "R", artist = "A"),
+                            youtubeQueryOrId = "A R",
+                        ),
+                    ),
             )
-        )
         val hydrated = PlaybackHydration.hydrateQueue(snapshot, library)!!
         assertEquals(2, hydrated.items.size)
         assertTrue(hydrated.items[1] is PlayableItem.Remote)
@@ -199,37 +209,47 @@ class PlaybackSessionStoreTest {
 
     @Test
     fun hydrateQueue_remoteOnlyWithEmptyLibrary_keepsEveryOccurrenceAndResumePosition() {
-        val repeated = PersistedQueueItem.Remote(
-            identity = TrackIdentity(
-                title = "Remote",
-                artist = "Artist",
-                durationMs = 120_000L
-            ),
-            youtubeQueryOrId = "Artist Remote"
-        )
-        val snapshot = QueueSnapshot(
-            currentIndex = 1,
-            positionMs = 45_000L,
-            items = listOf(repeated, repeated)
-        )
+        val repeated =
+            PersistedQueueItem.Remote(
+                identity =
+                    TrackIdentity(
+                        title = "Remote",
+                        artist = "Artist",
+                        durationMs = 120_000L,
+                    ),
+                youtubeQueryOrId = "Artist Remote",
+            )
+        val snapshot =
+            QueueSnapshot(
+                currentIndex = 1,
+                positionMs = 45_000L,
+                items = listOf(repeated, repeated),
+            )
 
         val hydrated = PlaybackHydration.hydrateQueue(snapshot, emptyList())!!
 
         assertEquals(2, hydrated.items.size)
         assertEquals(1, hydrated.currentIndex)
         assertEquals(45_000L, hydrated.positionMs)
-        assertEquals(2, hydrated.items.map { it.queueEntryId }.toSet().size)
+        assertEquals(
+            2,
+            hydrated.items
+                .map { it.queueEntryId }
+                .toSet()
+                .size,
+        )
         assertTrue(hydrated.items.all { it is PlayableItem.Remote })
     }
 
     @Test
     fun hydrateQueue_nullOrAllDeleted_returnsNull() {
         assertNull(PlaybackHydration.hydrateQueue(null, listOf(song(1))))
-        val gone = QueueSnapshot(
-            currentIndex = 0,
-            positionMs = 0L,
-            items = listOf(PersistedQueueItem.Local(songId = 9L, uriString = "missing"))
-        )
+        val gone =
+            QueueSnapshot(
+                currentIndex = 0,
+                positionMs = 0L,
+                items = listOf(PersistedQueueItem.Local(songId = 9L, uriString = "missing")),
+            )
         assertNull(PlaybackHydration.hydrateQueue(gone, listOf(song(1))))
     }
 }

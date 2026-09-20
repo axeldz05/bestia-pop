@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AlbumTrackNumbersTest {
-
     @Test
     fun encode_singleDiscIsPlainTrack() {
         assertEquals(5, encodeAlbumTrack(5, disc = 1))

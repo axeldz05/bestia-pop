@@ -34,7 +34,6 @@ import org.junit.runner.RunWith
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
 @HostOrchestratedProcessDeathTest
 class LibraryPermissionDeniedHostE2ETest {
-
     @Test
     @HostOrchestratedProcessDeathTest
     fun deniedAudioPermission_firstLaunchKeepsImportPendingAndActivityUsable() {
@@ -46,7 +45,7 @@ class LibraryPermissionDeniedHostE2ETest {
         assertEquals(
             "Host must revoke READ_MEDIA_AUDIO before instrumentation starts",
             PackageManager.PERMISSION_DENIED,
-            context.checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO)
+            context.checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO),
         )
         runBlocking {
             database.clearAllTables()
@@ -88,7 +87,10 @@ class LibraryPermissionDeniedHostE2ETest {
         return null
     }
 
-    private fun await(description: String, condition: () -> Boolean) {
+    private fun await(
+        description: String,
+        condition: () -> Boolean,
+    ) {
         val deadline = SystemClock.elapsedRealtime() + UI_TIMEOUT_MS
         while (SystemClock.elapsedRealtime() < deadline) {
             if (condition()) return

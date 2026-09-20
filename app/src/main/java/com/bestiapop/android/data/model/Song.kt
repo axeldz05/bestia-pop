@@ -12,8 +12,8 @@ import androidx.room.PrimaryKey
         Index(value = ["title"]),
         Index(value = ["album"]),
         Index(value = ["artist", "album"]),
-        Index(value = ["dateAdded"])
-    ]
+        Index(value = ["dateAdded"]),
+    ],
 )
 @Immutable
 data class Song(
@@ -31,7 +31,7 @@ data class Song(
     val lyrics: String? = null,
     val folderPath: String = "",
     val dateAdded: Long = System.currentTimeMillis(),
-    val lastPlayedAt: Long = 0
+    val lastPlayedAt: Long = 0,
 ) : TrackMeta {
     companion object {
         const val UNKNOWN_ARTIST = "Unknown Artist"
@@ -48,4 +48,3 @@ val Song.isSavedRemote: Boolean
 
 val Song.isStreamHistory: Boolean
     get() = uriString.startsWith("remote://stream/") || uriString.startsWith("remote://yt/")
-

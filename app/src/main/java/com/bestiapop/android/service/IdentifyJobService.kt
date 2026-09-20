@@ -29,26 +29,28 @@ class IdentifyJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         IdentifyExecutionLauncher.markRunning(
             IdentifyExecutionBackend.USER_INITIATED_JOB,
-            true
+            true,
         )
         val helper = IdentifyNotificationHelper(this)
         updateNotification(params, helper.buildStarting(ongoing = true))
         notificationCollector?.cancel()
-        notificationCollector = serviceScope.collectIdentifyNotifications(
-            progress = app.processIdentifyRuntime.progress,
-            helper = helper,
-            publish = { notification -> updateNotification(params, notification) }
-        )
-        runner?.cancel()
-        runner = serviceScope.launch {
-            settleIdentifyLifetime(
-                runtime = app.processIdentifyRuntime,
-                backend = IdentifyExecutionBackend.USER_INITIATED_JOB,
-                autoResume = app.shouldAutoResumeDownloads
+        notificationCollector =
+            serviceScope.collectIdentifyNotifications(
+                progress = app.processIdentifyRuntime.progress,
+                helper = helper,
+                publish = { notification -> updateNotification(params, notification) },
             )
-            notificationCollector?.cancel()
-            jobFinished(params, false)
-        }
+        runner?.cancel()
+        runner =
+            serviceScope.launch {
+                settleIdentifyLifetime(
+                    runtime = app.processIdentifyRuntime,
+                    backend = IdentifyExecutionBackend.USER_INITIATED_JOB,
+                    autoResume = app.shouldAutoResumeDownloads,
+                )
+                notificationCollector?.cancel()
+                jobFinished(params, false)
+            }
         return true
     }
 
@@ -60,25 +62,28 @@ class IdentifyJobService : JobService() {
             backend = IdentifyExecutionBackend.USER_INITIATED_JOB,
             userStopped = params.stopReason == JobParameters.STOP_REASON_USER,
             cancelUser = { app.processIdentifyRuntime.cancelUser() },
-            interruptNow = { app.processIdentifyRuntime.interruptNow() }
+            interruptNow = { app.processIdentifyRuntime.interruptNow() },
         )
     }
 
     override fun onDestroy() {
         IdentifyExecutionLauncher.markRunning(
             IdentifyExecutionBackend.USER_INITIATED_JOB,
-            false
+            false,
         )
         serviceScope.cancel()
         super.onDestroy()
     }
 
-    private fun updateNotification(params: JobParameters, notification: Notification) {
+    private fun updateNotification(
+        params: JobParameters,
+        notification: Notification,
+    ) {
         setNotification(
             params,
             IdentifyNotificationHelper.NOTIFICATION_ID,
             notification,
-            JOB_END_NOTIFICATION_POLICY_REMOVE
+            JOB_END_NOTIFICATION_POLICY_REMOVE,
         )
     }
 }

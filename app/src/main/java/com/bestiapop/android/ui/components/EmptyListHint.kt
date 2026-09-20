@@ -27,11 +27,11 @@ fun EmptyListHint(
     iconSize: Dp = 48.dp,
     centered: Boolean = true,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
 ) {
     Box(
         modifier = modifier,
-        contentAlignment = if (centered) Alignment.Center else Alignment.TopStart
+        contentAlignment = if (centered) Alignment.Center else Alignment.TopStart,
     ) {
         Column(horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start) {
             if (icon != null) {
@@ -39,16 +39,17 @@ fun EmptyListHint(
                     imageVector = icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                    modifier = Modifier
-                        .size(iconSize)
-                        .padding(bottom = 8.dp)
+                    modifier =
+                        Modifier
+                            .size(iconSize)
+                            .padding(bottom = 8.dp),
                 )
             }
             Text(
                 text = text,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                textAlign = if (centered) TextAlign.Center else TextAlign.Start
+                textAlign = if (centered) TextAlign.Center else TextAlign.Start,
             )
             if (!subtitle.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))
@@ -56,7 +57,7 @@ fun EmptyListHint(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    textAlign = if (centered) TextAlign.Center else TextAlign.Start
+                    textAlign = if (centered) TextAlign.Center else TextAlign.Start,
                 )
             }
             if (!actionLabel.isNullOrBlank() && onAction != null) {

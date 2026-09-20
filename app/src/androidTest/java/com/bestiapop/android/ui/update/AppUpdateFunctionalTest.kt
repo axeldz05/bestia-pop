@@ -22,9 +22,6 @@ import com.bestiapop.android.data.update.ApkUpdateDownloader
 import com.bestiapop.android.data.update.ApkValidator
 import com.bestiapop.android.data.update.GitHubUpdateClient
 import com.bestiapop.android.testutil.MockWebServerRule
-import java.io.File
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.SocketPolicy
@@ -36,6 +33,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 @LargeTest
@@ -47,9 +47,11 @@ class AppUpdateFunctionalTest {
     val compose = createComposeRule()
 
     private val app: Application
-        get() = InstrumentationRegistry.getInstrumentation()
-            .targetContext
-            .applicationContext as Application
+        get() =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext
+                .applicationContext as Application
     private lateinit var directory: File
 
     @Before
@@ -71,16 +73,18 @@ class AppUpdateFunctionalTest {
             MockResponse()
                 .setResponseCode(200)
                 .setHeader("Content-Type", "application/vnd.android.package-archive")
-                .setBody(okio.Buffer().write(apkBytes))
+                .setBody(okio.Buffer().write(apkBytes)),
         )
-        val installer = RecordingInstaller(
-            destination = File(directory, "valid.apk"),
-            expectedApk = apkBytes
-        )
+        val installer =
+            RecordingInstaller(
+                destination = File(directory, "valid.apk"),
+                expectedApk = apkBytes,
+            )
         val viewModel = createViewModel(installer)
         showUpdateUi(viewModel)
 
-        compose.onNodeWithText("Actualizar a $UPDATE_VERSION")
+        compose
+            .onNodeWithText("Actualizar a $UPDATE_VERSION")
             .performScrollTo()
             .performClick()
         compose.waitUntil(timeoutMillis = ASYNC_TIMEOUT_MS) {
@@ -102,16 +106,18 @@ class AppUpdateFunctionalTest {
                 .setResponseCode(200)
                 .setBody("short")
                 .setHeader("Content-Length", 50)
-                .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END)
+                .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END),
         )
-        val installer = RecordingInstaller(
-            destination = File(directory, "truncated.apk"),
-            expectedApk = "unused".toByteArray()
-        )
+        val installer =
+            RecordingInstaller(
+                destination = File(directory, "truncated.apk"),
+                expectedApk = "unused".toByteArray(),
+            )
         val viewModel = createViewModel(installer)
         showUpdateUi(viewModel)
 
-        compose.onNodeWithText("Actualizar a $UPDATE_VERSION")
+        compose
+            .onNodeWithText("Actualizar a $UPDATE_VERSION")
             .performScrollTo()
             .performClick()
         compose.waitUntil(timeoutMillis = ASYNC_TIMEOUT_MS) {
@@ -134,7 +140,7 @@ class AppUpdateFunctionalTest {
                     AppUpdateDialogs(
                         state = state,
                         onConfirmUpdate = viewModel::confirmUpdate,
-                        onDismiss = viewModel::dismiss
+                        onDismiss = viewModel::dismiss,
                     )
                 }
             }
@@ -143,32 +149,38 @@ class AppUpdateFunctionalTest {
             }
         }
         compose.waitUntil(timeoutMillis = ASYNC_TIMEOUT_MS) {
-            compose.onAllNodesWithText("Actualizar a $UPDATE_VERSION")
+            compose
+                .onAllNodesWithText("Actualizar a $UPDATE_VERSION")
                 .fetchSemanticsNodes(atLeastOneRootRequired = false)
                 .isNotEmpty()
         }
-        compose.onNodeWithText("Actualizar a $UPDATE_VERSION")
+        compose
+            .onNodeWithText("Actualizar a $UPDATE_VERSION")
             .performScrollTo()
             .assertIsDisplayed()
     }
 
     private fun createViewModel(installer: RecordingInstaller): AppUpdateViewModel {
-        val apiHttp = OkHttpClient.Builder()
-            .callTimeout(2, TimeUnit.SECONDS)
-            .addInterceptor { chain ->
-                val original = chain.request()
-                val localUrl = server.url(original.url.encodedPath)
-                    .newBuilder()
-                    .encodedQuery(original.url.encodedQuery)
-                    .build()
-                chain.proceed(original.newBuilder().url(localUrl).build())
-            }
-            .build()
-        val client = GitHubUpdateClient(
-            repository = "owner/repository",
-            userAgent = "BestiaPop-Functional-Test",
-            http = apiHttp
-        )
+        val apiHttp =
+            OkHttpClient
+                .Builder()
+                .callTimeout(2, TimeUnit.SECONDS)
+                .addInterceptor { chain ->
+                    val original = chain.request()
+                    val localUrl =
+                        server
+                            .url(original.url.encodedPath)
+                            .newBuilder()
+                            .encodedQuery(original.url.encodedQuery)
+                            .build()
+                    chain.proceed(original.newBuilder().url(localUrl).build())
+                }.build()
+        val client =
+            GitHubUpdateClient(
+                repository = "owner/repository",
+                userAgent = "BestiaPop-Functional-Test",
+                http = apiHttp,
+            )
         return AppUpdateViewModel(
             app,
             AppUpdateDependencies(
@@ -180,8 +192,8 @@ class AppUpdateFunctionalTest {
                 installer = installer,
                 currentVersionCode = BuildConfig.VERSION_CODE,
                 currentVersionName = BuildConfig.VERSION_NAME,
-                userAgent = "BestiaPop-Functional-Test"
-            )
+                userAgent = "BestiaPop-Functional-Test",
+            ),
         )
     }
 
@@ -203,30 +215,34 @@ class AppUpdateFunctionalTest {
                         "browser_download_url": "${server.url("/fixture.apk")}"
                       }]
                     }]
-                    """.trimIndent()
-                )
+                    """.trimIndent(),
+                ),
         )
     }
 
     private inner class RecordingInstaller(
         val destination: File,
-        expectedApk: ByteArray
+        expectedApk: ByteArray,
     ) : AppUpdateInstallerBoundary {
         val launchCount = AtomicInteger()
-        private val http = OkHttpClient.Builder()
-            .callTimeout(3, TimeUnit.SECONDS)
-            .readTimeout(2, TimeUnit.SECONDS)
-            .build()
-        private val downloader = ApkUpdateDownloader(
-            http = http,
-            validator = ApkValidator { apk ->
-                runCatching {
-                    check(apk.readBytes().contentEquals(expectedApk)) {
-                        "El APK funcional no coincide con el fixture"
-                    }
-                }
-            }
-        )
+        private val http =
+            OkHttpClient
+                .Builder()
+                .callTimeout(3, TimeUnit.SECONDS)
+                .readTimeout(2, TimeUnit.SECONDS)
+                .build()
+        private val downloader =
+            ApkUpdateDownloader(
+                http = http,
+                validator =
+                    ApkValidator { apk ->
+                        runCatching {
+                            check(apk.readBytes().contentEquals(expectedApk)) {
+                                "El APK funcional no coincide con el fixture"
+                            }
+                        }
+                    },
+            )
 
         override fun canInstallPackages(context: Context): Boolean = true
 
@@ -237,15 +253,19 @@ class AppUpdateFunctionalTest {
             url: String,
             dest: File,
             userAgent: String,
-            onProgress: (Float?) -> Unit
+            onProgress: (Float?) -> Unit,
         ): Result<File> = downloader.download(url, dest, userAgent, onProgress)
 
         override fun unknownSourcesIntent(context: Context): Intent = Intent()
 
-        override fun launchInstaller(context: Context, apk: File): Result<Unit> = runCatching {
-            check(apk == destination && apk.exists())
-            launchCount.incrementAndGet()
-        }
+        override fun launchInstaller(
+            context: Context,
+            apk: File,
+        ): Result<Unit> =
+            runCatching {
+                check(apk == destination && apk.exists())
+                launchCount.incrementAndGet()
+            }
     }
 
     private class MemoryStore : AppUpdateStore {
@@ -259,10 +279,12 @@ class AppUpdateFunctionalTest {
             checkedAt = epochMs
         }
 
-        override suspend fun cachedNotes(versionName: String): String? =
-            notes.takeIf { notesVersion == versionName }
+        override suspend fun cachedNotes(versionName: String): String? = notes.takeIf { notesVersion == versionName }
 
-        override suspend fun setCachedNotes(versionName: String, notes: String) {
+        override suspend fun setCachedNotes(
+            versionName: String,
+            notes: String,
+        ) {
             notesVersion = versionName
             this.notes = notes
         }

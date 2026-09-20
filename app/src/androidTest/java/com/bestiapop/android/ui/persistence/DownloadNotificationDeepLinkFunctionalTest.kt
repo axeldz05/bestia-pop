@@ -38,10 +38,11 @@ class DownloadNotificationDeepLinkFunctionalTest {
     private val cleanStateRule = MainActivityStateRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(cleanStateRule)
-        .around(composeRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(cleanStateRule)
+            .around(composeRule)
 
     @Test
     fun downloadNotificationPendingIntent_opensDownloadsTab() {
@@ -49,9 +50,10 @@ class DownloadNotificationDeepLinkFunctionalTest {
         val context = instrumentation.targetContext
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         val helper = DownloadNotificationHelper(context)
-        val scenario = ActivityScenario.launch<MainActivity>(
-            Intent(context, MainActivity::class.java)
-        )
+        val scenario =
+            ActivityScenario.launch<MainActivity>(
+                Intent(context, MainActivity::class.java),
+            )
         lateinit var launchedActivity: MainActivity
         scenario.onActivity { launchedActivity = it }
 
@@ -84,12 +86,12 @@ class DownloadNotificationDeepLinkFunctionalTest {
         }
     }
 
-    private fun selectedDownloadsTabs() = composeRule
-        .onAllNodes(
-            isSelected() and hasAnyDescendant(hasContentDescription("Descargas")),
-            useUnmergedTree = true
-        )
-        .fetchSemanticsNodes(atLeastOneRootRequired = false)
+    private fun selectedDownloadsTabs() =
+        composeRule
+            .onAllNodes(
+                isSelected() and hasAnyDescendant(hasContentDescription("Descargas")),
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes(atLeastOneRootRequired = false)
 
     private fun awaitActivitiesDestroyed(launchedActivity: MainActivity) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -114,31 +116,35 @@ class DownloadNotificationDeepLinkFunctionalTest {
             .distinct()
     }
 
-    private fun activeDownload() = ActiveDownload(
-        id = "instrumented|download",
-        source = ActiveDownloadSource.CATALOG,
-        candidates = listOf(
-            OnlineCatalogTrack(
-                identity = TrackIdentity(
-                    title = "Instrumented download",
-                    artist = "BestiaPop"
+    private fun activeDownload() =
+        ActiveDownload(
+            id = "instrumented|download",
+            source = ActiveDownloadSource.CATALOG,
+            candidates =
+                listOf(
+                    OnlineCatalogTrack(
+                        identity =
+                            TrackIdentity(
+                                title = "Instrumented download",
+                                artist = "BestiaPop",
+                            ),
+                        id = "instrumented-download",
+                        provider = "Test",
+                    ),
                 ),
-                id = "instrumented-download",
-                provider = "Test"
-            )
-        ),
-        state = CandidateDownloadState.DOWNLOADING,
-        progressPercent = 25
-    )
+            state = CandidateDownloadState.DOWNLOADING,
+            progressPercent = 25,
+        )
 
     private companion object {
-        val LIVE_STAGES = listOf(
-            Stage.CREATED,
-            Stage.STARTED,
-            Stage.RESUMED,
-            Stage.PAUSED,
-            Stage.STOPPED,
-            Stage.RESTARTED
-        )
+        val LIVE_STAGES =
+            listOf(
+                Stage.CREATED,
+                Stage.STARTED,
+                Stage.RESUMED,
+                Stage.PAUSED,
+                Stage.STOPPED,
+                Stage.RESTARTED,
+            )
     }
 }

@@ -21,16 +21,16 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 @Category(MediumTest::class)
 class NetworkPreferencesRepositoryTest {
-
     private lateinit var context: Context
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        val prefs = context.getSharedPreferences(
-            NetworkPreferencesRepository.PREFS_NAME,
-            Context.MODE_PRIVATE
-        )
+        val prefs =
+            context.getSharedPreferences(
+                NetworkPreferencesRepository.PREFS_NAME,
+                Context.MODE_PRIVATE,
+            )
         prefs.edit().clear().commit()
         CrashReporter.isEnabled = true
     }
@@ -43,19 +43,20 @@ class NetworkPreferencesRepositoryTest {
     }
 
     @Test
-    fun setOfflineMode_updatesPreferencesAndCrashReporter() = runTest {
-        val repository = NetworkPreferencesRepository(context)
+    fun setOfflineMode_updatesPreferencesAndCrashReporter() =
+        runTest {
+            val repository = NetworkPreferencesRepository(context)
 
-        repository.setOfflineMode(true)
-        assertTrue(repository.initialOfflineMode)
-        assertTrue(NetworkPreferencesRepository.isOfflineModeSync(context))
-        assertFalse(CrashReporter.isEnabled)
-        assertEquals(true, repository.offlineModeFlow.first())
+            repository.setOfflineMode(true)
+            assertTrue(repository.initialOfflineMode)
+            assertTrue(NetworkPreferencesRepository.isOfflineModeSync(context))
+            assertFalse(CrashReporter.isEnabled)
+            assertEquals(true, repository.offlineModeFlow.first())
 
-        repository.setOfflineMode(false)
-        assertFalse(repository.initialOfflineMode)
-        assertFalse(NetworkPreferencesRepository.isOfflineModeSync(context))
-        assertTrue(CrashReporter.isEnabled)
-        assertEquals(false, repository.offlineModeFlow.first())
-    }
+            repository.setOfflineMode(false)
+            assertFalse(repository.initialOfflineMode)
+            assertFalse(NetworkPreferencesRepository.isOfflineModeSync(context))
+            assertTrue(CrashReporter.isEnabled)
+            assertEquals(false, repository.offlineModeFlow.first())
+        }
 }

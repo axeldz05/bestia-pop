@@ -12,5 +12,5 @@ data class DisplayLyricLine(
     val timeMs: Long? = null,
     val primaryText: String = "",
     val secondaryText: String? = null,
-    val formattedTime: String? = null
+    val formattedTime: String? = null,
 )

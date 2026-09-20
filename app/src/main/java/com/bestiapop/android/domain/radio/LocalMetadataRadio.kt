@@ -3,24 +3,23 @@ package com.bestiapop.android.domain.radio
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlin.math.abs
 import kotlin.random.Random
-import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Suggests similar library tracks from metadata (artist / genre / year / album / co-playlist).
  */
 class LocalMetadataRadio(
     private val random: Random = Random.Default,
-    private val maxPerAlbum: Int = DEFAULT_MAX_PER_ALBUM
+    private val maxPerAlbum: Int = DEFAULT_MAX_PER_ALBUM,
 ) {
-
     fun suggest(
         seed: PlayableItem,
         library: List<Song>,
         excludeKeys: Set<String>,
         limit: Int,
-        coPlaylistSongIds: Set<Long> = emptySet()
+        coPlaylistSongIds: Set<Long> = emptySet(),
     ): List<PlayableItem.Local> {
         if (limit <= 0 || library.isEmpty()) return emptyList()
 
@@ -74,8 +73,7 @@ class LocalMetadataRadio(
                         key != seedKey &&
                         key !in excludeKeys &&
                         it.uriString !in excludeKeys
-                }
-                .shuffled(random)
+                }.shuffled(random)
                 .take(limit)
                 .map { it.toPlayable() }
                 .toList()
@@ -90,8 +88,10 @@ class LocalMetadataRadio(
             val shuffled = bucket.shuffled(random)
             for (entry in shuffled) {
                 if (picked.size >= limit) break
-                val albumKey = TrackMatchKeys.normalize(entry.song.album)
-                    .ifEmpty { entry.song.uriString }
+                val albumKey =
+                    TrackMatchKeys
+                        .normalize(entry.song.album)
+                        .ifEmpty { entry.song.uriString }
                 val count = albumCounts[albumKey] ?: 0
                 if (count >= maxPerAlbum) continue
                 albumCounts[albumKey] = count + 1
@@ -110,7 +110,10 @@ class LocalMetadataRadio(
         return norm
     }
 
-    private data class ScoredSong(val song: Song, val score: Int)
+    private data class ScoredSong(
+        val song: Song,
+        val score: Int,
+    )
 
     companion object {
         /** Prefer same artist over same album (diversity across albums). */
@@ -122,12 +125,13 @@ class LocalMetadataRadio(
         const val YEAR_WINDOW = 5
         const val DEFAULT_MAX_PER_ALBUM = 2
 
-        private val GENERIC_GENRES = setOf(
-            "unknown genre",
-            "music",
-            "unknown",
-            "various",
-            "various artists"
-        )
+        private val GENERIC_GENRES =
+            setOf(
+                "unknown genre",
+                "music",
+                "unknown",
+                "various",
+                "various artists",
+            )
     }
 }

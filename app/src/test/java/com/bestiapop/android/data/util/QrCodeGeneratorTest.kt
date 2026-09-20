@@ -15,13 +15,13 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class QrCodeGeneratorTest {
-
     @Test
     fun generateBitmap_validContent_createsExpectedDimensions() {
-        val bitmap = QrCodeGenerator.generateBitmap(
-            content = "https://github.com/axeldz05/bestia-pop/releases/latest",
-            sizePx = 256
-        )
+        val bitmap =
+            QrCodeGenerator.generateBitmap(
+                content = "https://github.com/axeldz05/bestia-pop/releases/latest",
+                sizePx = 256,
+            )
 
         assertNotNull(bitmap)
         val nonNullBitmap: Bitmap = requireNotNull(bitmap)
@@ -45,12 +45,13 @@ class QrCodeGeneratorTest {
     fun generateBitmap_hasCustomForegroundAndBackgroundColors() {
         val fg = Color.RED
         val bg = Color.BLUE
-        val bitmap = QrCodeGenerator.generateBitmap(
-            content = "test-qr",
-            sizePx = 100,
-            foregroundColor = fg,
-            backgroundColor = bg
-        )
+        val bitmap =
+            QrCodeGenerator.generateBitmap(
+                content = "test-qr",
+                sizePx = 100,
+                foregroundColor = fg,
+                backgroundColor = bg,
+            )
 
         assertNotNull(bitmap)
         val nonNullBitmap: Bitmap = requireNotNull(bitmap)

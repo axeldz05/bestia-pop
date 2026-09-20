@@ -11,7 +11,7 @@ data class RadioPlaybackState(
     val active: Boolean = false,
     val loading: Boolean = false,
     val mode: RadioMode = RadioMode.KNOWN,
-    val statusLabel: String? = null
+    val statusLabel: String? = null,
 )
 
 /**
@@ -24,5 +24,5 @@ data class NowPlayingTransportActions(
     val onSkipPrevious: () -> Unit,
     val onToggleShuffle: () -> Unit,
     val onToggleRepeatMode: () -> Unit,
-    val onSeek: (Long) -> Unit
+    val onSeek: (Long) -> Unit,
 )

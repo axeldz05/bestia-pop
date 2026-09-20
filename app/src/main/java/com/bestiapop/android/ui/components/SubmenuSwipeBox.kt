@@ -59,14 +59,14 @@ fun SubmenuSwipeBox(
     onSwipeRight: (() -> Unit)?,
     modifier: Modifier = Modifier,
     canSwipeBack: Boolean = true,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) = SubmenuSwipeBox(
     onSwipeRight = onSwipeRight,
     onSwipeLeft = null,
     modifier = modifier,
     swipeRightEnabled = canSwipeBack && settings.swipeBackEnabled,
     swipeLeftEnabled = false,
-    content = content
+    content = content,
 )
 
 /**
@@ -81,7 +81,7 @@ fun SubmenuSwipeBox(
     modifier: Modifier = Modifier,
     canSwipeBack: Boolean = true,
     canExecuteAction: Boolean = false,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) = SubmenuSwipeBox(
     onSwipeRight = onSwipeRight,
     onSwipeLeft = onSwipeLeft,
@@ -89,7 +89,7 @@ fun SubmenuSwipeBox(
     swipeRightEnabled = canSwipeBack && settings.swipeBackEnabled,
     swipeLeftEnabled = canExecuteAction && settings.swipeLeftAction != SubmenuSwipeAction.DISABLED,
     swipeLeftAction = settings.swipeLeftAction,
-    content = content
+    content = content,
 )
 
 /**
@@ -104,7 +104,7 @@ fun SubmenuSwipeBox(
     swipeRightEnabled: Boolean = true,
     swipeLeftEnabled: Boolean = true,
     swipeLeftAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
@@ -120,69 +120,75 @@ fun SubmenuSwipeBox(
     val canSwipeLeft = swipeLeftEnabled && onSwipeLeft != null && swipeLeftAction != SubmenuSwipeAction.DISABLED
 
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .pointerInput(canSwipeRight, canSwipeLeft) {
-                if (!canSwipeRight && !canSwipeLeft) return@pointerInput
+        modifier =
+            modifier
+                .fillMaxSize()
+                .pointerInput(canSwipeRight, canSwipeLeft) {
+                    if (!canSwipeRight && !canSwipeLeft) return@pointerInput
 
-                detectHorizontalDragGestures(
-                    onDragStart = {
-                        hasTickedThreshold = false
-                    },
-                    onDragEnd = {
-                        val currentOffset = offsetX.value
-                        coroutineScope.launch {
-                            if (currentOffset >= thresholdPx && canSwipeRight) {
-                                onSwipeRight?.invoke()
-                            } else if (currentOffset <= -thresholdPx && canSwipeLeft) {
-                                onSwipeLeft?.invoke()
-                            }
-                            offsetX.animateTo(
-                                targetValue = 0f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                )
-                            )
-                        }
-                    },
-                    onDragCancel = {
-                        coroutineScope.launch {
-                            offsetX.animateTo(
-                                targetValue = 0f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                )
-                            )
-                        }
-                    },
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        val newOffset = (offsetX.value + dragAmount).let { raw ->
-                            val bounded = when {
-                                raw > 0 && !canSwipeRight -> 0f
-                                raw < 0 && !canSwipeLeft -> 0f
-                                else -> raw
-                            }
-                            bounded.coerceIn(-maxDragPx, maxDragPx)
-                        }
-                        coroutineScope.launch {
-                            offsetX.snapTo(newOffset)
-                        }
-
-                        val reachedThreshold = (newOffset >= thresholdPx && canSwipeRight) ||
-                            (newOffset <= -thresholdPx && canSwipeLeft)
-
-                        if (reachedThreshold && !hasTickedThreshold) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            hasTickedThreshold = true
-                        } else if (!reachedThreshold && hasTickedThreshold) {
+                    detectHorizontalDragGestures(
+                        onDragStart = {
                             hasTickedThreshold = false
-                        }
-                    }
-                )
-            }
+                        },
+                        onDragEnd = {
+                            val currentOffset = offsetX.value
+                            coroutineScope.launch {
+                                if (currentOffset >= thresholdPx && canSwipeRight) {
+                                    onSwipeRight?.invoke()
+                                } else if (currentOffset <= -thresholdPx && canSwipeLeft) {
+                                    onSwipeLeft?.invoke()
+                                }
+                                offsetX.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec =
+                                        spring(
+                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                            stiffness = Spring.StiffnessMedium,
+                                        ),
+                                )
+                            }
+                        },
+                        onDragCancel = {
+                            coroutineScope.launch {
+                                offsetX.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec =
+                                        spring(
+                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                            stiffness = Spring.StiffnessMedium,
+                                        ),
+                                )
+                            }
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            val newOffset =
+                                (offsetX.value + dragAmount).let { raw ->
+                                    val bounded =
+                                        when {
+                                            raw > 0 && !canSwipeRight -> 0f
+                                            raw < 0 && !canSwipeLeft -> 0f
+                                            else -> raw
+                                        }
+                                    bounded.coerceIn(-maxDragPx, maxDragPx)
+                                }
+                            coroutineScope.launch {
+                                offsetX.snapTo(newOffset)
+                            }
+
+                            val reachedThreshold =
+                                (newOffset >= thresholdPx && canSwipeRight) ||
+                                    (newOffset <= -thresholdPx && canSwipeLeft)
+
+                            if (reachedThreshold && !hasTickedThreshold) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                hasTickedThreshold = true
+                            } else if (!reachedThreshold && hasTickedThreshold) {
+                                hasTickedThreshold = false
+                            }
+                        },
+                    )
+                },
     ) {
         val currentOffset = offsetX.value
 
@@ -191,42 +197,45 @@ fun SubmenuSwipeBox(
             val progress = (currentOffset / thresholdPx).coerceIn(0f, 1f)
             val reached = currentOffset >= thresholdPx
             Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 16.dp)
-                    .graphicsLayer {
-                        alpha = progress
-                        scaleX = 0.8f + (0.2f * progress)
-                        scaleY = 0.8f + (0.2f * progress)
-                    }
+                modifier =
+                    Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 16.dp)
+                        .graphicsLayer {
+                            alpha = progress
+                            scaleX = 0.8f + (0.2f * progress)
+                            scaleY = 0.8f + (0.2f * progress)
+                        },
             ) {
                 Surface(
                     shape = RoundedCornerShape(24.dp),
-                    color = if (reached) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
-                    },
-                    contentColor = if (reached) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    shadowElevation = 4.dp
+                    color =
+                        if (reached) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                        },
+                    contentColor =
+                        if (reached) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    shadowElevation = 4.dp,
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Volver",
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(20.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Volver",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         )
                     }
                 }
@@ -238,42 +247,45 @@ fun SubmenuSwipeBox(
             val progress = (-currentOffset / thresholdPx).coerceIn(0f, 1f)
             val reached = -currentOffset >= thresholdPx
             Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 16.dp)
-                    .graphicsLayer {
-                        alpha = progress
-                        scaleX = 0.8f + (0.2f * progress)
-                        scaleY = 0.8f + (0.2f * progress)
-                    }
+                modifier =
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 16.dp)
+                        .graphicsLayer {
+                            alpha = progress
+                            scaleX = 0.8f + (0.2f * progress)
+                            scaleY = 0.8f + (0.2f * progress)
+                        },
             ) {
                 Surface(
                     shape = RoundedCornerShape(24.dp),
-                    color = if (reached) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
-                    },
-                    contentColor = if (reached) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    shadowElevation = 4.dp
+                    color =
+                        if (reached) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                        },
+                    contentColor =
+                        if (reached) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    shadowElevation = 4.dp,
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = swipeLeftAction.label(),
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Icon(
                             imageVector = swipeLeftAction.icon,
                             contentDescription = swipeLeftAction.label(),
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
@@ -282,9 +294,10 @@ fun SubmenuSwipeBox(
 
         // Main content translated horizontally
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .offset { IntOffset(currentOffset.roundToInt(), 0) }
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .offset { IntOffset(currentOffset.roundToInt(), 0) },
         ) {
             content()
         }
@@ -292,13 +305,14 @@ fun SubmenuSwipeBox(
 }
 
 val SubmenuSwipeAction.icon: ImageVector
-    get() = when (this) {
-        SubmenuSwipeAction.ENQUEUE_ALL -> Icons.AutoMirrored.Filled.QueueMusic
-        SubmenuSwipeAction.PLAY_NEXT -> Icons.Default.SkipNext
-        SubmenuSwipeAction.START_RADIO -> Icons.Default.Radio
-        SubmenuSwipeAction.SEARCH_SIMILAR -> Icons.Default.Explore
-        SubmenuSwipeAction.ADD_TO_PLAYLIST -> Icons.AutoMirrored.Filled.PlaylistAdd
-        SubmenuSwipeAction.DISABLED -> Icons.AutoMirrored.Filled.QueueMusic
-    }
+    get() =
+        when (this) {
+            SubmenuSwipeAction.ENQUEUE_ALL -> Icons.AutoMirrored.Filled.QueueMusic
+            SubmenuSwipeAction.PLAY_NEXT -> Icons.Default.SkipNext
+            SubmenuSwipeAction.START_RADIO -> Icons.Default.Radio
+            SubmenuSwipeAction.SEARCH_SIMILAR -> Icons.Default.Explore
+            SubmenuSwipeAction.ADD_TO_PLAYLIST -> Icons.AutoMirrored.Filled.PlaylistAdd
+            SubmenuSwipeAction.DISABLED -> Icons.AutoMirrored.Filled.QueueMusic
+        }
 
 fun actionIconFor(action: SubmenuSwipeAction): ImageVector = action.icon

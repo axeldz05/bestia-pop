@@ -21,13 +21,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun rememberImagePicker(
-    onImagePicked: (String) -> Unit
-): ManagedActivityResultLauncher<String, Uri?> = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.GetContent()
-) { uri ->
-    uri?.let { onImagePicked(it.toString()) }
-}
+fun rememberImagePicker(onImagePicked: (String) -> Unit): ManagedActivityResultLauncher<String, Uri?> =
+    rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        uri?.let { onImagePicked(it.toString()) }
+    }
 
 @Composable
 fun ArtworkPickerBlock(
@@ -40,24 +39,24 @@ fun ArtworkPickerBlock(
         ArtworkThumbnail(
             artworkUri = uri,
             size = 120.dp,
-            cornerRadius = 12.dp
+            cornerRadius = 12.dp,
         )
     },
     buttonLeading: @Composable () -> Unit = {
         Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
         Spacer(modifier = Modifier.padding(horizontal = 4.dp))
     },
-    trailing: @Composable () -> Unit = {}
+    trailing: @Composable () -> Unit = {},
 ) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(spacing)
+        verticalArrangement = Arrangement.spacedBy(spacing),
     ) {
         preview(artworkUri)
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             OutlinedButton(onClick = onPick) {
                 buttonLeading()

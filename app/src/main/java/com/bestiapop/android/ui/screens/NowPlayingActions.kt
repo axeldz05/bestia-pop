@@ -20,7 +20,7 @@ data class NowPlayingNavigationActions(
     val onGoToArtist: (String) -> Unit,
     val onGoToLocalPlaylist: (Long) -> Unit,
     val onGoToListenBrainz: (String) -> Unit,
-    val onGoToCfRecommendations: () -> Unit
+    val onGoToCfRecommendations: () -> Unit,
 )
 
 /**
@@ -33,22 +33,23 @@ data class NowPlayingSongActions(
     val onEditSong: () -> Unit,
     val onEditLyrics: () -> Unit,
     val onEditAlbum: () -> Unit,
-    val onStartRadio: () -> Unit
+    val onStartRadio: () -> Unit,
 ) {
     companion object {
         fun from(
             dialogs: SongActionDialogsController,
             localSong: Song?,
             onEditAlbum: () -> Unit,
-            onStartRadio: () -> Unit
-        ): NowPlayingSongActions = NowPlayingSongActions(
-            onAddToPlaylist = { localSong?.let(dialogs.onAddToPlaylist) },
-            onIdentify = { localSong?.let(dialogs.onIdentify) },
-            onEditSong = { localSong?.let(dialogs.onEdit) },
-            onEditLyrics = { localSong?.let(dialogs.onEditLyrics) },
-            onEditAlbum = onEditAlbum,
-            onStartRadio = onStartRadio
-        )
+            onStartRadio: () -> Unit,
+        ): NowPlayingSongActions =
+            NowPlayingSongActions(
+                onAddToPlaylist = { localSong?.let(dialogs.onAddToPlaylist) },
+                onIdentify = { localSong?.let(dialogs.onIdentify) },
+                onEditSong = { localSong?.let(dialogs.onEdit) },
+                onEditLyrics = { localSong?.let(dialogs.onEditLyrics) },
+                onEditAlbum = onEditAlbum,
+                onStartRadio = onStartRadio,
+            )
     }
 }
 
@@ -58,7 +59,7 @@ data class NowPlayingSongActions(
 @Immutable
 data class NowPlayingMenuActions(
     val navigation: NowPlayingNavigationActions,
-    val song: NowPlayingSongActions
+    val song: NowPlayingSongActions,
 )
 
 /**
@@ -74,7 +75,7 @@ fun NowPlayingActionsMenu(
     discoverOrigin: DiscoverPlaybackOrigin,
     isLocal: Boolean,
     canEditAlbum: Boolean,
-    actions: NowPlayingMenuActions
+    actions: NowPlayingMenuActions,
 ) {
     NowPlayingActionsMenu(
         expanded = expanded,
@@ -95,7 +96,7 @@ fun NowPlayingActionsMenu(
         onEditSong = actions.song.onEditSong,
         onEditLyrics = actions.song.onEditLyrics,
         onEditAlbum = actions.song.onEditAlbum,
-        onStartRadio = actions.song.onStartRadio
+        onStartRadio = actions.song.onStartRadio,
     )
 }
 
@@ -122,11 +123,11 @@ fun NowPlayingActionsMenu(
     onEditSong: () -> Unit,
     onEditLyrics: () -> Unit,
     onEditAlbum: () -> Unit,
-    onStartRadio: () -> Unit
+    onStartRadio: () -> Unit,
 ) {
     DropdownMenu(
         expanded = expanded,
-        onDismissRequest = onDismiss
+        onDismissRequest = onDismiss,
     ) {
         if (matchedAlbumName != null) {
             DropdownMenuItem(
@@ -134,7 +135,7 @@ fun NowPlayingActionsMenu(
                 onClick = {
                     onDismiss()
                     onGoToAlbum(matchedAlbumName)
-                }
+                },
             )
         }
         if (matchedArtistName != null) {
@@ -143,7 +144,7 @@ fun NowPlayingActionsMenu(
                 onClick = {
                     onDismiss()
                     onGoToArtist(matchedArtistName)
-                }
+                },
             )
         }
         containingPlaylists.forEach { playlist ->
@@ -152,7 +153,7 @@ fun NowPlayingActionsMenu(
                 onClick = {
                     onDismiss()
                     onGoToLocalPlaylist(playlist.id)
-                }
+                },
             )
         }
         when (val origin = discoverOrigin) {
@@ -163,19 +164,23 @@ fun NowPlayingActionsMenu(
                     onClick = {
                         onDismiss()
                         onGoToListenBrainz(origin.mbid)
-                    }
+                    },
                 )
             }
+
             DiscoverPlaybackOrigin.CfRecommendations -> {
                 DropdownMenuItem(
                     text = { Text("Ir a Recomendados") },
                     onClick = {
                         onDismiss()
                         onGoToCfRecommendations()
-                    }
+                    },
                 )
             }
-            DiscoverPlaybackOrigin.None -> Unit
+
+            DiscoverPlaybackOrigin.None -> {
+                Unit
+            }
         }
         if (isLocal) {
             SongOverflowMenuItems(
@@ -183,7 +188,7 @@ fun NowPlayingActionsMenu(
                 onAddToPlaylist = onAddToPlaylist,
                 onIdentify = onIdentify,
                 onEditMetadata = onEditSong,
-                onEditLyrics = onEditLyrics
+                onEditLyrics = onEditLyrics,
             )
             if (canEditAlbum) {
                 DropdownMenuItem(
@@ -191,7 +196,7 @@ fun NowPlayingActionsMenu(
                     onClick = {
                         onDismiss()
                         onEditAlbum()
-                    }
+                    },
                 )
             }
         }
@@ -200,7 +205,7 @@ fun NowPlayingActionsMenu(
             onClick = {
                 onDismiss()
                 onStartRadio()
-            }
+            },
         )
     }
 }

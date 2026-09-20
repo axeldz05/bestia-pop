@@ -9,7 +9,10 @@ import com.bestiapop.android.data.util.looksLikeStoragePath
  * Essential missing/placeholder identity: title, artist, album, artwork.
  * Year and track number are not gaps — import/WiFi identify does not look them up.
  */
-fun isWeakIdentityTitle(artist: String, title: String): Boolean {
+fun isWeakIdentityTitle(
+    artist: String,
+    title: String,
+): Boolean {
     val trimmed = title.trim()
     if (trimmed.isEmpty()) return true
     if (trimmed.startsWith("-") || trimmed.startsWith("_")) return true
@@ -23,28 +26,30 @@ fun gapApplyFields(
     artist: String,
     title: String,
     album: String,
-    artworkUri: String?
-): IdentifyApplyFields = IdentifyApplyFields(
-    artwork = !SongPathNormalizer.hasUsableArtwork(artworkUri),
-    title = isWeakIdentityTitle(artist, title),
-    artist = IdentifyRanking.isPlaceholderArtist(artist),
-    album = IdentifyRanking.isGenericAlbum(album),
-    year = false,
-    trackNumber = false
-)
+    artworkUri: String?,
+): IdentifyApplyFields =
+    IdentifyApplyFields(
+        artwork = !SongPathNormalizer.hasUsableArtwork(artworkUri),
+        title = isWeakIdentityTitle(artist, title),
+        artist = IdentifyRanking.isPlaceholderArtist(artist),
+        album = IdentifyRanking.isGenericAlbum(album),
+        year = false,
+        trackNumber = false,
+    )
 
-fun gapApplyFields(song: Song): IdentifyApplyFields = gapApplyFields(
-    artist = song.artist,
-    title = song.title,
-    album = song.album,
-    artworkUri = song.artworkUri
-)
+fun gapApplyFields(song: Song): IdentifyApplyFields =
+    gapApplyFields(
+        artist = song.artist,
+        title = song.title,
+        album = song.album,
+        artworkUri = song.artworkUri,
+    )
 
 fun needsGapIdentify(
     artist: String,
     title: String,
     album: String,
-    artworkUri: String?
+    artworkUri: String?,
 ): Boolean = gapApplyFields(artist, title, album, artworkUri).hasAny
 
 fun needsGapIdentify(song: Song): Boolean = gapApplyFields(song).hasAny
@@ -52,7 +57,10 @@ fun needsGapIdentify(song: Song): Boolean = gapApplyFields(song).hasAny
 /**
  * Evaluates whether [song] has missing, placeholder, or noisy metadata specifically for the fields enabled in [fields].
  */
-fun songHasGapsForFields(song: Song, fields: IdentifyApplyFields): Boolean {
+fun songHasGapsForFields(
+    song: Song,
+    fields: IdentifyApplyFields,
+): Boolean {
     if (fields.artwork && !SongPathNormalizer.hasUsableArtwork(song.artworkUri)) return true
     if (fields.title) {
         if (isWeakIdentityTitle(song.artist, song.title)) return true
@@ -69,8 +77,10 @@ fun songHasGapsForFields(song: Song, fields: IdentifyApplyFields): Boolean {
 /**
  * Evaluates whether [song] has missing, placeholder, or noisy metadata in fields OTHER than artwork.
  */
-fun songHasOtherGapsThanArtwork(song: Song, fields: IdentifyApplyFields): Boolean {
+fun songHasOtherGapsThanArtwork(
+    song: Song,
+    fields: IdentifyApplyFields,
+): Boolean {
     val nonArtworkFields = fields.copy(artwork = false)
     return nonArtworkFields.hasAny && songHasGapsForFields(song, nonArtworkFields)
 }
-

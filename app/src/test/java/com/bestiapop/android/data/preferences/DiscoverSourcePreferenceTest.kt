@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class DiscoverSourcePreferenceTest {
-
     @Test
     fun parseDiscoverSourcePreference_validValues() {
         assertEquals(DiscoverSourcePreference.BOTH, parseDiscoverSourcePreference("BOTH"))

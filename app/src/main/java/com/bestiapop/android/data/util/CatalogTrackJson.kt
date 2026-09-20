@@ -5,8 +5,10 @@ import org.json.JSONObject
 
 /** Shared JSON encode/decode for [OnlineCatalogTrack] snapshots (downloads + identify review). */
 object CatalogTrackJson {
-
-    fun encode(track: OnlineCatalogTrack, includeAudioUrl: Boolean = true): JSONObject =
+    fun encode(
+        track: OnlineCatalogTrack,
+        includeAudioUrl: Boolean = true,
+    ): JSONObject =
         JSONObject().apply {
             put("id", track.id)
             TrackIdentityJson.putInto(this, track.identity)
@@ -21,6 +23,6 @@ object CatalogTrackJson {
             id = obj.optString("id", ""),
             audioUrl = obj.optString("audioUrl", ""),
             provider = obj.optString("provider", "YouTube"),
-            year = obj.optInt("year", 0)
+            year = obj.optInt("year", 0),
         )
 }

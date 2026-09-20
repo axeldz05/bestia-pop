@@ -23,13 +23,13 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @SmallTest
 class LibraryBrowseFunctionalTest {
-
     private val composeTestRule = createComposeRule()
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeTestRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeTestRule)
 
     @Test
     fun filterChips_singleSelection_projectsBrowseFilter() {
@@ -41,7 +41,7 @@ class LibraryBrowseFunctionalTest {
                 onSelect = {
                     current = it
                     selected = it
-                }
+                },
             )
         }
 

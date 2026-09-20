@@ -7,15 +7,15 @@ import org.junit.Assert.assertSame
 import org.junit.Test
 
 class PlaybackFallbackPlannerTest {
-
     @Test
     fun circularPlan_wrapsFromSelectedIndexInQueueOrder() {
-        val items = listOf(
-            remote("A"),
-            local("B"),
-            remote("C"),
-            local("D")
-        )
+        val items =
+            listOf(
+                remote("A"),
+                local("B"),
+                remote("C"),
+                local("D"),
+            )
 
         val plan = PlaybackFallbackPlanner.circularPlan(items, startIndex = 2)
 
@@ -33,13 +33,14 @@ class PlaybackFallbackPlannerTest {
 
         for (step in PlaybackFallbackPlanner.circularPlan(
             listOf(firstRemote, nextLocal, laterRemote),
-            startIndex = 0
+            startIndex = 0,
         )) {
             when (step) {
                 is PlaybackFallbackStep.ResolveRemote -> {
                     attemptedRemotes += step.item.title
                     // Fake resolve failure: continue through the circular plan.
                 }
+
                 is PlaybackFallbackStep.ReadyLocal -> {
                     selected = step.item
                     break
@@ -59,10 +60,13 @@ class PlaybackFallbackPlannerTest {
 
         for (step in PlaybackFallbackPlanner.circularPlan(
             listOf(headLocal, remote("Middle"), tailRemote),
-            startIndex = 2
+            startIndex = 2,
         )) {
             when (step) {
-                is PlaybackFallbackStep.ResolveRemote -> Unit
+                is PlaybackFallbackStep.ResolveRemote -> {
+                    Unit
+                }
+
                 is PlaybackFallbackStep.ReadyLocal -> {
                     selected = step.item
                     break
@@ -73,15 +77,14 @@ class PlaybackFallbackPlannerTest {
         assertSame(headLocal, selected)
     }
 
-    private fun remote(title: String): PlayableItem.Remote =
-        PlayableItem.remoteFrom(artist = "Artist", title = title)
+    private fun remote(title: String): PlayableItem.Remote = PlayableItem.remoteFrom(artist = "Artist", title = title)
 
     private fun local(title: String): PlayableItem.Local =
         PlayableItem.Local(
             Song(
                 uriString = "file:///$title.mp3",
                 title = title,
-                artist = "Artist"
-            )
+                artist = "Artist",
+            ),
         )
 }

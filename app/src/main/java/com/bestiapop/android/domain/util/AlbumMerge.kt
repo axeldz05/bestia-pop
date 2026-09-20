@@ -10,15 +10,14 @@ import com.bestiapop.android.data.model.Album
 fun findAlbumMergeTarget(
     albums: List<Album>,
     sourceAlbumKey: String,
-    proposedName: String
+    proposedName: String,
 ): Album? {
     val name = normalizeAlbumName(proposedName).ifBlank { sourceAlbumKey }
     return albums
         .filter { album ->
             !albumNamesMatch(album.name, sourceAlbumKey) &&
                 (albumNamesMatch(album.name, name) || albumNamesMatch(album.displayName, name))
-        }
-        .maxWithOrNull(compareBy<Album> { it.songCount }.thenBy { it.name })
+        }.maxWithOrNull(compareBy<Album> { it.songCount }.thenBy { it.name })
 }
 
 /**
@@ -28,11 +27,10 @@ fun findAlbumMergeTarget(
 fun findEquivalentAlbumKeys(
     albumKeys: Collection<String>,
     targetName: String,
-    excludeKey: String? = null
-): List<String> {
-    return albumKeys
+    excludeKey: String? = null,
+): List<String> =
+    albumKeys
         .distinct()
         .filter { key ->
             key != excludeKey && albumNamesMatch(key, targetName)
         }
-}

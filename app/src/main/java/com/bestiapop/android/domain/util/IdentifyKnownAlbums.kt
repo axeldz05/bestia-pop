@@ -12,10 +12,11 @@ import kotlin.math.abs
 import kotlin.math.max
 
 const val KNOWN_ALBUM_REASON = "álbum conocido"
-private val TRACK_PLACEHOLDER = Regex(
-    """^(?:track|pista|audio|untitled|unknown|tema)\s*\d*$""",
-    RegexOption.IGNORE_CASE
-)
+private val TRACK_PLACEHOLDER =
+    Regex(
+        """^(?:track|pista|audio|untitled|unknown|tema)\s*\d*$""",
+        RegexOption.IGNORE_CASE,
+    )
 
 data class KnownAlbumTrack(
     val title: String,
@@ -23,7 +24,7 @@ data class KnownAlbumTrack(
     val trackNumber: Int = 0,
     val year: Int = 0,
     val artworkUri: String? = null,
-    val sourceSongId: Long? = null
+    val sourceSongId: Long? = null,
 ) {
     val assignmentKey: String
         get() = "${IdentifyRanking.stripTitleNoise(title)}|${albumTrackDisplayNumber(trackNumber)}"
@@ -34,7 +35,7 @@ data class KnownAlbumTracks(
     val artist: String,
     val album: String,
     val artworkUri: String?,
-    val tracks: List<KnownAlbumTrack>
+    val tracks: List<KnownAlbumTrack>,
 )
 
 data class KnownAlbumQuery(
@@ -43,36 +44,48 @@ data class KnownAlbumQuery(
     val title: String,
     val durationMs: Long = 0L,
     val trackNumber: Int = 0,
-    val folderPath: String = ""
+    val folderPath: String = "",
 )
 
 data class KnownAlbumMatch(
     val album: KnownAlbumTracks,
     val track: KnownAlbumTrack,
-    val score: Float
+    val score: Float,
 )
 
-fun Song.toKnownAlbumTrack(): KnownAlbumTrack = KnownAlbumTrack(
-    title = title,
-    durationMs = durationMs,
-    trackNumber = trackNumber,
-    year = year,
-    artworkUri = artworkUri,
-    sourceSongId = id
-)
+fun Song.toKnownAlbumTrack(): KnownAlbumTrack =
+    KnownAlbumTrack(
+        title = title,
+        durationMs = durationMs,
+        trackNumber = trackNumber,
+        year = year,
+        artworkUri = artworkUri,
+        sourceSongId = id,
+    )
 
-fun OnlineCatalogTrack.toKnownAlbumTrack(): KnownAlbumTrack = KnownAlbumTrack(
-    title = title,
-    durationMs = durationMs,
-    trackNumber = trackNumber,
-    year = year,
-    artworkUri = artworkUri
-)
+fun OnlineCatalogTrack.toKnownAlbumTrack(): KnownAlbumTrack =
+    KnownAlbumTrack(
+        title = title,
+        durationMs = durationMs,
+        trackNumber = trackNumber,
+        year = year,
+        artworkUri = artworkUri,
+    )
 
-private val UNUSABLE_KNOWN_ALBUM_TITLES = setOf(
-    "bonus", "bonus track", "track", "pista", "intro", "outro",
-    "audio", "sound", "demo", "untitled", "instrumental"
-)
+private val UNUSABLE_KNOWN_ALBUM_TITLES =
+    setOf(
+        "bonus",
+        "bonus track",
+        "track",
+        "pista",
+        "intro",
+        "outro",
+        "audio",
+        "sound",
+        "demo",
+        "untitled",
+        "instrumental",
+    )
 
 fun isUnusableKnownAlbumTitle(title: String): Boolean {
     val trimmed = title.trim()
@@ -88,38 +101,43 @@ fun knownAlbumQueryOf(
     song: Song,
     queryArtist: String = song.artist,
     queryTitle: String = song.title,
-    queryTrack: Int = song.trackNumber
+    queryTrack: Int = song.trackNumber,
 ): KnownAlbumQuery {
-    val hints = mergeIdentityHints(
-        parseFilenameMetadataHints(queryTitle),
-        resolveWeakIdentityHints(queryArtist, queryTitle)
-    )
-    val artist = hints.artist?.takeUnless { IdentifyRanking.isPlaceholderArtist(it) }
-        ?: queryArtist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) }
-        ?: ""
-    val title = hints.title?.takeIf { !isUnusableKnownAlbumTitle(it) }
-        ?: queryTitle.takeIf { !isUnusableKnownAlbumTitle(it) }
-        ?: song.title
-    val track = hints.trackNumber
-        ?: albumTrackDisplayNumber(queryTrack).takeIf { it > 0 }
-        ?: albumTrackDisplayNumber(song.trackNumber)
+    val hints =
+        mergeIdentityHints(
+            parseFilenameMetadataHints(queryTitle),
+            resolveWeakIdentityHints(queryArtist, queryTitle),
+        )
+    val artist =
+        hints.artist?.takeUnless { IdentifyRanking.isPlaceholderArtist(it) }
+            ?: queryArtist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) }
+            ?: ""
+    val title =
+        hints.title?.takeIf { !isUnusableKnownAlbumTitle(it) }
+            ?: queryTitle.takeIf { !isUnusableKnownAlbumTitle(it) }
+            ?: song.title
+    val track =
+        hints.trackNumber
+            ?: albumTrackDisplayNumber(queryTrack).takeIf { it > 0 }
+            ?: albumTrackDisplayNumber(song.trackNumber)
     return KnownAlbumQuery(
         songId = song.id,
         artist = artist,
         title = title,
         durationMs = song.durationMs,
         trackNumber = track,
-        folderPath = song.folderPath
+        folderPath = song.folderPath,
     )
 }
 
 fun knownAlbumsFromLibrary(
     songs: Iterable<Song>,
-    excludeSongIds: Set<Long> = emptySet()
+    excludeSongIds: Set<Long> = emptySet(),
 ): List<KnownAlbumTracks> {
-    val eligible = songs.filter { song ->
-        song.id !in excludeSongIds && !IdentifyRanking.isGenericAlbum(song.album)
-    }
+    val eligible =
+        songs.filter { song ->
+            song.id !in excludeSongIds && !IdentifyRanking.isGenericAlbum(song.album)
+        }
     if (eligible.isEmpty()) return emptyList()
     return songsByAlbumBucket(eligible, IdentifyRanking::isGenericAlbum).mapNotNull { (_, group) ->
         if (group.isEmpty()) return@mapNotNull null
@@ -131,7 +149,7 @@ fun knownAlbumsFromLibrary(
             artist = artist,
             album = albumName,
             artworkUri = group.firstArtworkUri(),
-            tracks = group.map { it.toKnownAlbumTrack() }
+            tracks = group.map { it.toKnownAlbumTrack() },
         )
     }
 }
@@ -140,7 +158,7 @@ fun mergeKnownAlbumTracks(
     artist: String,
     album: String,
     library: KnownAlbumTracks?,
-    catalog: List<KnownAlbumTrack>
+    catalog: List<KnownAlbumTrack>,
 ): KnownAlbumTracks? {
     val displayArtist = library?.artist?.takeIf { it.isNotBlank() } ?: artist
     val displayAlbum = library?.album?.takeIf { it.isNotBlank() } ?: album
@@ -160,13 +178,17 @@ fun mergeKnownAlbumTracks(
         key = albumGroupKey(displayArtist, displayAlbum),
         artist = displayArtist,
         album = displayAlbum,
-        artworkUri = library?.artworkUri
-            ?: catalog.firstNotNullOfOrNull { it.artworkUri?.takeIf { uri -> uri.isNotBlank() } },
-        tracks = merged.values.toList()
+        artworkUri =
+            library?.artworkUri
+                ?: catalog.firstNotNullOfOrNull { it.artworkUri?.takeIf { uri -> uri.isNotBlank() } },
+        tracks = merged.values.toList(),
     )
 }
 
-fun durationCloseForKnownAlbum(fileMs: Long, trackMs: Long): Boolean {
+fun durationCloseForKnownAlbum(
+    fileMs: Long,
+    trackMs: Long,
+): Boolean {
     if (fileMs <= 0L || trackMs <= 0L) return true
     val diff = abs(fileMs - trackMs)
     val slack = max(3_000L, (max(fileMs, trackMs) * 0.08f).toLong())
@@ -176,7 +198,7 @@ fun durationCloseForKnownAlbum(fileMs: Long, trackMs: Long): Boolean {
 fun matchSongToKnownAlbum(
     query: KnownAlbumQuery,
     album: KnownAlbumTracks,
-    seedFolderPath: String = ""
+    seedFolderPath: String = "",
 ): KnownAlbumMatch? {
     if (isUnusableKnownAlbumTitle(query.title)) return null
     if (query.artist.isNotBlank() && album.artist.isNotBlank()) {
@@ -228,7 +250,7 @@ fun assignUniqueKnownAlbumMatches(
     queries: List<KnownAlbumQuery>,
     albums: List<KnownAlbumTracks>,
     scoped: Boolean,
-    seedFolderPath: String = ""
+    seedFolderPath: String = "",
 ): Map<Long, KnownAlbumMatch> {
     if (queries.isEmpty() || albums.isEmpty()) return emptyMap()
     val perQuery = HashMap<Long, MutableList<KnownAlbumMatch>>()
@@ -262,20 +284,21 @@ fun assignUniqueKnownAlbumMatches(
 fun KnownAlbumMatch.toIdentifyCandidate(): IdentifyCandidate {
     val identityTitle = IdentifyRanking.cleanIdentityTitle(track.title, album.artist).ifBlank { track.title }
     return IdentifyCandidate(
-        track = OnlineCatalogTrack(
-            id = "known:${album.key}|${track.assignmentKey}",
-            title = identityTitle,
-            artist = album.artist,
-            album = album.album,
-            artworkUri = track.artworkUri ?: album.artworkUri,
-            durationMs = track.durationMs,
-            audioUrl = "",
-            provider = "Catalog",
-            trackNumber = track.trackNumber,
-            year = track.year
-        ),
+        track =
+            OnlineCatalogTrack(
+                id = "known:${album.key}|${track.assignmentKey}",
+                title = identityTitle,
+                artist = album.artist,
+                album = album.album,
+                artworkUri = track.artworkUri ?: album.artworkUri,
+                durationMs = track.durationMs,
+                audioUrl = "",
+                provider = "Catalog",
+                trackNumber = track.trackNumber,
+                year = track.year,
+            ),
         score = score.coerceIn(0f, 1f),
-        reasons = listOf(KNOWN_ALBUM_REASON)
+        reasons = listOf(KNOWN_ALBUM_REASON),
     )
 }
 
@@ -284,24 +307,25 @@ fun IdentifyProposal.withKnownAlbumMatch(match: KnownAlbumMatch): IdentifyPropos
     return copy(
         candidates = listOf(candidate) + candidates.filterNot { it.track.id == candidate.track.id },
         suggested = candidate,
-        confidence = IdentifyConfidence.MEDIUM
+        confidence = IdentifyConfidence.MEDIUM,
     )
 }
 
 fun promoteKnownAlbumMatches(
     proposals: List<IdentifyProposal>,
     queries: List<KnownAlbumQuery>,
-    albums: List<KnownAlbumTracks>
+    albums: List<KnownAlbumTracks>,
 ): List<IdentifyProposal> {
     if (proposals.isEmpty() || albums.isEmpty()) return proposals
     val byId = queries.associateBy { it.songId }
-    val eligibleQueries = proposals.mapNotNull { proposal ->
-        if (proposal.confidence == IdentifyConfidence.HIGH) return@mapNotNull null
-        if (proposal.confidence == IdentifyConfidence.MEDIUM && proposal.suggested != null) {
-            return@mapNotNull null
+    val eligibleQueries =
+        proposals.mapNotNull { proposal ->
+            if (proposal.confidence == IdentifyConfidence.HIGH) return@mapNotNull null
+            if (proposal.confidence == IdentifyConfidence.MEDIUM && proposal.suggested != null) {
+                return@mapNotNull null
+            }
+            byId[proposal.songId]
         }
-        byId[proposal.songId]
-    }
     val matches = assignUniqueKnownAlbumMatches(eligibleQueries, albums, scoped = false)
     if (matches.isEmpty()) return proposals
     return proposals.map { proposal ->

@@ -7,7 +7,6 @@ import org.junit.Test
 import java.io.IOException
 
 class HttpClientsOfflineTest {
-
     @After
     fun tearDown() {
         HttpClients.isOfflineMode = { false }

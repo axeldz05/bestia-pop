@@ -2,7 +2,7 @@ package com.bestiapop.android.data.util
 
 data class SyncedLyricLine(
     val timeMs: Long? = null,
-    val text: String = ""
+    val text: String = "",
 )
 
 object SyncedLyrics {
@@ -12,34 +12,36 @@ object SyncedLyrics {
     fun parse(raw: String): List<SyncedLyricLine> {
         val trimmed = raw.trim()
         if (trimmed.isBlank() || trimmed.equals("null", ignoreCase = true)) return emptyList()
-        return raw.lineSequence().mapNotNull { lineStr ->
-            val trimmedLine = lineStr.trim()
-            if (trimmedLine.isEmpty()) return@mapNotNull null
-            val match = lrcLine.find(trimmedLine)
-            if (match != null) {
-                val min = match.groupValues[1].toLongOrNull() ?: 0L
-                val sec = match.groupValues[2].toLongOrNull() ?: 0L
-                val frac = match.groupValues[3]
-                val msPart = frac.toLongOrNull() ?: 0L
-                val text = match.groupValues[4].trim()
-                val totalMs = (min * 60 + sec) * 1000 + fractionalMs(frac, msPart)
-                SyncedLyricLine(totalMs, text)
-            } else {
-                SyncedLyricLine(timeMs = null, text = trimmedLine)
-            }
-        }.toList()
+        return raw
+            .lineSequence()
+            .mapNotNull { lineStr ->
+                val trimmedLine = lineStr.trim()
+                if (trimmedLine.isEmpty()) return@mapNotNull null
+                val match = lrcLine.find(trimmedLine)
+                if (match != null) {
+                    val min = match.groupValues[1].toLongOrNull() ?: 0L
+                    val sec = match.groupValues[2].toLongOrNull() ?: 0L
+                    val frac = match.groupValues[3]
+                    val msPart = frac.toLongOrNull() ?: 0L
+                    val text = match.groupValues[4].trim()
+                    val totalMs = (min * 60 + sec) * 1000 + fractionalMs(frac, msPart)
+                    SyncedLyricLine(totalMs, text)
+                } else {
+                    SyncedLyricLine(timeMs = null, text = trimmedLine)
+                }
+            }.toList()
     }
 
     fun format(lines: List<SyncedLyricLine>): String =
-        lines.mapNotNull { line ->
-            val text = line.text.trim()
-            if (text.isEmpty() && line.timeMs == null) return@mapNotNull null
-            val timeMs = line.timeMs
-            if (timeMs != null) "[${formatTimestamp(timeMs)}]$text" else text.ifEmpty { null }
-        }.joinToString("\n")
+        lines
+            .mapNotNull { line ->
+                val text = line.text.trim()
+                if (text.isEmpty() && line.timeMs == null) return@mapNotNull null
+                val timeMs = line.timeMs
+                if (timeMs != null) "[${formatTimestamp(timeMs)}]$text" else text.ifEmpty { null }
+            }.joinToString("\n")
 
-    fun plainText(lines: List<SyncedLyricLine>): String =
-        lines.joinToString("\n") { it.text }
+    fun plainText(lines: List<SyncedLyricLine>): String = lines.joinToString("\n") { it.text }
 
     fun looksLikeLrc(raw: String): Boolean {
         val trimmed = raw.trim()
@@ -54,7 +56,7 @@ object SyncedLyrics {
      */
     fun realignByText(
         old: List<SyncedLyricLine>,
-        newTexts: List<String>
+        newTexts: List<String>,
     ): List<SyncedLyricLine> {
         if (newTexts.isEmpty()) return emptyList()
         if (old.size == newTexts.size) {
@@ -63,8 +65,11 @@ object SyncedLyrics {
         val unused = old.toMutableList()
         return newTexts.map { text ->
             val idx = unused.indexOfFirst { it.text == text }
-            if (idx >= 0) unused.removeAt(idx).copy(text = text)
-            else SyncedLyricLine(timeMs = null, text = text)
+            if (idx >= 0) {
+                unused.removeAt(idx).copy(text = text)
+            } else {
+                SyncedLyricLine(timeMs = null, text = text)
+            }
         }
     }
 
@@ -88,21 +93,29 @@ object SyncedLyrics {
     }
 
     /** 1 digit = tenths, 2 = centiseconds, 3 = milliseconds. */
-    private fun fractionalMs(frac: String, value: Long): Long = when (frac.length) {
-        0 -> 0L
-        1 -> value * 100
-        2 -> value * 10
-        else -> value
-    }
+    private fun fractionalMs(
+        frac: String,
+        value: Long,
+    ): Long =
+        when (frac.length) {
+            0 -> 0L
+            1 -> value * 100
+            2 -> value * 10
+            else -> value
+        }
 
-    fun stamp(line: SyncedLyricLine, timeMs: Long): SyncedLyricLine =
-        line.copy(timeMs = timeMs.coerceAtLeast(0))
+    fun stamp(
+        line: SyncedLyricLine,
+        timeMs: Long,
+    ): SyncedLyricLine = line.copy(timeMs = timeMs.coerceAtLeast(0))
 
-    fun hasTimestamps(lines: List<SyncedLyricLine>): Boolean =
-        lines.any { it.timeMs != null }
+    fun hasTimestamps(lines: List<SyncedLyricLine>): Boolean = lines.any { it.timeMs != null }
 
     /** Last timed line whose stamp is ≤ [positionMs], or -1. */
-    fun currentLineIndex(lines: List<SyncedLyricLine>, positionMs: Long): Int {
+    fun currentLineIndex(
+        lines: List<SyncedLyricLine>,
+        positionMs: Long,
+    ): Int {
         var bestIdx = -1
         var bestTime = -1L
         for (i in lines.indices) {

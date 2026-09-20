@@ -7,7 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IdentifyGapsTest {
-
     @Test
     fun placeholderArtist_marksArtistOnlyAmongIdentity() {
         val fields = gapApplyFields(complete(artist = "Unknown Artist"))
@@ -68,20 +67,68 @@ class IdentifyGapsTest {
         assertFalse(songHasGapsForFields(completeSong, com.bestiapop.android.data.model.IdentifyApplyFields.ALL))
 
         val missingTrack = complete(trackNumber = 0)
-        assertTrue(songHasGapsForFields(missingTrack, com.bestiapop.android.data.model.IdentifyApplyFields(trackNumber = true)))
-        assertFalse(songHasGapsForFields(missingTrack, com.bestiapop.android.data.model.IdentifyApplyFields(trackNumber = false, artist = true, title = true)))
+        assertTrue(
+            songHasGapsForFields(
+                missingTrack,
+                com.bestiapop.android.data.model
+                    .IdentifyApplyFields(trackNumber = true),
+            ),
+        )
+        assertFalse(
+            songHasGapsForFields(
+                missingTrack,
+                com.bestiapop.android.data.model
+                    .IdentifyApplyFields(trackNumber = false, artist = true, title = true),
+            ),
+        )
 
         val missingYear = complete(year = 0)
-        assertTrue(songHasGapsForFields(missingYear, com.bestiapop.android.data.model.IdentifyApplyFields(year = true)))
-        assertFalse(songHasGapsForFields(missingYear, com.bestiapop.android.data.model.IdentifyApplyFields(year = false, artist = true)))
+        assertTrue(
+            songHasGapsForFields(
+                missingYear,
+                com.bestiapop.android.data.model
+                    .IdentifyApplyFields(year = true),
+            ),
+        )
+        assertFalse(
+            songHasGapsForFields(
+                missingYear,
+                com.bestiapop.android.data.model
+                    .IdentifyApplyFields(year = false, artist = true),
+            ),
+        )
 
         val noisyTitle = complete(title = "01. Creep (Official Video)")
-        assertTrue(songHasGapsForFields(noisyTitle, com.bestiapop.android.data.model.IdentifyApplyFields(title = true)))
-        assertFalse(songHasGapsForFields(noisyTitle, com.bestiapop.android.data.model.IdentifyApplyFields(title = false, artist = true)))
+        assertTrue(
+            songHasGapsForFields(
+                noisyTitle,
+                com.bestiapop.android.data.model
+                    .IdentifyApplyFields(title = true),
+            ),
+        )
+        assertFalse(
+            songHasGapsForFields(
+                noisyTitle,
+                com.bestiapop.android.data.model
+                    .IdentifyApplyFields(title = false, artist = true),
+            ),
+        )
 
         val genericAlbum = complete(album = "Unknown Album")
-        assertTrue(songHasGapsForFields(genericAlbum, com.bestiapop.android.data.model.IdentifyApplyFields(album = true)))
-        assertFalse(songHasGapsForFields(genericAlbum, com.bestiapop.android.data.model.IdentifyApplyFields(album = false, title = true)))
+        assertTrue(
+            songHasGapsForFields(
+                genericAlbum,
+                com.bestiapop.android.data.model
+                    .IdentifyApplyFields(album = true),
+            ),
+        )
+        assertFalse(
+            songHasGapsForFields(
+                genericAlbum,
+                com.bestiapop.android.data.model
+                    .IdentifyApplyFields(album = false, title = true),
+            ),
+        )
     }
 
     private fun complete(
@@ -90,7 +137,7 @@ class IdentifyGapsTest {
         album: String = "Pablo Honey",
         year: Int = 1993,
         trackNumber: Int = 2,
-        artworkUri: String? = "file:///cover.jpg"
+        artworkUri: String? = "file:///cover.jpg",
     ) = Song(
         id = 1L,
         uriString = "file:///song.mp3",
@@ -99,6 +146,6 @@ class IdentifyGapsTest {
         album = album,
         year = year,
         trackNumber = trackNumber,
-        artworkUri = artworkUri
+        artworkUri = artworkUri,
     )
 }

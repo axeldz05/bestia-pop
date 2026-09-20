@@ -12,7 +12,6 @@ import com.bestiapop.android.data.preferences.LyricsSettings
 import com.bestiapop.android.data.util.LyricsPhoneticProcessor
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.domain.repository.IMusicRepository
-import java.util.Collections
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,6 +21,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Collections
 
 /**
  * Bundled translation and phonetic status for lyrics displays like [com.bestiapop.android.ui.screens.NowPlayingScreen].
@@ -33,7 +33,7 @@ data class LyricsTranslationState(
     val translationSource: LyricsTranslationSource? = null,
     val pendingGoogleTranslatePrompt: Boolean = false,
     val romanizationVersion: Int = 0,
-    val translationVersion: Int = 0
+    val translationVersion: Int = 0,
 )
 
 /**
@@ -47,40 +47,47 @@ class LyricsCoordinator(
     private val updateCurrentSongLyrics: (songId: Long, lyrics: String?) -> Unit,
     private val updateCurrentItemLyrics: (lyrics: String?) -> Unit,
     private val isOnline: () -> Boolean = { true },
-    private val toast: (String) -> Unit = {}
+    private val toast: (String) -> Unit = {},
 ) {
-    val settings: StateFlow<LyricsSettings> = lyricsPreferences.settingsFlow.stateIn(
-        scope = scope,
-        started = SharingStarted.Eagerly,
-        initialValue = LyricsSettings()
-    )
+    val settings: StateFlow<LyricsSettings> =
+        lyricsPreferences.settingsFlow.stateIn(
+            scope = scope,
+            started = SharingStarted.Eagerly,
+            initialValue = LyricsSettings(),
+        )
 
     private val _translationState = MutableStateFlow(LyricsTranslationState())
     val translationState: StateFlow<LyricsTranslationState> = _translationState.asStateFlow()
 
-    val isTranslationActive: StateFlow<Boolean> = _translationState
-        .map { it.isTranslationActive }
-        .stateIn(scope, SharingStarted.Eagerly, false)
+    val isTranslationActive: StateFlow<Boolean> =
+        _translationState
+            .map { it.isTranslationActive }
+            .stateIn(scope, SharingStarted.Eagerly, false)
 
-    val isFetchingTranslation: StateFlow<Boolean> = _translationState
-        .map { it.isFetchingTranslation }
-        .stateIn(scope, SharingStarted.Eagerly, false)
+    val isFetchingTranslation: StateFlow<Boolean> =
+        _translationState
+            .map { it.isFetchingTranslation }
+            .stateIn(scope, SharingStarted.Eagerly, false)
 
-    val translationSource: StateFlow<LyricsTranslationSource?> = _translationState
-        .map { it.translationSource }
-        .stateIn(scope, SharingStarted.Eagerly, null)
+    val translationSource: StateFlow<LyricsTranslationSource?> =
+        _translationState
+            .map { it.translationSource }
+            .stateIn(scope, SharingStarted.Eagerly, null)
 
-    val pendingGoogleTranslatePrompt: StateFlow<Boolean> = _translationState
-        .map { it.pendingGoogleTranslatePrompt }
-        .stateIn(scope, SharingStarted.Eagerly, false)
+    val pendingGoogleTranslatePrompt: StateFlow<Boolean> =
+        _translationState
+            .map { it.pendingGoogleTranslatePrompt }
+            .stateIn(scope, SharingStarted.Eagerly, false)
 
-    val romanizationVersion: StateFlow<Int> = _translationState
-        .map { it.romanizationVersion }
-        .stateIn(scope, SharingStarted.Eagerly, 0)
+    val romanizationVersion: StateFlow<Int> =
+        _translationState
+            .map { it.romanizationVersion }
+            .stateIn(scope, SharingStarted.Eagerly, 0)
 
-    val translationVersion: StateFlow<Int> = _translationState
-        .map { it.translationVersion }
-        .stateIn(scope, SharingStarted.Eagerly, 0)
+    val translationVersion: StateFlow<Int> =
+        _translationState
+            .map { it.translationVersion }
+            .stateIn(scope, SharingStarted.Eagerly, 0)
 
     private val _isFetching = MutableStateFlow(false)
     val isFetching: StateFlow<Boolean> = _isFetching.asStateFlow()
@@ -88,31 +95,30 @@ class LyricsCoordinator(
     private val _fetchError = MutableStateFlow<String?>(null)
     val fetchError: StateFlow<String?> = _fetchError.asStateFlow()
 
-    private val translationCache: MutableMap<Long, LyricsTranslationResult> = Collections.synchronizedMap(
-        object : LinkedHashMap<Long, LyricsTranslationResult>(32, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, LyricsTranslationResult>?): Boolean {
-                return size > 50
-            }
-        }
-    )
+    private val translationCache: MutableMap<Long, LyricsTranslationResult> =
+        Collections.synchronizedMap(
+            object : LinkedHashMap<Long, LyricsTranslationResult>(32, 0.75f, true) {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, LyricsTranslationResult>?): Boolean = size > 50
+            },
+        )
 
-    private val romanizationCache: MutableMap<Long, List<String>> = Collections.synchronizedMap(
-        object : LinkedHashMap<Long, List<String>>(32, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, List<String>>?): Boolean {
-                return size > 50
-            }
-        }
-    )
+    private val romanizationCache: MutableMap<Long, List<String>> =
+        Collections.synchronizedMap(
+            object : LinkedHashMap<Long, List<String>>(32, 0.75f, true) {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, List<String>>?): Boolean = size > 50
+            },
+        )
 
-    private val lyricsLookupAttempted = object : LinkedHashSet<Long>() {
-        override fun add(element: Long): Boolean {
-            if (size >= 300) {
-                val first = iterator().next()
-                remove(first)
+    private val lyricsLookupAttempted =
+        object : LinkedHashSet<Long>() {
+            override fun add(element: Long): Boolean {
+                if (size >= 300) {
+                    val first = iterator().next()
+                    remove(first)
+                }
+                return super.add(element)
             }
-            return super.add(element)
         }
-    }
 
     fun setPhoneticGuideEnabled(enabled: Boolean) {
         scope.launch { lyricsPreferences.setPhoneticGuideEnabled(enabled) }
@@ -130,12 +136,18 @@ class LyricsCoordinator(
         _translationState.update { it.copy(pendingGoogleTranslatePrompt = false) }
     }
 
-    fun confirmGoogleTranslate(song: Song, lines: List<String>) {
+    fun confirmGoogleTranslate(
+        song: Song,
+        lines: List<String>,
+    ) {
         _translationState.update { it.copy(pendingGoogleTranslatePrompt = false) }
         translateWithGoogleInternal(song, lines)
     }
 
-    fun toggleLyricsTranslation(song: Song, lines: List<String>) {
+    fun toggleLyricsTranslation(
+        song: Song,
+        lines: List<String>,
+    ) {
         if (_translationState.value.isTranslationActive) {
             _translationState.update { it.copy(isTranslationActive = false) }
             return
@@ -151,13 +163,16 @@ class LyricsCoordinator(
         return true
     }
 
-    private fun translateCommunityInternal(song: Song, lines: List<String>) {
+    private fun translateCommunityInternal(
+        song: Song,
+        lines: List<String>,
+    ) {
         val cached = translationCache[song.id]
         if (cached != null) {
             _translationState.update {
                 it.copy(
                     isTranslationActive = true,
-                    translationSource = LyricsTranslationSource(cached.sourceName, cached.sourceUrl)
+                    translationSource = LyricsTranslationSource(cached.sourceName, cached.sourceUrl),
                 )
             }
             return
@@ -175,7 +190,7 @@ class LyricsCoordinator(
                         isFetchingTranslation = false,
                         isTranslationActive = true,
                         translationSource = LyricsTranslationSource(community.sourceName, community.sourceUrl),
-                        translationVersion = it.translationVersion + 1
+                        translationVersion = it.translationVersion + 1,
                     )
                 }
             } else {
@@ -183,7 +198,7 @@ class LyricsCoordinator(
                     _translationState.update {
                         it.copy(
                             isFetchingTranslation = false,
-                            pendingGoogleTranslatePrompt = true
+                            pendingGoogleTranslatePrompt = true,
                         )
                     }
                 } else {
@@ -194,7 +209,10 @@ class LyricsCoordinator(
         }
     }
 
-    private fun translateWithGoogleInternal(song: Song, lines: List<String>) {
+    private fun translateWithGoogleInternal(
+        song: Song,
+        lines: List<String>,
+    ) {
         if (!checkOnline()) return
         scope.launch {
             _translationState.update { it.copy(isFetchingTranslation = true) }
@@ -206,7 +224,7 @@ class LyricsCoordinator(
                         isFetchingTranslation = false,
                         isTranslationActive = true,
                         translationSource = LyricsTranslationSource(gResult.sourceName, gResult.sourceUrl),
-                        translationVersion = it.translationVersion + 1
+                        translationVersion = it.translationVersion + 1,
                     )
                 }
             } else {
@@ -215,7 +233,10 @@ class LyricsCoordinator(
         }
     }
 
-    fun ensureRomanization(songId: Long, lines: List<String>) {
+    fun ensureRomanization(
+        songId: Long,
+        lines: List<String>,
+    ) {
         if (!isOnline()) return
         if (romanizationCache.containsKey(songId)) return
         val hasNonLatin = lines.any { LyricsPhoneticProcessor.hasNonLatinScript(it) }
@@ -235,14 +256,16 @@ class LyricsCoordinator(
 
     fun getTranslatedLines(songId: Long): List<String>? = translationCache[songId]?.lines
 
-    fun getRomanizedLines(songId: Long): List<String>? =
-        romanizationCache[songId]?.takeIf { it.isNotEmpty() }
+    fun getRomanizedLines(songId: Long): List<String>? = romanizationCache[songId]?.takeIf { it.isNotEmpty() }
 
     fun clearFetchError() {
         _fetchError.value = null
     }
 
-    fun ensureLyrics(song: Song, force: Boolean = false) {
+    fun ensureLyrics(
+        song: Song,
+        force: Boolean = false,
+    ) {
         if (song.id == 0L) return
         val currentLyrics = song.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
         if (currentLyrics != null && !force) return
@@ -257,9 +280,10 @@ class LyricsCoordinator(
             _fetchError.value = null
             try {
                 if (!isRemoteStream) {
-                    val localLyrics = repository.findLocalLyrics(song)?.trim()?.takeIf {
-                        it.isNotBlank() && !it.equals("null", ignoreCase = true)
-                    }
+                    val localLyrics =
+                        repository.findLocalLyrics(song)?.trim()?.takeIf {
+                            it.isNotBlank() && !it.equals("null", ignoreCase = true)
+                        }
                     if (localLyrics != null) {
                         repository.updateSongLyrics(song.id, localLyrics)
                         updateCurrentSongLyrics(song.id, localLyrics)
@@ -272,9 +296,10 @@ class LyricsCoordinator(
                     return@launch
                 }
 
-                val onlineLyrics = repository.fetchSongLyrics(song)?.trim()?.takeIf {
-                    it.isNotBlank() && !it.equals("null", ignoreCase = true)
-                }
+                val onlineLyrics =
+                    repository.fetchSongLyrics(song)?.trim()?.takeIf {
+                        it.isNotBlank() && !it.equals("null", ignoreCase = true)
+                    }
                 if (onlineLyrics != null) {
                     if (isRemoteStream) {
                         updateCurrentItemLyrics(onlineLyrics)
@@ -308,25 +333,35 @@ class LyricsCoordinator(
         return artMissing || durationMissing
     }
 
-    private fun requestMetadataEnhancement(song: Song, force: Boolean = false) {
+    private fun requestMetadataEnhancement(
+        song: Song,
+        force: Boolean = false,
+    ) {
         if (!force && !songNeedsMetadataEnhancement(song)) return
         scope.launch {
             repository.enhanceSongMetadataAndLyrics(song)
         }
     }
 
-    fun updateSongLyrics(songId: Long, lyrics: String?) {
+    fun updateSongLyrics(
+        songId: Long,
+        lyrics: String?,
+    ) {
         scope.launch {
             repository.updateSongLyrics(songId, lyrics)
             updateCurrentSongLyrics(songId, lyrics)
         }
     }
 
-    fun fetchSongLyrics(song: Song, onResult: (String?) -> Unit) {
+    fun fetchSongLyrics(
+        song: Song,
+        onResult: (String?) -> Unit,
+    ) {
         scope.launch {
-            val lyrics = repository.fetchSongLyrics(song)?.trim()?.takeIf {
-                it.isNotBlank() && !it.equals("null", ignoreCase = true)
-            }
+            val lyrics =
+                repository.fetchSongLyrics(song)?.trim()?.takeIf {
+                    it.isNotBlank() && !it.equals("null", ignoreCase = true)
+                }
             onResult(lyrics)
         }
     }

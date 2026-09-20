@@ -19,13 +19,13 @@ import kotlinx.coroutines.launch
  */
 class ListenTracker private constructor(
     private val enqueueListen: (ListenPayload) -> Unit,
-    private val nowEpochSeconds: () -> Long
+    private val nowEpochSeconds: () -> Long,
 ) {
     constructor(
         scope: CoroutineScope,
         pendingListenDao: PendingListenDao,
         preferences: ListenBrainzPreferencesRepository,
-        onListenEnqueued: () -> Unit
+        onListenEnqueued: () -> Unit,
     ) : this(
         enqueueListen = { payload ->
             scope.launch {
@@ -35,15 +35,15 @@ class ListenTracker private constructor(
                 onListenEnqueued()
             }
         },
-        nowEpochSeconds = { System.currentTimeMillis() / 1000L }
+        nowEpochSeconds = { System.currentTimeMillis() / 1000L },
     )
 
     internal constructor(
         nowEpochSeconds: () -> Long,
-        onListenReady: (ListenPayload) -> Unit
+        onListenReady: (ListenPayload) -> Unit,
     ) : this(
         enqueueListen = onListenReady,
-        nowEpochSeconds = nowEpochSeconds
+        nowEpochSeconds = nowEpochSeconds,
     )
 
     private var activeSong: Song? = null
@@ -58,20 +58,22 @@ class ListenTracker private constructor(
      */
     fun onTrackChanged(
         song: Song?,
-        hint: PlaybackChangeHint = PlaybackChangeHint.AUTO
+        hint: PlaybackChangeHint = PlaybackChangeHint.AUTO,
     ) {
         when (PlaybackTrackChangePolicy.resolve(activeSong, song, hint)) {
             PlaybackTrackChange.METADATA_UPDATE -> {
                 val previousDuration = activeSong?.durationMs ?: 0L
-                activeSong = song?.let {
-                    if (it.durationMs > 0L || previousDuration <= 0L) {
-                        it
-                    } else {
-                        it.copy(durationMs = previousDuration)
+                activeSong =
+                    song?.let {
+                        if (it.durationMs > 0L || previousDuration <= 0L) {
+                            it
+                        } else {
+                            it.copy(durationMs = previousDuration)
+                        }
                     }
-                }
                 maybeEnqueueIfReady()
             }
+
             PlaybackTrackChange.NEW_PLAYBACK -> {
                 maybeEnqueueIfReady()
                 activeSong = song
@@ -80,6 +82,7 @@ class ListenTracker private constructor(
                 alreadySubmitted = false
                 lastTickElapsedRealtime = 0L
             }
+
             PlaybackTrackChange.STOPPED -> {
                 maybeEnqueueIfReady()
                 activeSong = null
@@ -92,7 +95,10 @@ class ListenTracker private constructor(
     }
 
     /** Keeps threshold accurate when duration is discovered mid-playback. */
-    fun onDurationKnown(songId: Long, durationMs: Long) {
+    fun onDurationKnown(
+        songId: Long,
+        durationMs: Long,
+    ) {
         val song = activeSong ?: return
         if (song.id == songId && durationMs > 0 && song.durationMs <= 0) {
             activeSong = song.copy(durationMs = durationMs)
@@ -105,7 +111,10 @@ class ListenTracker private constructor(
      * @param isPlaying whether the player is currently playing
      * @param elapsedRealtimeMs SystemClock.elapsedRealtime()
      */
-    fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long) {
+    fun onPlaybackTick(
+        isPlaying: Boolean,
+        elapsedRealtimeMs: Long,
+    ) {
         if (activeSong == null) return
 
         if (isPlaying) {

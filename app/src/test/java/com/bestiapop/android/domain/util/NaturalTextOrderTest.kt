@@ -5,7 +5,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NaturalTextOrderTest {
-
     @Test
     fun extractRomanizedOrParsed_extractsLatinCandidate() {
         // Bilingual parenthesized
@@ -52,17 +51,18 @@ class NaturalTextOrderTest {
 
     @Test
     fun comparator_sortsLettersThenNumbersThenSymbols() {
-        val titles = listOf(
-            "★★★ Star",
-            "1999",
-            "Zebra",
-            "夜鷹 (Yodaka)",
-            "Ángel",
-            "50 Cent",
-            "Beta",
-            "...Dots",
-            "Canción"
-        )
+        val titles =
+            listOf(
+                "★★★ Star",
+                "1999",
+                "Zebra",
+                "夜鷹 (Yodaka)",
+                "Ángel",
+                "50 Cent",
+                "Beta",
+                "...Dots",
+                "Canción",
+            )
 
         val ascending = titles.sortedWith(NaturalTextOrder.comparator(ascending = true) { it })
         assertEquals(
@@ -75,9 +75,9 @@ class NaturalTextOrderTest {
                 "1999",
                 "50 Cent",
                 "...Dots",
-                "★★★ Star"
+                "★★★ Star",
             ),
-            ascending
+            ascending,
         )
 
         val descending = titles.sortedWith(NaturalTextOrder.comparator(ascending = false) { it })

@@ -48,10 +48,10 @@ import com.bestiapop.android.data.preferences.LibraryBlobsSettings
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ReorderDragModifiers
-import com.bestiapop.android.ui.components.rememberVerticalReorderDrag
 import com.bestiapop.android.ui.components.SettingsScrollColumn
 import com.bestiapop.android.ui.components.SettingsSwitchRow
 import com.bestiapop.android.ui.components.icon
+import com.bestiapop.android.ui.components.rememberVerticalReorderDrag
 import com.bestiapop.android.ui.screens.library.chipLabel
 
 @Composable
@@ -61,18 +61,20 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
     val submenuGestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
 
     SettingsScrollColumn(
-        intro = "Personalizá las categorías de tu biblioteca, su orden y los gestos en submenús."
+        intro = "Personalizá las categorías de tu biblioteca, su orden y los gestos en submenús.",
     ) {
         Text(
             text = "Categorías de biblioteca (Blobs)",
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Elegí qué secciones mostrar en la biblioteca y arrastrá para ordenarlas. La primera categoría activa se usará como principal al abrir la biblioteca.",
+            text =
+                "Elegí qué secciones mostrar en la biblioteca y arrastrá para ordenarlas. " +
+                    "La primera categoría activa se usará como principal al abrir la biblioteca.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(14.dp))
 
@@ -81,57 +83,66 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
         val primaryFilter = libraryBlobsSettings.primaryFilter
 
         var isDraggingAny by remember { mutableStateOf(false) }
-        val nestedScrollConnection = remember {
-            object : NestedScrollConnection {
-                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                    if (isDraggingAny) {
-                        return available
+        val nestedScrollConnection =
+            remember {
+                object : NestedScrollConnection {
+                    override fun onPreScroll(
+                        available: Offset,
+                        source: NestedScrollSource,
+                    ): Offset {
+                        if (isDraggingAny) {
+                            return available
+                        }
+                        return Offset.Zero
                     }
-                    return Offset.Zero
                 }
             }
-        }
 
         Card(
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-            ),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                ),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .nestedScroll(nestedScrollConnection)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .nestedScroll(nestedScrollConnection),
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
             ) {
                 blobItems.forEachIndexed { index, blobConfig ->
                     key(blobConfig.filter) {
-                        val drag = rememberVerticalReorderDrag(
-                            index = index,
-                            reorderCount = blobItems.size,
-                            enabled = true,
-                            onDragStateChanged = { isDraggingAny = it },
-                            onReorder = { from, to ->
-                                val updated = blobItems.toMutableList()
-                                val moved = updated.removeAt(from)
-                                updated.add(to, moved)
-                                viewModel.setLibraryBlobsSettings(LibraryBlobsSettings(items = updated))
-                            }
-                        )
+                        val drag =
+                            rememberVerticalReorderDrag(
+                                index = index,
+                                reorderCount = blobItems.size,
+                                enabled = true,
+                                onDragStateChanged = { isDraggingAny = it },
+                                onReorder = { from, to ->
+                                    val updated = blobItems.toMutableList()
+                                    val moved = updated.removeAt(from)
+                                    updated.add(to, moved)
+                                    viewModel.setLibraryBlobsSettings(LibraryBlobsSettings(items = updated))
+                                },
+                            )
                         LibraryBlobReorderRow(
                             config = blobConfig,
                             isPrimary = blobConfig.enabled && blobConfig.filter == primaryFilter,
                             canDisable = !blobConfig.enabled || enabledCount > 1,
                             onToggle = { isEnabled ->
-                                val updated = blobItems.map {
-                                    if (it.filter == blobConfig.filter) it.copy(enabled = isEnabled) else it
-                                }
+                                val updated =
+                                    blobItems.map {
+                                        if (it.filter == blobConfig.filter) it.copy(enabled = isEnabled) else it
+                                    }
                                 viewModel.setLibraryBlobsSettings(LibraryBlobsSettings(items = updated))
                             },
-                            drag = drag
+                            drag = drag,
                         )
                     }
                 }
@@ -145,7 +156,7 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = fastScrollSettings.enabled,
             onCheckedChange = { viewModel.setFastScrollEnabled(it) },
             onSubtitle = "Activo — deslizá el pulgar por el lateral para saltar entre letras y categorías",
-            offSubtitle = "Desactivado — usa solo el desplazamiento vertical habitual"
+            offSubtitle = "Desactivado — usa solo el desplazamiento vertical habitual",
         )
 
         if (fastScrollSettings.enabled) {
@@ -154,19 +165,19 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
             Text(
                 text = "Posición del scroll vertical",
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "Elegí en qué borde de la pantalla mostrar el riel con las letras del abecedario.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(14.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 FastScrollSideCard(
                     title = "Izquierda",
@@ -174,7 +185,7 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
                     icon = Icons.AutoMirrored.Filled.FormatAlignLeft,
                     selected = fastScrollSettings.side == FastScrollSide.LEFT,
                     onClick = { viewModel.setFastScrollSide(FastScrollSide.LEFT) },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
 
                 FastScrollSideCard(
@@ -183,7 +194,7 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
                     icon = Icons.AutoMirrored.Filled.FormatAlignRight,
                     selected = fastScrollSettings.side == FastScrollSide.RIGHT,
                     onClick = { viewModel.setFastScrollSide(FastScrollSide.RIGHT) },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -193,13 +204,15 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
         Text(
             text = "Gestos en submenús",
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Deslizá horizontalmente dentro de un álbum, playlist o detalle en Biblioteca o Descubrir para navegar o ejecutar acciones rápidas.",
+            text =
+                "Deslizá horizontalmente dentro de un álbum, playlist o detalle en Biblioteca o Descubrir " +
+                    "para navegar o ejecutar acciones rápidas.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(14.dp))
 
@@ -208,7 +221,7 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = submenuGestureSettings.swipeBackEnabled,
             onCheckedChange = { viewModel.setSubmenuSwipeBackEnabled(it) },
             onSubtitle = "Activo — deslizá hacia la derecha dentro de un álbum, playlist o detalle para volver",
-            offSubtitle = "Desactivado — usá solo el botón de volver o la navegación del sistema"
+            offSubtitle = "Desactivado — usá solo el botón de volver o la navegación del sistema",
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -216,25 +229,25 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
         Text(
             text = "Acción al deslizar a la izquierda",
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = "Elegí qué acción realizar al deslizar hacia la izquierda sobre una canción, álbum o artista.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(12.dp))
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             SubmenuSwipeAction.entries.forEach { action ->
                 SubmenuSwipeActionRow(
                     action = action,
                     selected = submenuGestureSettings.swipeLeftAction == action,
-                    onClick = { viewModel.setSubmenuSwipeLeftAction(action) }
+                    onClick = { viewModel.setSubmenuSwipeLeftAction(action) },
                 )
             }
         }
@@ -246,51 +259,56 @@ private fun SubmenuSwipeActionRow(
     action: SubmenuSwipeAction,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    if (selected) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    },
+            ),
+        border =
+            if (selected) {
+                BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
             } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            }
-        ),
-        border = if (selected) {
-            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-        } else {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-        },
-        modifier = modifier.fillMaxWidth()
+                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            },
+        modifier = modifier.fillMaxWidth(),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = action.icon,
                 contentDescription = null,
                 tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(24.dp),
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = if (action == SubmenuSwipeAction.ENQUEUE_ALL) "${action.label()} (Predeterminado)" else action.label(),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                    ),
-                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        ),
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = action.description(),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             if (selected) {
@@ -299,7 +317,7 @@ private fun SubmenuSwipeActionRow(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Seleccionado",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -313,43 +331,46 @@ private fun FastScrollSideCard(
     icon: ImageVector,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    if (selected) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    },
+            ),
+        border =
+            if (selected) {
+                BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
             } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            }
-        ),
-        border = if (selected) {
-            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-        } else {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-        },
-        modifier = modifier
+                BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            },
+        modifier = modifier,
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(24.dp),
                 )
                 if (selected) {
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Seleccionado",
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
@@ -357,13 +378,13 @@ private fun FastScrollSideCard(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -375,34 +396,38 @@ private fun LibraryBlobReorderRow(
     isPrimary: Boolean,
     canDisable: Boolean,
     onToggle: (Boolean) -> Unit,
-    drag: ReorderDragModifiers
+    drag: ReorderDragModifiers,
 ) {
-    val rowBackground = if (drag.isDragging) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-    } else {
-        Color.Transparent
-    }
+    val rowBackground =
+        if (drag.isDragging) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        } else {
+            Color.Transparent
+        }
 
     Row(
-        modifier = drag.rowModifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(rowBackground)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            drag.rowModifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(rowBackground)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (drag.handleModifier != null) {
             Icon(
                 imageVector = Icons.Default.DragHandle,
                 contentDescription = "Arrastrar para reordenar",
-                tint = if (drag.isDragging) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                },
-                modifier = drag.handleModifier
-                    .size(40.dp)
-                    .padding(8.dp)
+                tint =
+                    if (drag.isDragging) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    },
+                modifier =
+                    drag.handleModifier
+                        .size(40.dp)
+                        .padding(8.dp),
             )
         } else {
             Spacer(modifier = Modifier.size(40.dp))
@@ -413,31 +438,33 @@ private fun LibraryBlobReorderRow(
         Row(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = config.filter.chipLabel(),
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Medium
-                ),
-                color = if (config.enabled) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                }
+                style =
+                    MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Medium,
+                    ),
+                color =
+                    if (config.enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    },
             )
 
             if (isPrimary) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
                 ) {
                     Text(
                         text = "Principal",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
             }
@@ -446,7 +473,7 @@ private fun LibraryBlobReorderRow(
         Switch(
             checked = config.enabled,
             onCheckedChange = onToggle,
-            enabled = canDisable
+            enabled = canDisable,
         )
     }
 }

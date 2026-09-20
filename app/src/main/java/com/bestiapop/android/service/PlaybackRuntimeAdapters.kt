@@ -10,30 +10,38 @@ import com.bestiapop.android.data.preferences.QueueSnapshot
 import com.bestiapop.android.data.stream.StreamResolver
 
 internal class PlaybackSessionStoreRuntimePersistence(
-    private val store: PlaybackSessionStore
+    private val store: PlaybackSessionStore,
 ) : PlaybackRuntimePersistence {
     override suspend fun loadLastPlayed() = store.load()
+
     override suspend fun loadQueue() = store.loadQueue()
+
     override suspend fun saveSession(
         lastPlayed: LastPlayedSnapshot?,
         queue: QueueSnapshot?,
-        clearQueue: Boolean
+        clearQueue: Boolean,
     ) {
         store.saveSession(lastPlayed, queue, clearQueue)
     }
 }
 
 internal class ListenTrackerRuntimeAdapter(
-    private val tracker: ListenTracker
+    private val tracker: ListenTracker,
 ) : PlaybackRuntimeListenTracker {
-    override fun onTrackChanged(song: Song?, hint: PlaybackChangeHint) =
-        tracker.onTrackChanged(song, hint)
+    override fun onTrackChanged(
+        song: Song?,
+        hint: PlaybackChangeHint,
+    ) = tracker.onTrackChanged(song, hint)
 
-    override fun onDurationKnown(songId: Long, durationMs: Long) =
-        tracker.onDurationKnown(songId, durationMs)
+    override fun onDurationKnown(
+        songId: Long,
+        durationMs: Long,
+    ) = tracker.onDurationKnown(songId, durationMs)
 
-    override fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long) =
-        tracker.onPlaybackTick(isPlaying, elapsedRealtimeMs)
+    override fun onPlaybackTick(
+        isPlaying: Boolean,
+        elapsedRealtimeMs: Long,
+    ) = tracker.onPlaybackTick(isPlaying, elapsedRealtimeMs)
 
     override fun onStopped() = tracker.onStopped()
 
@@ -42,7 +50,7 @@ internal class ListenTrackerRuntimeAdapter(
 
 internal class StreamResolverRuntimeAccess(
     private val resolver: StreamResolver,
-    private val clockMs: () -> Long
+    private val clockMs: () -> Long,
 ) : PlaybackRuntimeStreamAccess {
     override fun needsResolve(item: PlayableItem.Remote): Boolean {
         val resolved = item.resolved ?: return true
@@ -50,18 +58,21 @@ internal class StreamResolverRuntimeAccess(
     }
 
     override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? =
-        resolver.resolve(item)
+        resolver
+            .resolve(item)
             .getOrNull()
             ?.let { resolved ->
-                val resolvedArt = item.identity.artworkUri?.takeIf { it.isNotBlank() }
-                    ?: resolved.artworkUri
+                val resolvedArt =
+                    item.identity.artworkUri?.takeIf { it.isNotBlank() }
+                        ?: resolved.artworkUri
                 item.copy(
                     resolved = resolved,
-                    identity = if (resolvedArt != null && item.identity.artworkUri != resolvedArt) {
-                        item.identity.copy(artworkUri = resolvedArt)
-                    } else {
-                        item.identity
-                    }
+                    identity =
+                        if (resolvedArt != null && item.identity.artworkUri != resolvedArt) {
+                            item.identity.copy(artworkUri = resolvedArt)
+                        } else {
+                            item.identity
+                        },
                 )
             }
 

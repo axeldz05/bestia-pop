@@ -8,13 +8,15 @@ import com.google.firebase.crashlytics.FirebaseCrashlytics
  * Uncaught crashes are collected automatically once Crashlytics is enabled in [com.bestiapop.android.BestiaPopApplication].
  */
 object CrashReporter {
-
     private const val TAG = "BestiaPop"
 
     @Volatile
     var isEnabled: Boolean = true
 
-    fun setKey(key: String, value: String) {
+    fun setKey(
+        key: String,
+        value: String,
+    ) {
         if (!isEnabled) return
         runCatching {
             FirebaseCrashlytics.getInstance().setCustomKey(key, value.take(MAX_VALUE_LEN))
@@ -29,7 +31,10 @@ object CrashReporter {
         }
     }
 
-    fun recordNonFatal(throwable: Throwable, keys: Map<String, String> = emptyMap()) {
+    fun recordNonFatal(
+        throwable: Throwable,
+        keys: Map<String, String> = emptyMap(),
+    ) {
         val details = if (keys.isNotEmpty()) " keys=$keys" else ""
         runCatching { Log.w(TAG, "Non-fatal exception recorded: ${throwable.message}$details", throwable) }
         if (!isEnabled) return

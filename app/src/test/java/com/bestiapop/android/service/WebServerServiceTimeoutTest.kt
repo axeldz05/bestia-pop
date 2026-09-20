@@ -6,16 +6,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class WebServerServiceTimeoutTest {
-
     @Test
     fun timeout_marksOnlyActiveTransfersAsRecoverableErrors() {
-        val transfers = listOf(
-            transfer("pending", WifiTransferState.PENDING),
-            transfer("uploading", WifiTransferState.UPLOADING),
-            transfer("processing", WifiTransferState.PROCESSING),
-            transfer("done", WifiTransferState.DONE),
-            transfer("error", WifiTransferState.ERROR, "original")
-        )
+        val transfers =
+            listOf(
+                transfer("pending", WifiTransferState.PENDING),
+                transfer("uploading", WifiTransferState.UPLOADING),
+                transfer("processing", WifiTransferState.PROCESSING),
+                transfer("done", WifiTransferState.DONE),
+                transfer("error", WifiTransferState.ERROR, "original"),
+            )
 
         val result = markWifiTransfersTimedOut(transfers).associateBy(WifiTransferItem::id)
 
@@ -30,13 +30,13 @@ class WebServerServiceTimeoutTest {
     private fun transfer(
         id: String,
         state: WifiTransferState,
-        error: String? = null
+        error: String? = null,
     ) = WifiTransferItem(
         id = id,
         fileName = "$id.mp3",
         title = id,
         artist = "Artist",
         state = state,
-        errorMessage = error
+        errorMessage = error,
     )
 }

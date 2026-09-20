@@ -14,15 +14,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 private val Context.networkDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "network_settings"
+    name = "network_settings",
 )
 
 /**
  * Manages the global offline mode / disable internet connection preference.
  * Synchronizes with SharedPreferences for synchronous read at process start.
  */
-class NetworkPreferencesRepository(private val context: Context) {
-
+class NetworkPreferencesRepository(
+    private val context: Context,
+) {
     private val syncPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private object Keys {

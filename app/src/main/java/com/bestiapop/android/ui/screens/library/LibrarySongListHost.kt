@@ -17,8 +17,8 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.preferences.FastScrollSettings
-import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
+import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.SongItemActions
 import com.bestiapop.android.ui.state.LibraryListModel
@@ -36,7 +36,7 @@ data class LibraryAlbumGroupActions(
     val onChangeAlbumCover: (String) -> Unit = {},
     val onIdentifyAlbum: (String) -> Unit = {},
     val onOpenAlbum: (String) -> Unit = {},
-    val onSwipeAction: ((String, List<Long>) -> Unit)? = null
+    val onSwipeAction: ((String, List<Long>) -> Unit)? = null,
 )
 
 /** Shared song/album action callbacks for [LibrarySongList]. */
@@ -44,7 +44,7 @@ data class LibraryAlbumGroupActions(
 data class LibrarySongListActions(
     val songActions: SongItemActions,
     val albumActions: LibraryAlbumGroupActions,
-    val onToggleSelect: (Song) -> Unit = {}
+    val onToggleSelect: (Song) -> Unit = {},
 ) {
     val onPlayNext: (Song) -> Unit get() = { song -> songActions.onPlayNext?.invoke(song) }
     val onAddToQueue: (Song) -> Unit get() = { song -> songActions.onAddToQueue?.invoke(song) }
@@ -86,31 +86,33 @@ data class LibrarySongListActions(
         onChangeAlbumCover: (String) -> Unit = {},
         onIdentifyAlbum: (String) -> Unit = {},
         onOpenAlbum: (String) -> Unit = {},
-        onSwipeAlbum: ((String, List<Long>) -> Unit)? = null
+        onSwipeAlbum: ((String, List<Long>) -> Unit)? = null,
     ) : this(
-        songActions = SongItemActions(
-            onPlayNext = onPlayNext,
-            onAddToQueue = onAddToQueue,
-            onStartRadio = onStartRadio,
-            onAddToPlaylist = onAddToPlaylist,
-            onEditMetadata = onEditMetadata,
-            onEditLyrics = onEditLyrics,
-            onIdentify = onIdentify,
-            onDelete = onDeleteSong
-        ),
-        albumActions = LibraryAlbumGroupActions(
-            onPlayAlbum = onPlayAlbum,
-            onShuffleAlbum = onShuffleAlbum,
-            onToggleSelectAlbum = onToggleSelectAlbum,
-            onAlbumLongClick = onAlbumLongClick,
-            onToggleCollapseAlbum = onToggleCollapseAlbum,
-            onEditAlbum = onEditAlbum,
-            onChangeAlbumCover = onChangeAlbumCover,
-            onIdentifyAlbum = onIdentifyAlbum,
-            onOpenAlbum = onOpenAlbum,
-            onSwipeAction = onSwipeAlbum
-        ),
-        onToggleSelect = onToggleSelect
+        songActions =
+            SongItemActions(
+                onPlayNext = onPlayNext,
+                onAddToQueue = onAddToQueue,
+                onStartRadio = onStartRadio,
+                onAddToPlaylist = onAddToPlaylist,
+                onEditMetadata = onEditMetadata,
+                onEditLyrics = onEditLyrics,
+                onIdentify = onIdentify,
+                onDelete = onDeleteSong,
+            ),
+        albumActions =
+            LibraryAlbumGroupActions(
+                onPlayAlbum = onPlayAlbum,
+                onShuffleAlbum = onShuffleAlbum,
+                onToggleSelectAlbum = onToggleSelectAlbum,
+                onAlbumLongClick = onAlbumLongClick,
+                onToggleCollapseAlbum = onToggleCollapseAlbum,
+                onEditAlbum = onEditAlbum,
+                onChangeAlbumCover = onChangeAlbumCover,
+                onIdentifyAlbum = onIdentifyAlbum,
+                onOpenAlbum = onOpenAlbum,
+                onSwipeAction = onSwipeAlbum,
+            ),
+        onToggleSelect = onToggleSelect,
     )
 }
 
@@ -139,7 +141,7 @@ fun LibrarySongListHost(
     fastScrollSettings: FastScrollSettings = FastScrollSettings(),
     currentSongIdFlow: StateFlow<Long?>? = null,
     listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     LibrarySongList(
         list = list,
@@ -158,7 +160,7 @@ fun LibrarySongListHost(
         onSongClick = onSongClick,
         onSongLongClick = onSongLongClick,
         listState = listState,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -169,7 +171,7 @@ class SongActionDialogsController(
     val onAddManyToPlaylist: (List<Song>) -> Unit = { songs -> songs.firstOrNull()?.let(onAddToPlaylist) },
     val onDelete: (Song) -> Unit,
     val onDeleteMany: (List<Song>) -> Unit,
-    val onIdentify: (Song) -> Unit = {}
+    val onIdentify: (Song) -> Unit = {},
 )
 
 /**
@@ -183,7 +185,7 @@ fun rememberSongActionDialogs(
     onAfterDelete: (List<Song>) -> Unit = {},
     playlistSongIds: (Song) -> List<Long> = { listOf(it.id) },
     onSelectPlaylist: ((Playlist, Song) -> Unit)? = null,
-    onIdentify: ((Song) -> Unit)? = null
+    onIdentify: ((Song) -> Unit)? = null,
 ): SongActionDialogsController {
     var editingSong by remember { mutableStateOf<Song?>(null) }
     var editingLyricsSong by remember { mutableStateOf<Song?>(null) }
@@ -204,7 +206,7 @@ fun rememberSongActionDialogs(
         onAfterPlaylistAdd = onAfterPlaylistAdd,
         onAfterDelete = onAfterDelete,
         playlistSongIds = playlistSongIds,
-        onSelectPlaylist = onSelectPlaylist
+        onSelectPlaylist = onSelectPlaylist,
     )
 
     return remember(viewModel, onIdentify) {
@@ -215,7 +217,7 @@ fun rememberSongActionDialogs(
             onAddManyToPlaylist = { songsForPlaylistAddition = it },
             onDelete = { songsForDeletion = listOf(it) },
             onDeleteMany = { songsForDeletion = it },
-            onIdentify = onIdentify ?: { viewModel.identifySongForReview(it) }
+            onIdentify = onIdentify ?: { viewModel.identifySongForReview(it) },
         )
     }
 }
@@ -239,7 +241,7 @@ fun SongActionDialogsHost(
     onAfterPlaylistAdd: () -> Unit = {},
     onAfterDelete: (List<Song>) -> Unit = {},
     playlistSongIds: (Song) -> List<Long> = { listOf(it.id) },
-    onSelectPlaylist: ((Playlist, Song) -> Unit)? = null
+    onSelectPlaylist: ((Playlist, Song) -> Unit)? = null,
 ) {
     val currentItem by viewModel.currentItem.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -251,7 +253,7 @@ fun SongActionDialogsHost(
             onConfirm = { title, artist, album, genre, year, trackNumber ->
                 viewModel.updateSongMetadata(song.id, title, artist, album, genre, year, trackNumber)
                 onDismissEdit()
-            }
+            },
         )
     }
 
@@ -276,7 +278,7 @@ fun SongActionDialogsHost(
                 if (isCurrent) viewModel.togglePlayPause() else viewModel.playSong(lyricsSong)
             },
             onSeek = viewModel::seekTo,
-            onFetchOnline = { onResult -> viewModel.fetchSongLyrics(lyricsSong, onResult) }
+            onFetchOnline = { onResult -> viewModel.fetchSongLyrics(lyricsSong, onResult) },
         )
     }
 
@@ -309,7 +311,7 @@ fun SongActionDialogsHost(
                 }
                 onDismissPlaylist()
                 onAfterPlaylistAdd()
-            }
+            },
         )
     }
 
@@ -327,7 +329,7 @@ fun SongActionDialogsHost(
                 viewModel.deleteSongsFromDevice(targetSongs)
                 onDismissDelete()
                 onAfterDelete(targetSongs)
-            }
+            },
         )
     }
 }
@@ -340,7 +342,7 @@ fun SongActionDialogsHost(
 fun AlbumEditDialogsHost(
     albumForEdit: Album?,
     viewModel: MusicPlayerViewModel,
-    onDismissEdit: () -> Unit
+    onDismissEdit: () -> Unit,
 ) {
     albumForEdit?.let { album ->
         EditAlbumMetadataDialog(
@@ -354,7 +356,7 @@ fun AlbumEditDialogsHost(
                     genre = genre,
                     year = year,
                     artworkUri = artworkUri,
-                    propagateToSongs = false
+                    propagateToSongs = false,
                 )
                 onDismissEdit()
             },
@@ -366,10 +368,10 @@ fun AlbumEditDialogsHost(
                     genre = genre,
                     year = year,
                     artworkUri = artworkUri,
-                    propagateToSongs = true
+                    propagateToSongs = true,
                 )
                 onDismissEdit()
-            }
+            },
         )
     }
 }

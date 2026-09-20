@@ -30,22 +30,43 @@ open class FakeMusicRepository : IMusicRepository {
     override val songPlayStatsFlow: Flow<Map<Long, Long>> = flowOf(emptyMap())
     override val playlistsFlow: Flow<List<Playlist>> = emptyFlow()
     override val albumOverridesFlow: Flow<List<AlbumOverride>> = emptyFlow()
+
     override fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> = emptyFlow()
+
     override fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> = emptyFlow()
+
     override suspend fun scanMediaStore(onProgress: LibraryScanProgress?): List<Song> = emptyList()
+
     override suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress?): List<Song> = emptyList()
-    override suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress?): List<Song> =
-        emptyList()
+
+    override suspend fun scanFolderUri(
+        treeUri: Uri,
+        onProgress: LibraryScanProgress?,
+    ): List<Song> = emptyList()
+
     override suspend fun getAllSongsSync(): List<Song> = emptyList()
+
     override suspend fun getAllSongPathRefs(): List<com.bestiapop.android.data.model.SongPathRef> = emptyList()
+
     override suspend fun getSongsByIds(ids: List<Long>): List<Song> = emptyList()
+
     override suspend fun getSongById(id: Long): Song? = null
-    override suspend fun findSongByArtistTitle(artist: String, title: String): Song? = null
+
+    override suspend fun findSongByArtistTitle(
+        artist: String,
+        title: String,
+    ): Song? = null
+
     override suspend fun saveUploadedSong(song: Song): Long = 0L
+
     override suspend fun deleteSongsFromApp(songs: List<Song>) = Unit
+
     override suspend fun deleteSongsFromDevice(songs: List<Song>) = Unit
+
     override suspend fun pruneUnplayableCorruptSongs(): List<Song> = emptyList()
+
     override suspend fun enhanceSongMetadataAndLyrics(song: Song) = Unit
+
     override suspend fun proposeSongIdentity(
         song: Song,
         customQuery: String?,
@@ -53,21 +74,32 @@ open class FakeMusicRepository : IMusicRepository {
         listenBrainzToken: String?,
         filters: IdentifySearchFilters,
         catalogIndex: Int,
-        existingCandidates: List<IdentifyCandidate>
+        existingCandidates: List<IdentifyCandidate>,
     ) = IdentifyProposal(
         songId = song.id,
         queryArtist = song.artist,
         queryTitle = song.title,
-        alreadyIdentified = true
+        alreadyIdentified = true,
     )
+
     override suspend fun applySongIdentity(
         songId: Long,
         candidate: IdentifyCandidate,
-        fields: IdentifyApplyFields
+        fields: IdentifyApplyFields,
     ) = IdentifyResult.Skipped
+
     override suspend fun identifySongMetadata(song: Song) = IdentifyResult.Skipped
-    override suspend fun updateSongDuration(songId: Long, durationMs: Long) = Unit
-    override suspend fun touchItemLastPlayed(item: PlayableItem, playedAt: Long) = Unit
+
+    override suspend fun updateSongDuration(
+        songId: Long,
+        durationMs: Long,
+    ) = Unit
+
+    override suspend fun touchItemLastPlayed(
+        item: PlayableItem,
+        playedAt: Long,
+    ) = Unit
+
     override suspend fun updateSongMetadata(
         songId: Long,
         title: String,
@@ -75,50 +107,114 @@ open class FakeMusicRepository : IMusicRepository {
         album: String,
         genre: String,
         year: Int,
-        trackNumber: Int
+        trackNumber: Int,
     ) = Unit
-    override suspend fun updateSongLyrics(songId: Long, lyrics: String?) = Unit
+
+    override suspend fun updateSongLyrics(
+        songId: Long,
+        lyrics: String?,
+    ) = Unit
+
     override suspend fun findLocalLyrics(song: Song): String? = null
-    override suspend fun saveCompanionLrc(song: Song, lyrics: String): Boolean = false
+
+    override suspend fun saveCompanionLrc(
+        song: Song,
+        lyrics: String,
+    ): Boolean = false
+
     override suspend fun fetchSongLyrics(song: Song): String? = null
+
     override suspend fun upsertAlbumOverride(override: AlbumOverride) = Unit
+
     override suspend fun updateAlbumMetadataPropagateToSongs(override: AlbumOverride) = Unit
-    override suspend fun setAlbumArtwork(albumKey: String, artworkUri: String?) = Unit
-    override suspend fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String) = Unit
+
+    override suspend fun setAlbumArtwork(
+        albumKey: String,
+        artworkUri: String?,
+    ) = Unit
+
+    override suspend fun mergeAlbumInto(
+        sourceAlbumKey: String,
+        targetAlbumKey: String,
+    ) = Unit
+
     override suspend fun getAlbumOverride(albumKey: String): AlbumOverride? = null
-    override fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? = null
+
+    override fun extractAndSaveEmbeddedArtwork(
+        audioPathOrUri: String,
+        identifier: String,
+    ): String? = null
+
     override fun savePlaylistCoverImage(sourceUriStr: String?): String? = null
+
     override fun saveAlbumCoverImage(sourceUriStr: String?): String? = null
-    override suspend fun createPlaylist(name: String, description: String?, coverUri: String?): Long = 0L
-    override suspend fun updatePlaylist(id: Long, name: String, description: String?, coverUri: String?) = Unit
+
+    override suspend fun createPlaylist(
+        name: String,
+        description: String?,
+        coverUri: String?,
+    ): Long = 0L
+
+    override suspend fun updatePlaylist(
+        id: Long,
+        name: String,
+        description: String?,
+        coverUri: String?,
+    ) = Unit
+
     override suspend fun deletePlaylist(id: Long) = Unit
-    override suspend fun addSongToPlaylist(playlistId: Long, songId: Long) = Unit
-    override suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = Unit
+
+    override suspend fun addSongToPlaylist(
+        playlistId: Long,
+        songId: Long,
+    ) = Unit
+
+    override suspend fun removeSongFromPlaylist(
+        playlistId: Long,
+        songId: Long,
+    ) = Unit
+
     override suspend fun getPlaylistIdsForSong(songId: Long): List<Long> = emptyList()
+
     override suspend fun getCoPlaylistSongIds(songId: Long): Set<Long> = emptySet()
-    override fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
-        emptyFlow()
+
+    override fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> = emptyFlow()
+
     override suspend fun addPlaylistPendingTracks(tracks: List<PlaylistPendingTrack>) = Unit
-    override suspend fun removePlaylistPendingTrack(playlistId: Long, artist: String, title: String) = Unit
+
+    override suspend fun removePlaylistPendingTrack(
+        playlistId: Long,
+        artist: String,
+        title: String,
+    ) = Unit
+
     override suspend fun enrichPlaylistPendingArtworks(playlistId: Long) = Unit
+
     override suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,
         onProgress: ((DownloadPhase) -> Unit)?,
-        conflictPolicy: DownloadConflictPolicy?
+        conflictPolicy: DownloadConflictPolicy?,
     ): Song = error("downloadAndSaveOnlineTrack not stubbed")
+
     override suspend fun syncTagsToFiles(onProgress: LibraryScanProgress?) = TagSyncSummary()
+
     override suspend fun saveAlbumTracksToLibrary(
         albumTitle: String,
         artistName: String,
         coverUrl: String?,
         year: Int,
         genre: String,
-        tracks: List<com.bestiapop.android.data.model.CatalogTrackCandidate>
+        tracks: List<com.bestiapop.android.data.model.CatalogTrackCandidate>,
     ): List<Song> = emptyList()
-    override suspend fun removeSavedAlbumFromLibrary(albumName: String, artistName: String): Int = 0
+
+    override suspend fun removeSavedAlbumFromLibrary(
+        albumName: String,
+        artistName: String,
+    ): Int = 0
+
     override suspend fun loadKnownAlbumTracks(
         artist: String,
         album: String,
-        fetchCatalog: Boolean
+        fetchCatalog: Boolean,
     ): com.bestiapop.android.domain.util.KnownAlbumTracks? = null
 }

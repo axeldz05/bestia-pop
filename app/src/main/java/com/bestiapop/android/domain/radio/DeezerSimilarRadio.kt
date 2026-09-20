@@ -3,9 +3,9 @@ package com.bestiapop.android.domain.radio
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Deezer artist radio + related tops as Radio NEW/BOTH fill (no token).
@@ -22,9 +22,8 @@ class DeezerSimilarRadio(
     private val cacheTtlMs: Long = CACHE_TTL_MS,
     private val relatedArtistLimit: Int = RELATED_ARTIST_LIMIT,
     private val relatedTopLimit: Int = RELATED_TOP_LIMIT,
-    private val itunesFillLimit: Int = ITUNES_FILL_LIMIT
+    private val itunesFillLimit: Int = ITUNES_FILL_LIMIT,
 ) : SimilarTracksProvider {
-
     override val id: String = "deezer"
 
     private val mutex = Mutex()
@@ -36,7 +35,7 @@ class DeezerSimilarRadio(
         seed: PlayableItem,
         library: List<Song>,
         excludeKeys: Set<String>,
-        limit: Int
+        limit: Int,
     ): List<PlayableItem> {
         if (limit <= 0 || seed.artist.isBlank() || seed.title.isBlank()) return emptyList()
 
@@ -46,6 +45,7 @@ class DeezerSimilarRadio(
         val libraryIndex = TrackMatchKeys.buildLibraryIndex(library)
         val remotes = ArrayList<PlayableItem.Remote>(limit)
         val localSeen = HashSet<String>()
+
         fun tryAdd(hint: TrackIdentity) {
             if (remotes.size >= limit) return
             val key = TrackMatchKeys.matchKey(hint.artist, hint.title)
@@ -62,9 +62,10 @@ class DeezerSimilarRadio(
         }
 
         if (remotes.size < limit) {
-            val itunes = runCatching {
-                fetchItunesArtistSongs(seed.artist, itunesFillLimit)
-            }.getOrDefault(emptyList())
+            val itunes =
+                runCatching {
+                    fetchItunesArtistSongs(seed.artist, itunesFillLimit)
+                }.getOrDefault(emptyList())
             val seedTitleNorm = TrackMatchKeys.normalize(seed.title)
             for (hint in itunes) {
                 if (remotes.size >= limit) break
@@ -82,9 +83,10 @@ class DeezerSimilarRadio(
         if (artistKey.isEmpty()) return emptyList()
 
         mutex.withLock {
-            val fresh = cachedArtistKey == artistKey &&
-                clockMs() - cachedAtMs < cacheTtlMs &&
-                cachedHints.isNotEmpty()
+            val fresh =
+                cachedArtistKey == artistKey &&
+                    clockMs() - cachedAtMs < cacheTtlMs &&
+                    cachedHints.isNotEmpty()
             if (fresh) return cachedHints
         }
 
@@ -103,13 +105,14 @@ class DeezerSimilarRadio(
 
         append(runCatching { fetchArtistRadio(artistId) }.getOrDefault(emptyList()))
 
-        val relatedIds = runCatching {
-            fetchRelatedArtistIds(artistId, relatedArtistLimit)
-        }.getOrDefault(emptyList())
+        val relatedIds =
+            runCatching {
+                fetchRelatedArtistIds(artistId, relatedArtistLimit)
+            }.getOrDefault(emptyList())
         for (relatedId in relatedIds) {
             append(
                 runCatching { fetchArtistTop(relatedId, relatedTopLimit) }
-                    .getOrDefault(emptyList())
+                    .getOrDefault(emptyList()),
             )
         }
 

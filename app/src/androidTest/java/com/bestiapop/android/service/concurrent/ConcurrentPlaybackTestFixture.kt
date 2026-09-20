@@ -34,10 +34,11 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
     private val context = instrumentation.targetContext
     private val deviceProbe = PlaybackDeviceProbe()
     private val application = context.applicationContext as BestiaPopApplication
-    private val fixtureDir = File(
-        context.cacheDir,
-        "concurrent-playback-${System.nanoTime()}"
-    )
+    private val fixtureDir =
+        File(
+            context.cacheDir,
+            "concurrent-playback-${System.nanoTime()}",
+        )
     private val fixtureFile = File(fixtureDir, "continuous.wav")
 
     private var scenario: ActivityScenario<MainActivity>? = null
@@ -53,7 +54,7 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
         PcmWavFixture.write(
             fixtureFile,
             durationMs = PLAYBACK_DURATION_MS,
-            toneHz = 220.0
+            toneHz = 220.0,
         )
 
         if (launchForegroundHost) launchForegroundHost()
@@ -63,18 +64,19 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
         onMain {
             connected.volume = 0f
             application.playbackRuntime.playPlayableCollection(
-                items = listOf(
-                    PlayableItem.Local(
-                        Song(
-                            id = FIXTURE_SONG_ID,
-                            uriString = fixtureFile.absolutePath,
-                            title = PLAYBACK_TITLE,
-                            artist = "BestiaPop concurrent instrumentation",
-                            durationMs = PLAYBACK_DURATION_MS.toLong()
-                        )
-                    )
-                ),
-                rotate = false
+                items =
+                    listOf(
+                        PlayableItem.Local(
+                            Song(
+                                id = FIXTURE_SONG_ID,
+                                uriString = fixtureFile.absolutePath,
+                                title = PLAYBACK_TITLE,
+                                artist = "BestiaPop concurrent instrumentation",
+                                durationMs = PLAYBACK_DURATION_MS.toLong(),
+                            ),
+                        ),
+                    ),
+                rotate = false,
             )
         }
 
@@ -91,9 +93,10 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
     }
 
     fun viewModel(): MusicPlayerViewModel {
-        val activeScenario = checkNotNull(scenario) {
-            "A foreground Activity host is required to obtain MusicPlayerViewModel"
-        }
+        val activeScenario =
+            checkNotNull(scenario) {
+                "A foreground Activity host is required to obtain MusicPlayerViewModel"
+            }
         var result: MusicPlayerViewModel? = null
         activeScenario.onActivity { activity ->
             result = ViewModelProvider(activity)[MusicPlayerViewModel::class.java]
@@ -101,15 +104,19 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
         return checkNotNull(result)
     }
 
-    fun position(): Long = onMain {
-        checkNotNull(controller) { "Concurrent playback controller is not connected" }
-            .currentPosition
-    }
+    fun position(): Long =
+        onMain {
+            checkNotNull(controller) { "Concurrent playback controller is not connected" }
+                .currentPosition
+        }
 
-    fun assertPositionAdvancesFrom(startPositionMs: Long, operation: String) {
+    fun assertPositionAdvancesFrom(
+        startPositionMs: Long,
+        operation: String,
+    ) {
         awaitConcurrent(
             "playback advances during $operation",
-            diagnostics = ::diagnostics
+            diagnostics = ::diagnostics,
         ) {
             onMain {
                 val connected = controller ?: return@onMain false
@@ -121,22 +128,24 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
     }
 
     fun assertPlaybackForeground(): Int {
-        val service = awaitConcurrentValue(
-            "MusicService foreground",
-            diagnostics = ::diagnostics
-        ) {
-            musicServiceInfo()?.takeIf(ActivityManager.RunningServiceInfo::foreground)
-        }
-        val notification = awaitConcurrentValue(
-            "playback notification",
-            diagnostics = ::diagnostics,
-            value = ::playbackNotification
-        )
+        val service =
+            awaitConcurrentValue(
+                "MusicService foreground",
+                diagnostics = ::diagnostics,
+            ) {
+                musicServiceInfo()?.takeIf(ActivityManager.RunningServiceInfo::foreground)
+            }
+        val notification =
+            awaitConcurrentValue(
+                "playback notification",
+                diagnostics = ::diagnostics,
+                value = ::playbackNotification,
+            )
         check(NotificationCompat.getActionCount(notification) in 1..5) {
             "Playback notification action count changed: ${NotificationCompat.getActionCount(notification)}"
         }
         check(
-            notification.extras.getCharSequence(Notification.EXTRA_TITLE) == PLAYBACK_TITLE
+            notification.extras.getCharSequence(Notification.EXTRA_TITLE) == PLAYBACK_TITLE,
         ) {
             "Unexpected playback notification title: " +
                 notification.extras.getCharSequence(Notification.EXTRA_TITLE)
@@ -146,12 +155,13 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
 
     fun diagnostics(): String {
         val connected = controller
-        val controllerState = runCatching {
-            onMain {
-                "state=${connected?.playbackState}, playWhenReady=${connected?.playWhenReady}, " +
-                    "isPlaying=${connected?.isPlaying}, position=${connected?.currentPosition}"
-            }
-        }.getOrElse { "controllerError=${it.javaClass.simpleName}:${it.message}" }
+        val controllerState =
+            runCatching {
+                onMain {
+                    "state=${connected?.playbackState}, playWhenReady=${connected?.playWhenReady}, " +
+                        "isPlaying=${connected?.isPlaying}, position=${connected?.currentPosition}"
+                }
+            }.getOrElse { "controllerError=${it.javaClass.simpleName}:${it.message}" }
         val service = runCatching { musicServiceInfo() }.getOrNull()
         val notification = runCatching { playbackNotification() }.getOrNull()
         return "$controllerState, serviceRunning=${service != null}, " +
@@ -162,10 +172,14 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
 
     override fun close() {
         var firstFailure: Throwable? = null
+
         fun cleanup(block: () -> Unit) {
             runCatching(block).exceptionOrNull()?.let { failure ->
-                if (firstFailure == null) firstFailure = failure
-                else firstFailure?.addSuppressed(failure)
+                if (firstFailure == null) {
+                    firstFailure = failure
+                } else {
+                    firstFailure?.addSuppressed(failure)
+                }
             }
         }
 
@@ -179,9 +193,10 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
             cleanup {
                 awaitConcurrent(
                     "runtime queue cleared",
-                    diagnostics = ::diagnostics
+                    diagnostics = ::diagnostics,
                 ) {
-                    application.playbackRuntime.queue.value.isEmpty()
+                    application.playbackRuntime.queue.value
+                        .isEmpty()
                 }
             }
             cleanup { onMain { connected.release() } }
@@ -190,7 +205,8 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
 
         cleanup { context.stopService(Intent(context, MusicService::class.java)) }
         cleanup {
-            context.getSystemService(NotificationManager::class.java)
+            context
+                .getSystemService(NotificationManager::class.java)
                 .cancel(MusicService.PLAYBACK_NOTIFICATION_ID)
         }
         cleanup { scenario?.close() }
@@ -211,15 +227,15 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
         launched.moveToState(Lifecycle.State.RESUMED)
         awaitConcurrent(
             "MainActivity foreground host",
-            diagnostics = ::diagnostics
+            diagnostics = ::diagnostics,
         ) {
             var foreground = false
             launched.onActivity { activity ->
                 foreground =
                     activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
-                        activity.hasWindowFocus() &&
-                        !activity.isFinishing &&
-                        !activity.isDestroyed
+                    activity.hasWindowFocus() &&
+                    !activity.isFinishing &&
+                    !activity.isDestroyed
             }
             foreground
         }
@@ -229,8 +245,7 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
 
     private fun playbackNotification(): Notification? = deviceProbe.playbackNotification()
 
-    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? =
-        deviceProbe.musicServiceInfo()
+    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? = deviceProbe.musicServiceInfo()
 
     private fun <T> onMain(block: () -> T): T = deviceProbe.onMain(block)
 
@@ -246,7 +261,7 @@ internal fun awaitConcurrent(
     description: String,
     timeoutMs: Long = ASYNC_TIMEOUT_MS,
     diagnostics: () -> String = { "" },
-    condition: () -> Boolean
+    condition: () -> Boolean,
 ) {
     val deadline = SystemClock.elapsedRealtime() + timeoutMs
     while (SystemClock.elapsedRealtime() < deadline) {
@@ -260,7 +275,7 @@ internal fun <T : Any> awaitConcurrentValue(
     description: String,
     timeoutMs: Long = ASYNC_TIMEOUT_MS,
     diagnostics: () -> String = { "" },
-    value: () -> T?
+    value: () -> T?,
 ): T {
     var result: T? = null
     awaitConcurrent(description, timeoutMs, diagnostics) {

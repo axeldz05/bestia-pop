@@ -8,7 +8,6 @@ import org.junit.Test
 import java.io.File
 
 class AudioTagWriterTest {
-
     @Test
     fun supportedExtensions() {
         assertTrue(AudioTagWriter.isSupportedExtension(File("/tmp/a.mp3")))
@@ -31,13 +30,14 @@ class AudioTagWriterTest {
 
     @Test
     fun write_missingFile_isNotWritable() {
-        val song = com.bestiapop.android.data.model.Song(
-            uriString = "/missing/song.mp3",
-            title = "T",
-            artist = "A",
-            album = "Alb",
-            folderPath = "/missing"
-        )
+        val song =
+            com.bestiapop.android.data.model.Song(
+                uriString = "/missing/song.mp3",
+                title = "T",
+                artist = "A",
+                album = "Alb",
+                folderPath = "/missing",
+            )
         val result = AudioTagWriter.write(song, File("/missing/does-not-exist.mp3"))
         assertEquals(TagWriteResult.NotWritable, result)
     }
@@ -48,13 +48,14 @@ class AudioTagWriterTest {
         try {
             tmp.writeBytes(ByteArray(16))
             tmp.setWritable(true)
-            val song = com.bestiapop.android.data.model.Song(
-                uriString = tmp.absolutePath,
-                title = "T",
-                artist = "A",
-                album = "Alb",
-                folderPath = tmp.parent.orEmpty()
-            )
+            val song =
+                com.bestiapop.android.data.model.Song(
+                    uriString = tmp.absolutePath,
+                    title = "T",
+                    artist = "A",
+                    album = "Alb",
+                    folderPath = tmp.parent.orEmpty(),
+                )
             assertEquals(TagWriteResult.Unsupported, AudioTagWriter.write(song, tmp))
         } finally {
             tmp.delete()

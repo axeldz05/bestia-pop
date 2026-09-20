@@ -1,7 +1,6 @@
 package com.bestiapop.android.domain.util
 
 import com.bestiapop.android.data.model.Song
-
 import java.util.concurrent.ConcurrentHashMap
 
 private val normalizeCache = ConcurrentHashMap<String, String>()
@@ -30,10 +29,15 @@ fun albumIdentityKey(name: String): String =
         TrackMatchKeys.normalize(stripAlbumEditionDecor(normalizeAlbumName(it)))
     }
 
-fun albumArtistKey(artist: String, album: String): String =
-    "${TrackMatchKeys.normalize(artist)}|${albumIdentityKey(album)}"
+fun albumArtistKey(
+    artist: String,
+    album: String,
+): String = "${TrackMatchKeys.normalize(artist)}|${albumIdentityKey(album)}"
 
-fun albumNamesMatch(a: String, b: String): Boolean {
+fun albumNamesMatch(
+    a: String,
+    b: String,
+): Boolean {
     val ka = albumIdentityKey(a)
     val kb = albumIdentityKey(b)
     return ka.isNotEmpty() && ka == kb
@@ -49,9 +53,11 @@ fun stripAlbumEditionDecor(name: String): String =
             s = EDITION_PAREN.replace(s, " ").trim()
             s = EDITION_BRACKET.replace(s, " ").trim()
             s = EDITION_SUFFIX.replace(s, " ").trim()
-            s = OTHER_SCRIPT_SUFFIX.replace(s) { match ->
-                if (isOtherScriptSubtitle(match.groupValues[1])) "" else match.value
-            }.trim()
+            s =
+                OTHER_SCRIPT_SUFFIX
+                    .replace(s) { match ->
+                        if (isOtherScriptSubtitle(match.groupValues[1])) "" else match.value
+                    }.trim()
             s = s.replace(WHITESPACE, " ").trim()
         }
         s.ifBlank { raw.trim() }
@@ -78,13 +84,14 @@ fun preferredAlbumDisplayName(names: Collection<String>): String {
     }
     if (counts.isEmpty()) return ""
 
-    val winner = counts.keys.minWith(
-        compareBy<String> { if (isLiveSessionAlbum(it)) 1 else 0 }
-            .thenByDescending { counts[it] ?: 0 }
-            .thenBy { if (normalizeAlbumName(it) == stripAlbumEditionDecor(it)) 0 else 1 }
-            .thenBy { it.length }
-            .thenBy { it }
-    )
+    val winner =
+        counts.keys.minWith(
+            compareBy<String> { if (isLiveSessionAlbum(it)) 1 else 0 }
+                .thenByDescending { counts[it] ?: 0 }
+                .thenBy { if (normalizeAlbumName(it) == stripAlbumEditionDecor(it)) 0 else 1 }
+                .thenBy { it.length }
+                .thenBy { it },
+        )
     val stripped = stripAlbumEditionDecor(normalizeAlbumName(winner))
     if (stripped.isEmpty()) return winner
     for (key in counts.keys) {
@@ -95,7 +102,7 @@ fun preferredAlbumDisplayName(names: Collection<String>): String {
 
 fun studioAlbumKeysByArtist(
     songs: Iterable<Song>,
-    isGeneric: (String) -> Boolean
+    isGeneric: (String) -> Boolean,
 ): Map<String, List<String>> {
     val map = LinkedHashMap<String, LinkedHashSet<String>>()
     for (song in songs) {
@@ -112,7 +119,7 @@ fun albumGroupingKey(
     album: String,
     artist: String,
     studioKeysByArtist: Map<String, List<String>>,
-    isGeneric: (String) -> Boolean
+    isGeneric: (String) -> Boolean,
 ): String {
     val identity = albumIdentityKey(album)
     if (isGeneric(album) || !isLiveSessionAlbum(album)) return identity
@@ -121,7 +128,7 @@ fun albumGroupingKey(
 
 fun songsByAlbumBucket(
     songs: List<Song>,
-    isGeneric: (String) -> Boolean
+    isGeneric: (String) -> Boolean,
 ): Map<String, List<Song>> {
     val studio = studioAlbumKeysByArtist(songs, isGeneric)
     return songs.groupBy { song ->
@@ -132,7 +139,7 @@ fun songsByAlbumBucket(
 fun songsMatchingAlbumBucket(
     songs: List<Song>,
     albumKey: String,
-    isGeneric: (String) -> Boolean
+    isGeneric: (String) -> Boolean,
 ): List<Song> {
     val grouped = songsByAlbumBucket(songs, isGeneric)
     val target = albumIdentityKey(albumKey)
@@ -146,27 +153,11 @@ fun songsMatchingAlbumBucket(
 fun libraryAlbumKeysInBucket(
     songs: List<Song>,
     targetAlbum: String,
-    isGeneric: (String) -> Boolean
-): List<String> {
-    return songsMatchingAlbumBucket(songs, targetAlbum, isGeneric)
+    isGeneric: (String) -> Boolean,
+): List<String> =
+    songsMatchingAlbumBucket(songs, targetAlbum, isGeneric)
         .map { it.album }
         .distinct()
-}
-
-fun pickPersistedAlbumName(
-    library: List<Song>,
-    proposedAlbum: String,
-    proposedArtist: String,
-    sourceAlbum: String = "",
-    isGeneric: (String) -> Boolean
-): String = pickPersistedAlbumName(
-    library = library,
-    proposedAlbum = proposedAlbum,
-    proposedArtist = proposedArtist,
-    sourceAlbum = sourceAlbum,
-    isGeneric = isGeneric,
-    studioKeysByArtist = studioAlbumKeysByArtist(library, isGeneric)
-)
 
 fun pickPersistedAlbumName(
     library: List<Song>,
@@ -174,7 +165,23 @@ fun pickPersistedAlbumName(
     proposedArtist: String,
     sourceAlbum: String = "",
     isGeneric: (String) -> Boolean,
-    studioKeysByArtist: Map<String, List<String>>
+): String =
+    pickPersistedAlbumName(
+        library = library,
+        proposedAlbum = proposedAlbum,
+        proposedArtist = proposedArtist,
+        sourceAlbum = sourceAlbum,
+        isGeneric = isGeneric,
+        studioKeysByArtist = studioAlbumKeysByArtist(library, isGeneric),
+    )
+
+fun pickPersistedAlbumName(
+    library: List<Song>,
+    proposedAlbum: String,
+    proposedArtist: String,
+    sourceAlbum: String = "",
+    isGeneric: (String) -> Boolean,
+    studioKeysByArtist: Map<String, List<String>>,
 ): String {
     val proposed = proposedAlbum.trim().ifBlank { sourceAlbum }
     if (proposed.isEmpty()) return proposedAlbum
@@ -185,24 +192,28 @@ fun pickPersistedAlbumName(
         return source
     }
     val key = albumGroupingKey(proposed, proposedArtist, studioKeysByArtist, isGeneric)
-    val existing = library.map { it.album }.filter { album ->
-        albumIdentityKey(album) == key ||
-            albumGroupingKey(album, proposedArtist, studioKeysByArtist, isGeneric) == key
-    }
+    val existing =
+        library.map { it.album }.filter { album ->
+            albumIdentityKey(album) == key ||
+                albumGroupingKey(album, proposedArtist, studioKeysByArtist, isGeneric) == key
+        }
     val cleaned = stripAlbumEditionDecor(normalizeAlbumName(proposed)).ifBlank { proposed }
     return preferredAlbumDisplayName(existing + cleaned).ifBlank { proposed }
 }
 
 fun pickPersistedArtistName(
     existingArtists: Collection<String>,
-    proposed: String
+    proposed: String,
 ): String {
     val compatible = existingArtists.filter { artistsCompatible(it, proposed) }
     if (compatible.isEmpty()) return proposed
     return compatible.minWith(compareBy<String> { it.length }.thenBy { it })
 }
 
-fun artistsCompatible(a: String, b: String): Boolean {
+fun artistsCompatible(
+    a: String,
+    b: String,
+): Boolean {
     val na = TrackMatchKeys.normalize(a)
     val nb = TrackMatchKeys.normalize(b)
     if (na.isEmpty() || nb.isEmpty()) return false
@@ -210,7 +221,10 @@ fun artistsCompatible(a: String, b: String): Boolean {
     return na.startsWith("$nb ") || nb.startsWith("$na ")
 }
 
-fun dominantNonBlank(values: Iterable<String>, default: String): String {
+fun dominantNonBlank(
+    values: Iterable<String>,
+    default: String,
+): String {
     val counts = HashMap<String, Int>(8)
     for (v in values) {
         if (v.isNotBlank()) {
@@ -218,11 +232,12 @@ fun dominantNonBlank(values: Iterable<String>, default: String): String {
         }
     }
     if (counts.isEmpty()) return default
-    return counts.entries.maxWith(
-        compareBy<Map.Entry<String, Int>> { it.value }
-            .thenBy { -it.key.length }
-            .thenBy { it.key }
-    ).key
+    return counts.entries
+        .maxWith(
+            compareBy<Map.Entry<String, Int>> { it.value }
+                .thenBy { -it.key.length }
+                .thenBy { it.key },
+        ).key
 }
 
 private val identityKeyCache = ConcurrentHashMap<String, String>()
@@ -249,26 +264,30 @@ private val EDITION_TOKEN =
         """audiotree\s+live|mahogany\s+sessions?|tiny\s+desk|from\s+the\s+basement|""" +
         """like\s+a\s+version|colors\s+show)"""
 
-private val EDITION_PAREN = Regex(
-    """\s*\(\s*$EDITION_TOKEN\s*\)""",
-    RegexOption.IGNORE_CASE
-)
-private val EDITION_BRACKET = Regex(
-    """\s*\[\s*$EDITION_TOKEN\s*]""",
-    RegexOption.IGNORE_CASE
-)
-private val EDITION_SUFFIX = Regex(
-    """\s*[-–—]\s*$EDITION_TOKEN\s*$""",
-    RegexOption.IGNORE_CASE
-)
+private val EDITION_PAREN =
+    Regex(
+        """\s*\(\s*$EDITION_TOKEN\s*\)""",
+        RegexOption.IGNORE_CASE,
+    )
+private val EDITION_BRACKET =
+    Regex(
+        """\s*\[\s*$EDITION_TOKEN\s*]""",
+        RegexOption.IGNORE_CASE,
+    )
+private val EDITION_SUFFIX =
+    Regex(
+        """\s*[-–—]\s*$EDITION_TOKEN\s*$""",
+        RegexOption.IGNORE_CASE,
+    )
 private val OTHER_SCRIPT_SUFFIX = Regex("""\s*[-–—]\s*(.+)$""")
 
-private val SESSION_PHRASES = listOf(
-    "audiotree live",
-    "mahogany session",
-    "mahogany sessions",
-    "tiny desk",
-    "from the basement",
-    "like a version",
-    "colors show"
-)
+private val SESSION_PHRASES =
+    listOf(
+        "audiotree live",
+        "mahogany session",
+        "mahogany sessions",
+        "tiny desk",
+        "from the basement",
+        "like a version",
+        "colors show",
+    )

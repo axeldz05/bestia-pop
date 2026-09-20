@@ -61,12 +61,12 @@ private const val UPLOAD_TOO_LARGE_MESSAGE = "Archivo demasiado grande"
 internal data class WifiPendingUpload(
     val stagingFile: File,
     val publish: () -> String,
-    val deletePartial: (publishedPath: String?) -> Unit
+    val deletePartial: (publishedPath: String?) -> Unit,
 )
 
 internal data class WifiPersistedUpload(
     val identity: TrackIdentity,
-    val songId: Long
+    val songId: Long,
 )
 
 /**
@@ -85,7 +85,7 @@ internal class WifiSyncHttpBoundary(
     private val onFailure: (error: Throwable, phase: String, transferId: String) -> Unit,
     private val maxUploadBytes: Long = WIFI_SYNC_MAX_UPLOAD_BYTES,
     private val newTransferId: () -> String = { UUID.randomUUID().toString() },
-    private val nowMillis: () -> Long = System::currentTimeMillis
+    private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
     init {
         require(port in 1..65535) { "Invalid WiFi Sync port: $port" }
@@ -103,17 +103,18 @@ internal class WifiSyncHttpBoundary(
 
             get("/existing-files") {
                 call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
-                val existing = (listManagedNames() + listLibraryNames())
-                    .asSequence()
-                    .flatMap { UploadNameSanitizer.matchingBasenames(it) }
-                    .filter(String::isNotBlank)
-                    .map { it.lowercase(Locale.ROOT) }
-                    .distinct()
-                    .sorted()
-                    .toList()
+                val existing =
+                    (listManagedNames() + listLibraryNames())
+                        .asSequence()
+                        .flatMap { UploadNameSanitizer.matchingBasenames(it) }
+                        .filter(String::isNotBlank)
+                        .map { it.lowercase(Locale.ROOT) }
+                        .distinct()
+                        .sorted()
+                        .toList()
                 call.respondText(
                     existing.joinToString(prefix = "[", postfix = "]") { jsonString(it) },
-                    ContentType.Application.Json
+                    ContentType.Application.Json,
                 )
             }
 
@@ -132,19 +133,23 @@ internal class WifiSyncHttpBoundary(
                     return@post
                 }
 
-                val rawName = call.request.queryParameters["name"]
-                    ?: "audio_${nowMillis()}.mp3"
-                val safeName = UploadNameSanitizer.sanitize(rawName)
-                    .ifBlank { "audio_${nowMillis()}.mp3" }
+                val rawName =
+                    call.request.queryParameters["name"]
+                        ?: "audio_${nowMillis()}.mp3"
+                val safeName =
+                    UploadNameSanitizer
+                        .sanitize(rawName)
+                        .ifBlank { "audio_${nowMillis()}.mp3" }
                 val transferId = newTransferId()
-                var transfer = WifiTransferItem(
-                    id = transferId,
-                    fileName = safeName,
-                    title = safeName.substringBeforeLast("."),
-                    artist = "Recibiendo…",
-                    state = WifiTransferState.UPLOADING,
-                    progressPercent = 0
-                )
+                var transfer =
+                    WifiTransferItem(
+                        id = transferId,
+                        fileName = safeName,
+                        title = safeName.substringBeforeLast("."),
+                        artist = "Recibiendo…",
+                        state = WifiTransferState.UPLOADING,
+                        progressPercent = 0,
+                    )
 
                 fun emit(next: WifiTransferItem) {
                     transfer = next
@@ -172,15 +177,16 @@ internal class WifiSyncHttpBoundary(
                             output.write(buffer, 0, read)
                             bytesWritten += read
                             if (declaredLength != null && declaredLength > 0L) {
-                                val percent = ((bytesWritten * 100) / declaredLength)
-                                    .toInt()
-                                    .coerceIn(0, 99)
+                                val percent =
+                                    ((bytesWritten * 100) / declaredLength)
+                                        .toInt()
+                                        .coerceIn(0, 99)
                                 if (percent != transfer.progressPercent) {
                                     emit(
                                         transfer.copy(
                                             state = WifiTransferState.UPLOADING,
-                                            progressPercent = percent
-                                        )
+                                            progressPercent = percent,
+                                        ),
                                     )
                                 }
                             }
@@ -192,8 +198,8 @@ internal class WifiSyncHttpBoundary(
                         transfer.copy(
                             state = WifiTransferState.PROCESSING,
                             progressPercent = 100,
-                            artist = "Procesando…"
-                        )
+                            artist = "Procesando…",
+                        ),
                     )
 
                     phase = "save_upload"
@@ -207,21 +213,21 @@ internal class WifiSyncHttpBoundary(
                             progressPercent = 100,
                             songId = persisted.songId,
                             artworkUri = persisted.identity.artworkUri,
-                            errorMessage = null
-                        )
+                            errorMessage = null,
+                        ),
                     )
                     committed = true
                     call.respondText(
                         """{"status":"ok","filename":${jsonString(safeName)}}""",
-                        ContentType.Application.Json
+                        ContentType.Application.Json,
                     )
                 } catch (_: WifiUploadTooLargeException) {
                     pendingUpload?.deletePartialSafely(publishedPath)
                     emit(
                         transfer.copy(
                             state = WifiTransferState.ERROR,
-                            errorMessage = UPLOAD_TOO_LARGE_MESSAGE
-                        )
+                            errorMessage = UPLOAD_TOO_LARGE_MESSAGE,
+                        ),
                     )
                     call.respondJsonError(HttpStatusCode.PayloadTooLarge, UPLOAD_TOO_LARGE_MESSAGE)
                 } catch (error: CancellationException) {
@@ -233,16 +239,17 @@ internal class WifiSyncHttpBoundary(
                     if (committed) throw error
                     pendingUpload?.deletePartialSafely(publishedPath)
                     runCatching { onFailure(error, phase, transferId) }
-                    val message = if (phase == "save_upload") {
-                        "No se pudo guardar el archivo"
-                    } else {
-                        "Error de transferencia"
-                    }
+                    val message =
+                        if (phase == "save_upload") {
+                            "No se pudo guardar el archivo"
+                        } else {
+                            "Error de transferencia"
+                        }
                     emit(
                         transfer.copy(
                             state = WifiTransferState.ERROR,
-                            errorMessage = error.localizedMessage ?: message
-                        )
+                            errorMessage = error.localizedMessage ?: message,
+                        ),
                     )
                     call.respondJsonError(HttpStatusCode.InternalServerError, message)
                 }
@@ -255,11 +262,12 @@ internal class WifiSyncHttpBoundary(
         val parsed = parseAuthority(authority) ?: return false
         if (parsed.second != port) return false
         val host = parsed.first
-        val advertised = advertisedHost()
-            ?.trim()
-            ?.removePrefix("[")
-            ?.removeSuffix("]")
-            ?.lowercase(Locale.ROOT)
+        val advertised =
+            advertisedHost()
+                ?.trim()
+                ?.removePrefix("[")
+                ?.removeSuffix("]")
+                ?.lowercase(Locale.ROOT)
         return host == advertised ||
             host == "localhost" ||
             host == "127.0.0.1" ||
@@ -271,11 +279,13 @@ internal class WifiSyncHttpBoundary(
             val closeBracket = authority.indexOf(']')
             if (closeBracket <= 1) return null
             val host = authority.substring(1, closeBracket)
-            val portValue = authority.substring(closeBracket + 1)
-                .removePrefix(":")
-                .takeIf(String::isNotBlank)
-                ?.toIntOrNull()
-                ?: return null
+            val portValue =
+                authority
+                    .substring(closeBracket + 1)
+                    .removePrefix(":")
+                    .takeIf(String::isNotBlank)
+                    ?.toIntOrNull()
+                    ?: return null
             return host to portValue
         }
         if (authority.count { it == ':' } != 1) return null
@@ -291,53 +301,52 @@ private fun WifiPendingUpload.deletePartialSafely(publishedPath: String?) {
     runCatching { deletePartial(publishedPath) }
 }
 
-private fun jsonString(value: String): String = buildString {
-    append('"')
-    value.forEach { char ->
-        when (char) {
-            '\\' -> append("\\\\")
-            '"' -> append("\\\"")
-            '\n' -> append("\\n")
-            '\r' -> append("\\r")
-            '\t' -> append("\\t")
-            else -> append(char)
+private fun jsonString(value: String): String =
+    buildString {
+        append('"')
+        value.forEach { char ->
+            when (char) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(char)
+            }
         }
+        append('"')
     }
-    append('"')
-}
 
 private suspend fun io.ktor.server.application.ApplicationCall.respondJsonError(
     status: HttpStatusCode,
-    message: String
+    message: String,
 ) {
     respondText(
         """{"status":"error","message":${jsonString(message)}}""",
         ContentType.Application.Json,
-        status
+        status,
     )
 }
 
 internal const val WIFI_TIMEOUT_MESSAGE =
     "Android detuvo el servidor por el límite de actividad en segundo plano"
 
-internal fun markWifiTransfersTimedOut(
-    transfers: List<WifiTransferItem>
-): List<WifiTransferItem> = transfers.map { transfer ->
-    if (transfer.state == WifiTransferState.PENDING ||
-        transfer.state == WifiTransferState.UPLOADING ||
-        transfer.state == WifiTransferState.PROCESSING
-    ) {
-        transfer.copy(
-            state = WifiTransferState.ERROR,
-            errorMessage = WIFI_TIMEOUT_MESSAGE
-        )
-    } else {
-        transfer
+internal fun markWifiTransfersTimedOut(transfers: List<WifiTransferItem>): List<WifiTransferItem> =
+    transfers.map { transfer ->
+        if (transfer.state == WifiTransferState.PENDING ||
+            transfer.state == WifiTransferState.UPLOADING ||
+            transfer.state == WifiTransferState.PROCESSING
+        ) {
+            transfer.copy(
+                state = WifiTransferState.ERROR,
+                errorMessage = WIFI_TIMEOUT_MESSAGE,
+            )
+        } else {
+            transfer
+        }
     }
-}
 
 class WebServerService : Service() {
-
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var server: EmbeddedServer<*, *>? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -369,7 +378,9 @@ class WebServerService : Service() {
             }
         }
 
-        fun getLocalIpAddress(@Suppress("UNUSED_PARAMETER") context: Context): String? {
+        fun getLocalIpAddress(
+            @Suppress("UNUSED_PARAMETER") context: Context,
+        ): String? {
             try {
                 val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
                 for (intf in interfaces) {
@@ -398,16 +409,18 @@ class WebServerService : Service() {
         try {
             val wifiManager = applicationContext.getSystemService(WifiManager::class.java)
             if (wifiLock == null) {
-                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
-                }
-                wifiLock = wifiManager?.createWifiLock(mode, "BestiaPop:WifiSyncLock")?.apply {
-                    setReferenceCounted(false)
-                    acquire()
-                }
+                val mode =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                    } else {
+                        @Suppress("DEPRECATION")
+                        WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                    }
+                wifiLock =
+                    wifiManager?.createWifiLock(mode, "BestiaPop:WifiSyncLock")?.apply {
+                        setReferenceCounted(false)
+                        acquire()
+                    }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to acquire WifiLock: ${e.message}")
@@ -416,13 +429,15 @@ class WebServerService : Service() {
         try {
             val powerManager = getSystemService(PowerManager::class.java)
             if (wakeLock == null) {
-                wakeLock = powerManager?.newWakeLock(
-                    PowerManager.PARTIAL_WAKE_LOCK,
-                    "BestiaPop:WifiSyncWakeLock"
-                )?.apply {
-                    setReferenceCounted(false)
-                    acquire(WIFI_SYNC_WAKELOCK_TIMEOUT_MS)
-                }
+                wakeLock =
+                    powerManager
+                        ?.newWakeLock(
+                            PowerManager.PARTIAL_WAKE_LOCK,
+                            "BestiaPop:WifiSyncWakeLock",
+                        )?.apply {
+                            setReferenceCounted(false)
+                            acquire(WIFI_SYNC_WAKELOCK_TIMEOUT_MS)
+                        }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to acquire WakeLock: ${e.message}")
@@ -434,39 +449,45 @@ class WebServerService : Service() {
             if (wifiLock?.isHeld == true) {
                 wifiLock?.release()
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         wifiLock = null
 
         try {
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         wakeLock = null
     }
 
     private fun startForegroundServiceNotification() {
         val channelId = "web_server_channel"
-        val channel = NotificationChannel(
-            channelId,
-            "WiFi Web Server",
-            NotificationManager.IMPORTANCE_LOW
-        )
+        val channel =
+            NotificationChannel(
+                channelId,
+                "WiFi Web Server",
+                NotificationManager.IMPORTANCE_LOW,
+            )
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(channel)
 
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Bestia Pop - Servidor WiFi Activo")
-            .setContentText("Transferencia de música en red local habilitada")
-            .setSmallIcon(android.R.drawable.ic_menu_upload)
-            .build()
+        val notification: Notification =
+            NotificationCompat
+                .Builder(this, channelId)
+                .setContentTitle("Bestia Pop - Servidor WiFi Activo")
+                .setContentText("Transferencia de música en red local habilitada")
+                .setSmallIcon(android.R.drawable.ic_menu_upload)
+                .build()
 
         // Explicit type so it cannot silently inherit whatever the manifest declares.
-        val fgsType = if (Build.VERSION.SDK_INT >= 29) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        } else {
-            0
-        }
+        val fgsType =
+            if (Build.VERSION.SDK_INT >= 29) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            } else {
+                0
+            }
         ServiceCompat.startForeground(this, 2001, notification, fgsType)
     }
 
@@ -476,86 +497,94 @@ class WebServerService : Service() {
                 val repository = (application as BestiaPopApplication).musicRepository
                 val audioStore = MusicFileStore(applicationContext)
                 val ip = getLocalIpAddress(applicationContext) ?: "localhost"
-                val boundary = WifiSyncHttpBoundary(
-                    port = PORT,
-                    advertisedHost = { ip },
-                    dashboardHtml = ::getWebDashboardHtml,
-                    listLibraryNames = {
-                        repository.getAllSongPathRefs().mapNotNull { ref ->
-                            SongPathNormalizer.fileName(ref.uriString, ref.folderPath)
-                                .takeIf(String::isNotBlank)
-                        }
-                    },
-                    listManagedNames = audioStore::listManagedNames,
-                    prepareWrite = { safeName ->
-                        val pending = audioStore.prepareWrite(safeName)
-                        WifiPendingUpload(
-                            stagingFile = pending.stagingFile,
-                            publish = pending::publish,
-                            deletePartial = { publishedPath ->
-                                pending.stagingFile.delete()
-                                publishedPath?.let { path ->
-                                    audioStore.delete(audioStore.canonicalize(path))
-                                }
+                val boundary =
+                    WifiSyncHttpBoundary(
+                        port = PORT,
+                        advertisedHost = { ip },
+                        dashboardHtml = ::getWebDashboardHtml,
+                        listLibraryNames = {
+                            repository.getAllSongPathRefs().mapNotNull { ref ->
+                                SongPathNormalizer
+                                    .fileName(ref.uriString, ref.folderPath)
+                                    .takeIf(String::isNotBlank)
                             }
-                        )
-                    },
-                    persistUpload = { path, safeName ->
-                        val ref = audioStore.canonicalize(path)
-                        val metadata = AudioFileMetadata.fromPath(
-                            context = applicationContext,
-                            path = ref.uriString,
-                            fallbackTitle = safeName.substringBeforeLast("."),
-                            artworkIdentifier = File(ref.uriString).name,
-                            persistEmbeddedArtwork = repository::persistEmbeddedArtwork
-                        )
-                        val songId = repository.saveUploadedSong(
-                            metadata.toSong(
-                                uriString = ref.uriString,
-                                folderPath = ref.folderPath
+                        },
+                        listManagedNames = audioStore::listManagedNames,
+                        prepareWrite = { safeName ->
+                            val pending = audioStore.prepareWrite(safeName)
+                            WifiPendingUpload(
+                                stagingFile = pending.stagingFile,
+                                publish = pending::publish,
+                                deletePartial = { publishedPath ->
+                                    pending.stagingFile.delete()
+                                    publishedPath?.let { path ->
+                                        audioStore.delete(audioStore.canonicalize(path))
+                                    }
+                                },
                             )
-                        )
-                        WifiPersistedUpload(
-                            identity = metadata.identity,
-                            songId = songId
-                        )
-                    },
-                    onTransfer = ::upsertTransfer,
-                    onFailure = { error, phase, transferId ->
-                        Log.e(TAG, "WiFi upload failed phase=$phase", error)
-                        CrashReporter.recordNonFatal(
-                            error,
-                            mapOf(
-                                "wifi_phase" to phase,
-                                "transfer_id" to transferId
+                        },
+                        persistUpload = { path, safeName ->
+                            val ref = audioStore.canonicalize(path)
+                            val metadata =
+                                AudioFileMetadata.fromPath(
+                                    context = applicationContext,
+                                    path = ref.uriString,
+                                    fallbackTitle = safeName.substringBeforeLast("."),
+                                    artworkIdentifier = File(ref.uriString).name,
+                                    persistEmbeddedArtwork = repository::persistEmbeddedArtwork,
+                                )
+                            val songId =
+                                repository.saveUploadedSong(
+                                    metadata.toSong(
+                                        uriString = ref.uriString,
+                                        folderPath = ref.folderPath,
+                                    ),
+                                )
+                            WifiPersistedUpload(
+                                identity = metadata.identity,
+                                songId = songId,
                             )
-                        )
-                    }
-                )
+                        },
+                        onTransfer = ::upsertTransfer,
+                        onFailure = { error, phase, transferId ->
+                            Log.e(TAG, "WiFi upload failed phase=$phase", error)
+                            CrashReporter.recordNonFatal(
+                                error,
+                                mapOf(
+                                    "wifi_phase" to phase,
+                                    "transfer_id" to transferId,
+                                ),
+                            )
+                        },
+                    )
 
-                server = embeddedServer(CIO, port = PORT) {
-                    boundary.install(this)
-                }.start(wait = false)
+                server =
+                    embeddedServer(CIO, port = PORT) {
+                        boundary.install(this)
+                    }.start(wait = false)
 
                 _serverState.value = "$ip:$PORT"
             } catch (e: Exception) {
                 e.printStackTrace()
                 CrashReporter.recordNonFatal(
                     e,
-                    mapOf("wifi_phase" to "server_start")
+                    mapOf("wifi_phase" to "server_start"),
                 )
                 _serverState.value = null
             }
         }
     }
 
-    override fun onTimeout(startId: Int, fgsType: Int) {
+    override fun onTimeout(
+        startId: Int,
+        fgsType: Int,
+    ) {
         CrashReporter.recordNonFatal(
             IllegalStateException("WiFi dataSync foreground timeout"),
             mapOf(
                 "wifi_phase" to "foreground_timeout",
-                "fgs_type" to fgsType.toString()
-            )
+                "fgs_type" to fgsType.toString(),
+            ),
         )
         releaseLocks()
         _serverState.value = null
@@ -886,13 +915,13 @@ class WebServerService : Service() {
                         card.innerHTML = `
                             <div class="file-info">
                                 <div>
-                                    <div class="file-name" title="${dollar}{item.path}">${dollar}{item.path}</div>
-                                    <div class="file-meta">${dollar}{formatBytes(item.file.size)} ${dollar}{item.message ? '• ' + item.message : ''}</div>
+                                    <div class="file-name" title="$dollar{item.path}">$dollar{item.path}</div>
+                                    <div class="file-meta">$dollar{formatBytes(item.file.size)} $dollar{item.message ? '• ' + item.message : ''}</div>
                                 </div>
-                                <span class="badge ${dollar}{badgeClass}" id="badge_${dollar}{item.id}">${dollar}{badgeText}</span>
+                                <span class="badge $dollar{badgeClass}" id="badge_$dollar{item.id}">$dollar{badgeText}</span>
                             </div>
                             <div class="file-progress-bg">
-                                <div class="file-progress-fill" id="fill_${dollar}{item.id}" style="width: ${dollar}{item.progress}%"></div>
+                                <div class="file-progress-fill" id="fill_$dollar{item.id}" style="width: $dollar{item.progress}%"></div>
                             </div>
                         `;
                         fileList.appendChild(card);
@@ -900,8 +929,8 @@ class WebServerService : Service() {
 
                     function updateSummaryUI() {
                         const processed = successCount + skippedCount + errorCount;
-                        summaryText.innerText = `Archivos: ${dollar}{processed} de ${dollar}{totalCount}`;
-                        summaryStats.innerText = `✅ ${dollar}{successCount} exitosos • ⚠️ ${dollar}{skippedCount} omitidos • ❌ ${dollar}{errorCount} errores`;
+                        summaryText.innerText = `Archivos: $dollar{processed} de $dollar{totalCount}`;
+                        summaryStats.innerText = `✅ $dollar{successCount} exitosos • ⚠️ $dollar{skippedCount} omitidos • ❌ $dollar{errorCount} errores`;
                     }
 
                     function triggerParallelUploads() {
@@ -919,14 +948,14 @@ class WebServerService : Service() {
 
                         const xhr = new XMLHttpRequest();
                         const encodedName = encodeURIComponent(item.path);
-                        xhr.open('POST', `/upload-file?name=${dollar}{encodedName}`, true);
+                        xhr.open('POST', `/upload-file?name=$dollar{encodedName}`, true);
                         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
 
                         xhr.upload.onprogress = (e) => {
                             if (e.lengthComputable) {
                                 const percent = Math.round((e.loaded / e.total) * 100);
                                 item.progress = percent;
-                                const text = percent === 100 ? '⚡ Guardando...' : `🔵 ${dollar}{percent}%`;
+                                const text = percent === 100 ? '⚡ Guardando...' : `🔵 $dollar{percent}%`;
                                 updateItemUI(item, 'uploading', percent, text);
                             }
                         };
@@ -950,7 +979,7 @@ class WebServerService : Service() {
                                         item.status = 'error';
                                         item.message = resp.message || 'Error del servidor';
                                         errorCount++;
-                                        updateItemUI(item, 'error', 100, `❌ ${dollar}{item.message}`);
+                                        updateItemUI(item, 'error', 100, `❌ $dollar{item.message}`);
                                     }
                                 } catch (e) {
                                     item.status = 'success';
@@ -961,7 +990,7 @@ class WebServerService : Service() {
                                 item.status = 'error';
                                 item.message = 'HTTP ' + xhr.status;
                                 errorCount++;
-                                updateItemUI(item, 'error', 100, `❌ ${dollar}{item.message}`);
+                                updateItemUI(item, 'error', 100, `❌ $dollar{item.message}`);
                             }
                             updateSummaryUI();
                             triggerParallelUploads();
@@ -992,7 +1021,7 @@ class WebServerService : Service() {
                 </script>
             </body>
             </html>
-        """.trimIndent()
+            """.trimIndent()
     }
 
     override fun onDestroy() {
@@ -1012,10 +1041,11 @@ class WebServerService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_SERVICE,
-            "WebServerService.onTaskRemoved: stopping server and self"
+            "WebServerService.onTaskRemoved: stopping server and self",
         )
         try {
-            androidx.core.app.ServiceCompat.stopForeground(this, androidx.core.app.ServiceCompat.STOP_FOREGROUND_REMOVE)
+            androidx.core.app.ServiceCompat
+                .stopForeground(this, androidx.core.app.ServiceCompat.STOP_FOREGROUND_REMOVE)
         } catch (_: Exception) {
         }
         stopSelf()
@@ -1023,5 +1053,4 @@ class WebServerService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
 }

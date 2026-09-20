@@ -13,25 +13,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IdentifyReviewCodecTest {
-
-    private fun track() = OnlineCatalogTrack(
-        id = "dz-1",
-        title = "Hysteria",
-        artist = "Muse",
-        album = "Absolution",
-        artworkUri = "https://img.example/a.jpg",
-        durationMs = 227_000L,
-        audioUrl = "https://cdn.example/expired",
-        provider = "Deezer",
-        trackNumber = 8
-    )
+    private fun track() =
+        OnlineCatalogTrack(
+            id = "dz-1",
+            title = "Hysteria",
+            artist = "Muse",
+            album = "Absolution",
+            artworkUri = "https://img.example/a.jpg",
+            durationMs = 227_000L,
+            audioUrl = "https://cdn.example/expired",
+            provider = "Deezer",
+            trackNumber = 8,
+        )
 
     private fun proposal(songId: Long = 10L): IdentifyProposal {
-        val candidate = IdentifyCandidate(
-            track = track(),
-            score = 0.72f,
-            reasons = listOf("título similar", "duración +1s")
-        )
+        val candidate =
+            IdentifyCandidate(
+                track = track(),
+                score = 0.72f,
+                reasons = listOf("título similar", "duración +1s"),
+            )
         return IdentifyProposal(
             songId = songId,
             queryArtist = "Unknown Artist",
@@ -40,16 +41,17 @@ class IdentifyReviewCodecTest {
             candidates = listOf(candidate),
             confidence = IdentifyConfidence.MEDIUM,
             suggested = candidate,
-            usedListenBrainz = true
+            usedListenBrainz = true,
         )
     }
 
     @Test
     fun roundTrip_stripsAudioUrlAndKeepsScore() {
-        val original = PersistedIdentifyReviewQueue(
-            proposals = listOf(proposal()),
-            phase = "Overview"
-        )
+        val original =
+            PersistedIdentifyReviewQueue(
+                proposals = listOf(proposal()),
+                phase = "Overview",
+            )
         val restored = IdentifyReviewCodec.decode(IdentifyReviewCodec.encode(original))
         assertEquals(1, restored.proposals.size)
         assertEquals("Overview", restored.phase)
@@ -80,13 +82,15 @@ class IdentifyReviewCodecTest {
 
     @Test
     fun hydrate_dropsOrphanSongIds() {
-        val snapshot = PersistedIdentifyReviewQueue(
-            proposals = listOf(proposal(1L), proposal(2L)),
-            phase = "Overview"
-        )
-        val songs = listOf(
-            Song(id = 2L, uriString = "file://b", title = "Hysteria", artist = "Muse", album = "Unknown Album")
-        )
+        val snapshot =
+            PersistedIdentifyReviewQueue(
+                proposals = listOf(proposal(1L), proposal(2L)),
+                phase = "Overview",
+            )
+        val songs =
+            listOf(
+                Song(id = 2L, uriString = "file://b", title = "Hysteria", artist = "Muse", album = "Unknown Album"),
+            )
         val state = identifyReviewFromPersisted(snapshot.proposals, snapshot.phase, songs)
         assertEquals(1, state.items.size)
         assertEquals(2L, state.items[0].song.id)
@@ -96,19 +100,21 @@ class IdentifyReviewCodecTest {
 
     @Test
     fun roundTrip_persistsAndRestoresApplyFields() {
-        val customFields = com.bestiapop.android.data.model.IdentifyApplyFields(
-            artwork = true,
-            title = false,
-            artist = true,
-            album = false,
-            year = true,
-            trackNumber = false
-        )
-        val original = PersistedIdentifyReviewQueue(
-            proposals = listOf(proposal()),
-            phase = "Item",
-            applyFields = customFields
-        )
+        val customFields =
+            com.bestiapop.android.data.model.IdentifyApplyFields(
+                artwork = true,
+                title = false,
+                artist = true,
+                album = false,
+                year = true,
+                trackNumber = false,
+            )
+        val original =
+            PersistedIdentifyReviewQueue(
+                proposals = listOf(proposal()),
+                phase = "Item",
+                applyFields = customFields,
+            )
         val restored = IdentifyReviewCodec.decode(IdentifyReviewCodec.encode(original))
         assertEquals(customFields, restored.applyFields)
     }

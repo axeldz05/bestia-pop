@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
@@ -21,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -32,13 +32,13 @@ fun PlayIconButton(
     onClick: () -> Unit,
     contentDescription: String,
     modifier: Modifier = Modifier,
-    tint: Color = MaterialTheme.colorScheme.primary
+    tint: Color = MaterialTheme.colorScheme.primary,
 ) {
     IconButton(onClick = onClick, modifier = modifier) {
         Icon(
             imageVector = Icons.Default.PlayArrow,
             contentDescription = contentDescription,
-            tint = tint
+            tint = tint,
         )
     }
 }
@@ -48,12 +48,12 @@ fun PlayIconButton(
 fun ShuffleIconButton(
     onClick: () -> Unit,
     contentDescription: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     IconButton(onClick = onClick, modifier = modifier) {
         Icon(
             imageVector = Icons.Default.Shuffle,
-            contentDescription = contentDescription
+            contentDescription = contentDescription,
         )
     }
 }
@@ -66,7 +66,7 @@ fun PlayShuffleIconPair(
     playDescription: String,
     shuffleDescription: String,
     modifier: Modifier = Modifier,
-    iconButtonSize: androidx.compose.ui.unit.Dp = 36.dp
+    iconButtonSize: androidx.compose.ui.unit.Dp = 36.dp,
 ) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         PlayIconButton(onClick = onPlay, contentDescription = playDescription, modifier = Modifier.size(iconButtonSize))
@@ -82,12 +82,12 @@ fun LabeledPlayShuffleButtons(
     enabled: Boolean = true,
     playLabel: String = "Reproducir",
     shuffleLabel: String = "Aleatorio",
-    modifier: Modifier = Modifier.fillMaxWidth()
+    modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
     val contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Button(
             onClick = onPlay,
@@ -95,9 +95,10 @@ fun LabeledPlayShuffleButtons(
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             shape = RoundedCornerShape(12.dp),
             contentPadding = contentPadding,
-            modifier = Modifier
-                .weight(1f)
-                .widthIn(min = 0.dp)
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .widthIn(min = 0.dp),
         ) {
             Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
             Spacer(modifier = Modifier.width(4.dp))
@@ -105,7 +106,7 @@ fun LabeledPlayShuffleButtons(
                 text = playLabel,
                 maxLines = 1,
                 softWrap = false,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
         }
         OutlinedButton(
@@ -113,9 +114,10 @@ fun LabeledPlayShuffleButtons(
             enabled = enabled,
             shape = RoundedCornerShape(12.dp),
             contentPadding = contentPadding,
-            modifier = Modifier
-                .weight(1f)
-                .widthIn(min = 0.dp)
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .widthIn(min = 0.dp),
         ) {
             Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
             Spacer(modifier = Modifier.width(4.dp))
@@ -123,7 +125,7 @@ fun LabeledPlayShuffleButtons(
                 text = shuffleLabel,
                 maxLines = 1,
                 softWrap = false,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

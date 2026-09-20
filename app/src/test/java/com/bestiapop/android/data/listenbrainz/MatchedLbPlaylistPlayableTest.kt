@@ -7,47 +7,54 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MatchedLbPlaylistPlayableTest {
-
-    private fun song(id: Long, title: String, artist: String) = Song(
+    private fun song(
+        id: Long,
+        title: String,
+        artist: String,
+    ) = Song(
         id = id,
         uriString = "file:///song/$id",
         title = title,
         artist = artist,
         album = "Album",
-        durationMs = 180_000L
+        durationMs = 180_000L,
     )
 
     @Test
     fun toPlayableItems_mapsLocalAndRemoteInOrder() {
         val local = song(1, "Local Hit", "Artist A")
-        val matched = MatchedLbPlaylist(
-            detail = LbPlaylistDetail(
-                summary = LbPlaylistSummary("mbid", "Daily Jams", null, 3),
-                tracks = emptyList()
-            ),
-            matches = listOf(
-                MatchedRemoteTrack(
-                    identity = LbPlaylistTrack("Local Hit", "Artist A", recordingMbid = "r1").identity,
-                    recordingMbid = "r1",
-                    localSong = local
-                ),
-                MatchedRemoteTrack(
-                    identity = LbPlaylistTrack(
-                        title = "Remote Jam",
-                        artist = "Artist B",
-                        recordingMbid = "r2",
-                        album = "EP"
-                    ).identity,
-                    recordingMbid = "r2",
-                    localSong = null
-                ),
-                MatchedRemoteTrack(
-                    identity = LbPlaylistTrack("Another Local", "Artist C").identity,
-                    recordingMbid = null,
-                    localSong = song(2, "Another Local", "Artist C")
-                )
+        val matched =
+            MatchedLbPlaylist(
+                detail =
+                    LbPlaylistDetail(
+                        summary = LbPlaylistSummary("mbid", "Daily Jams", null, 3),
+                        tracks = emptyList(),
+                    ),
+                matches =
+                    listOf(
+                        MatchedRemoteTrack(
+                            identity = LbPlaylistTrack("Local Hit", "Artist A", recordingMbid = "r1").identity,
+                            recordingMbid = "r1",
+                            localSong = local,
+                        ),
+                        MatchedRemoteTrack(
+                            identity =
+                                LbPlaylistTrack(
+                                    title = "Remote Jam",
+                                    artist = "Artist B",
+                                    recordingMbid = "r2",
+                                    album = "EP",
+                                ).identity,
+                            recordingMbid = "r2",
+                            localSong = null,
+                        ),
+                        MatchedRemoteTrack(
+                            identity = LbPlaylistTrack("Another Local", "Artist C").identity,
+                            recordingMbid = null,
+                            localSong = song(2, "Another Local", "Artist C"),
+                        ),
+                    ),
             )
-        )
 
         assertEquals(2, matched.matchedCount)
         assertEquals(1, matched.streamCount)

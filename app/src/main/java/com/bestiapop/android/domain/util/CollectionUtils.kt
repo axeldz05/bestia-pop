@@ -6,7 +6,6 @@ import com.bestiapop.android.data.model.Song
  * Shared collection utilities for alternating / interleaving items and ranking local library entities.
  */
 object CollectionUtils {
-
     /**
      * Level 1: Scored artist model with normalized key, display name, accumulated score, and artwork URI.
      */
@@ -14,7 +13,7 @@ object CollectionUtils {
         val key: String,
         val displayName: String,
         val score: Long,
-        val artworkUri: String? = null
+        val artworkUri: String? = null,
     )
 
     /**
@@ -23,7 +22,7 @@ object CollectionUtils {
     fun <T> interleaveEquitable(
         first: List<T>,
         second: List<T>,
-        limit: Int
+        limit: Int,
     ): List<T> {
         if (limit <= 0) return emptyList()
         val result = ArrayList<T>(minOf(limit, first.size + second.size))
@@ -56,7 +55,7 @@ object CollectionUtils {
         song: Song,
         playStats: Map<Long, Long>,
         playedWeight: Long,
-        unplayedWeight: Long = 1L
+        unplayedWeight: Long = 1L,
     ): Long {
         val lastPlayed = playStats[song.id] ?: song.lastPlayedAt
         return if (lastPlayed > 0) playedWeight else unplayedWeight
@@ -70,7 +69,7 @@ object CollectionUtils {
         librarySongs: List<Song>,
         playStats: Map<Long, Long>,
         playedWeight: Long = 10L,
-        unplayedWeight: Long = 1L
+        unplayedWeight: Long = 1L,
     ): Map<String, ScoredArtist> {
         if (librarySongs.isEmpty()) return emptyMap()
 
@@ -78,7 +77,7 @@ object CollectionUtils {
             val key: String,
             val displayName: String,
             var score: Long = 0L,
-            var artworkUri: String? = null
+            var artworkUri: String? = null,
         )
 
         val entryMap = HashMap<String, MutableArtistEntry>()
@@ -89,9 +88,10 @@ object CollectionUtils {
             if (artistKey.isEmpty()) continue
 
             val weight = calculateSongPlayScore(song, playStats, playedWeight, unplayedWeight)
-            val entry = entryMap.getOrPut(artistKey) {
-                MutableArtistEntry(key = artistKey, displayName = artist)
-            }
+            val entry =
+                entryMap.getOrPut(artistKey) {
+                    MutableArtistEntry(key = artistKey, displayName = artist)
+                }
             entry.score += weight
             if (entry.artworkUri == null && !song.artworkUri.isNullOrBlank()) {
                 entry.artworkUri = song.artworkUri
@@ -103,7 +103,7 @@ object CollectionUtils {
                 key = e.key,
                 displayName = e.displayName,
                 score = e.score,
-                artworkUri = e.artworkUri
+                artworkUri = e.artworkUri,
             )
         }
     }
@@ -116,7 +116,7 @@ object CollectionUtils {
         val title: String,
         val artist: String,
         val score: Long,
-        val artworkUri: String? = null
+        val artworkUri: String? = null,
     )
 
     /**
@@ -125,7 +125,7 @@ object CollectionUtils {
     data class ScoredTrack(
         val key: String,
         val song: Song,
-        val score: Long
+        val score: Long,
     )
 
     /**
@@ -134,11 +134,12 @@ object CollectionUtils {
      */
     fun calculateTopLocalArtists(
         librarySongs: List<Song>,
-        playStats: Map<Long, Long>
-    ): List<String> = scoreLocalArtists(librarySongs, playStats)
-        .values
-        .sortedByDescending { it.score }
-        .map { it.displayName }
+        playStats: Map<Long, Long>,
+    ): List<String> =
+        scoreLocalArtists(librarySongs, playStats)
+            .values
+            .sortedByDescending { it.score }
+            .map { it.displayName }
 
     /**
      * Level 1: Scores distinct albums from library songs, resolving match keys and preserving artwork.
@@ -147,7 +148,7 @@ object CollectionUtils {
         librarySongs: List<Song>,
         playStats: Map<Long, Long>,
         playedWeight: Long = 5L,
-        unplayedWeight: Long = 1L
+        unplayedWeight: Long = 1L,
     ): Map<String, ScoredAlbum> {
         if (librarySongs.isEmpty()) return emptyMap()
 
@@ -156,7 +157,7 @@ object CollectionUtils {
             val title: String,
             val artist: String,
             var score: Long = 0L,
-            var artworkUri: String? = null
+            var artworkUri: String? = null,
         )
 
         val entryMap = HashMap<String, MutableAlbumEntry>()
@@ -168,17 +169,19 @@ object CollectionUtils {
             val isArtistValid = artist.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(artist)
             val artistKey = if (isArtistValid) TrackMatchKeys.normalize(artist) else ""
 
-            val albumKey = if (artistKey.isNotEmpty()) {
-                TrackMatchKeys.composeKey(artistKey, TrackMatchKeys.normalize(album))
-            } else {
-                TrackMatchKeys.matchKey(artist, album)
-            }
+            val albumKey =
+                if (artistKey.isNotEmpty()) {
+                    TrackMatchKeys.composeKey(artistKey, TrackMatchKeys.normalize(album))
+                } else {
+                    TrackMatchKeys.matchKey(artist, album)
+                }
             if (albumKey.isEmpty()) continue
 
             val weight = calculateSongPlayScore(song, playStats, playedWeight, unplayedWeight)
-            val entry = entryMap.getOrPut(albumKey) {
-                MutableAlbumEntry(key = albumKey, title = album, artist = artist)
-            }
+            val entry =
+                entryMap.getOrPut(albumKey) {
+                    MutableAlbumEntry(key = albumKey, title = album, artist = artist)
+                }
             entry.score += weight
             if (entry.artworkUri == null && !song.artworkUri.isNullOrBlank()) {
                 entry.artworkUri = song.artworkUri
@@ -191,7 +194,7 @@ object CollectionUtils {
                 title = e.title,
                 artist = e.artist,
                 score = e.score,
-                artworkUri = e.artworkUri
+                artworkUri = e.artworkUri,
             )
         }
     }
@@ -203,14 +206,14 @@ object CollectionUtils {
         librarySongs: List<Song>,
         playStats: Map<Long, Long>,
         playedWeight: Long = 10L,
-        unplayedWeight: Long = 1L
+        unplayedWeight: Long = 1L,
     ): Map<String, ScoredTrack> {
         if (librarySongs.isEmpty()) return emptyMap()
 
         class MutableTrackEntry(
             val key: String,
             val song: Song,
-            var score: Long = 0L
+            var score: Long = 0L,
         )
 
         val entryMap = HashMap<String, MutableTrackEntry>()
@@ -219,17 +222,19 @@ object CollectionUtils {
             val isArtistValid = artist.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(artist)
             val artistKey = if (isArtistValid) TrackMatchKeys.normalize(artist) else ""
 
-            val trackKey = if (artistKey.isNotEmpty()) {
-                TrackMatchKeys.composeKey(artistKey, TrackMatchKeys.normalize(song.title))
-            } else {
-                song.matchKey()
-            }
+            val trackKey =
+                if (artistKey.isNotEmpty()) {
+                    TrackMatchKeys.composeKey(artistKey, TrackMatchKeys.normalize(song.title))
+                } else {
+                    song.matchKey()
+                }
             if (trackKey.isEmpty()) continue
 
             val weight = calculateSongPlayScore(song, playStats, playedWeight, unplayedWeight)
-            val entry = entryMap.getOrPut(trackKey) {
-                MutableTrackEntry(key = trackKey, song = song)
-            }
+            val entry =
+                entryMap.getOrPut(trackKey) {
+                    MutableTrackEntry(key = trackKey, song = song)
+                }
             entry.score += weight
         }
 
@@ -237,7 +242,7 @@ object CollectionUtils {
             ScoredTrack(
                 key = e.key,
                 song = e.song,
-                score = e.score
+                score = e.score,
             )
         }
     }
@@ -248,11 +253,12 @@ object CollectionUtils {
     fun recommendLocalAlbums(
         librarySongs: List<Song>,
         playStats: Map<Long, Long>,
-        limit: Int = 12
-    ): List<ScoredAlbum> = scoreLocalAlbums(librarySongs, playStats)
-        .values
-        .sortedByDescending { it.score }
-        .take(limit)
+        limit: Int = 12,
+    ): List<ScoredAlbum> =
+        scoreLocalAlbums(librarySongs, playStats)
+            .values
+            .sortedByDescending { it.score }
+            .take(limit)
 
     /**
      * Level 2: Scores and ranks distinct tracks from local library songs using play stats and recent plays.
@@ -260,10 +266,11 @@ object CollectionUtils {
     fun recommendLocalTracks(
         librarySongs: List<Song>,
         playStats: Map<Long, Long>,
-        limit: Int = 16
-    ): List<Song> = scoreLocalTracks(librarySongs, playStats)
-        .values
-        .sortedByDescending { it.score }
-        .take(limit)
-        .map { it.song }
+        limit: Int = 16,
+    ): List<Song> =
+        scoreLocalTracks(librarySongs, playStats)
+            .values
+            .sortedByDescending { it.score }
+            .take(limit)
+            .map { it.song }
 }

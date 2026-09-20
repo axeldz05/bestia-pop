@@ -8,11 +8,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.preferences.FastScrollSettings
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.AlbumHeader
 import com.bestiapop.android.ui.components.AlbumHeaderActions
 import com.bestiapop.android.ui.components.FastScrollLazyColumn
-import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.components.FastScrollSections
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 
@@ -25,7 +25,7 @@ data class AlbumBrowseActions(
     val onEditAlbum: (Album) -> Unit,
     val onChangeAlbumCover: (Album) -> Unit,
     val onIdentifyAlbum: (Album) -> Unit = {},
-    val onSwipeAlbum: ((Album) -> Unit)? = null
+    val onSwipeAlbum: ((Album) -> Unit)? = null,
 )
 
 /**
@@ -39,11 +39,12 @@ fun LibraryAlbumBrowseList(
     sortOption: SortOption = SortOption.TITLE,
     fastScrollSettings: FastScrollSettings = FastScrollSettings(),
     listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val sections = remember(albums, sortOption) {
-        FastScrollSections.fromAlbums(albums, sortOption)
-    }
+    val sections =
+        remember(albums, sortOption) {
+            FastScrollSections.fromAlbums(albums, sortOption)
+        }
 
     FastScrollLazyColumn(
         items = albums,
@@ -52,29 +53,31 @@ fun LibraryAlbumBrowseList(
         emptyText = "Ningún álbum coincide",
         fastScrollSettings = fastScrollSettings,
         listState = listState,
-        modifier = modifier
+        modifier = modifier,
     ) { album ->
-        val sortHint = remember(album.genre, album.dateAdded, sortOption) {
-            formatSortRelevantInfo(
-                sortOption = sortOption,
-                genre = album.genre,
-                dateAdded = album.dateAdded,
-                alreadyShowsArtist = true,
-                alreadyShowsAlbum = true,
-                alreadyShowsTitle = true
-            )
-        }
-        val headerActions = remember(album, actions) {
-            AlbumHeaderActions(
-                onPlay = { actions.onPlayAlbum(album) },
-                onShuffle = { actions.onShuffleAlbum(album) },
-                onOpen = { actions.onAlbumClick(album) },
-                onEdit = { actions.onEditAlbum(album) },
-                onChangeCover = { actions.onChangeAlbumCover(album) },
-                onIdentify = { actions.onIdentifyAlbum(album) },
-                onSwipeAction = actions.onSwipeAlbum?.let { action -> { action(album) } }
-            )
-        }
+        val sortHint =
+            remember(album.genre, album.dateAdded, sortOption) {
+                formatSortRelevantInfo(
+                    sortOption = sortOption,
+                    genre = album.genre,
+                    dateAdded = album.dateAdded,
+                    alreadyShowsArtist = true,
+                    alreadyShowsAlbum = true,
+                    alreadyShowsTitle = true,
+                )
+            }
+        val headerActions =
+            remember(album, actions) {
+                AlbumHeaderActions(
+                    onPlay = { actions.onPlayAlbum(album) },
+                    onShuffle = { actions.onShuffleAlbum(album) },
+                    onOpen = { actions.onAlbumClick(album) },
+                    onEdit = { actions.onEditAlbum(album) },
+                    onChangeCover = { actions.onChangeAlbumCover(album) },
+                    onIdentify = { actions.onIdentifyAlbum(album) },
+                    onSwipeAction = actions.onSwipeAlbum?.let { action -> { action(album) } },
+                )
+            }
         AlbumHeader(
             title = album.displayName,
             artistName = album.artist,
@@ -82,7 +85,7 @@ fun LibraryAlbumBrowseList(
             songCount = album.songCount,
             sortHint = sortHint,
             showCollapseToggle = false,
-            actions = headerActions
+            actions = headerActions,
         )
     }
 }
@@ -102,24 +105,25 @@ fun LibraryAlbumBrowseList(
     onChangeAlbumCover: (Album) -> Unit,
     onIdentifyAlbum: (Album) -> Unit = {},
     listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val actions = remember(onAlbumClick, onPlayAlbum, onShuffleAlbum, onEditAlbum, onChangeAlbumCover, onIdentifyAlbum) {
-        AlbumBrowseActions(
-            onAlbumClick = onAlbumClick,
-            onPlayAlbum = onPlayAlbum,
-            onShuffleAlbum = onShuffleAlbum,
-            onEditAlbum = onEditAlbum,
-            onChangeAlbumCover = onChangeAlbumCover,
-            onIdentifyAlbum = onIdentifyAlbum
-        )
-    }
+    val actions =
+        remember(onAlbumClick, onPlayAlbum, onShuffleAlbum, onEditAlbum, onChangeAlbumCover, onIdentifyAlbum) {
+            AlbumBrowseActions(
+                onAlbumClick = onAlbumClick,
+                onPlayAlbum = onPlayAlbum,
+                onShuffleAlbum = onShuffleAlbum,
+                onEditAlbum = onEditAlbum,
+                onChangeAlbumCover = onChangeAlbumCover,
+                onIdentifyAlbum = onIdentifyAlbum,
+            )
+        }
     LibraryAlbumBrowseList(
         albums = albums,
         actions = actions,
         sortOption = sortOption,
         fastScrollSettings = fastScrollSettings,
         listState = listState,
-        modifier = modifier
+        modifier = modifier,
     )
 }

@@ -6,7 +6,7 @@ package com.bestiapop.android.data.update
  */
 data class AppReleaseSelection(
     val current: AppRelease? = null,
-    val newer: List<AppRelease> = emptyList()
+    val newer: List<AppRelease> = emptyList(),
 ) {
     /** Newest release that can actually be downloaded and installed. */
     val updateTarget: AppRelease?
@@ -16,17 +16,19 @@ data class AppReleaseSelection(
         fun from(
             releases: List<AppRelease>,
             currentVersionCode: Int,
-            currentVersionName: String
+            currentVersionName: String,
         ): AppReleaseSelection {
             val currentTag = "v$currentVersionName"
-            val current = releases.firstOrNull { it.versionCode == currentVersionCode }
-                ?: releases.firstOrNull {
-                    it.tag.equals(currentTag, ignoreCase = true) ||
-                        it.versionName.equals(currentVersionName, ignoreCase = true)
-                }
-            val newer = releases
-                .filter { (it.versionCode ?: Int.MIN_VALUE) > currentVersionCode }
-                .sortedByDescending { it.versionCode }
+            val current =
+                releases.firstOrNull { it.versionCode == currentVersionCode }
+                    ?: releases.firstOrNull {
+                        it.tag.equals(currentTag, ignoreCase = true) ||
+                            it.versionName.equals(currentVersionName, ignoreCase = true)
+                    }
+            val newer =
+                releases
+                    .filter { (it.versionCode ?: Int.MIN_VALUE) > currentVersionCode }
+                    .sortedByDescending { it.versionCode }
             return AppReleaseSelection(current = current, newer = newer)
         }
     }

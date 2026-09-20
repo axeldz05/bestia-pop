@@ -7,7 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ThemeHarmonizerTest {
-
     @Test
     fun calculateLuminance_pureBlackAndWhite() {
         val lumBlack = ThemeHarmonizer.calculateLuminance(Color.Black)
@@ -55,15 +54,16 @@ class ThemeHarmonizerTest {
 
     @Test
     fun toMaterialColorScheme_generatesAllRequiredM3Containers() {
-        val data = ColorSchemeData(
-            primary = 0xFF9D4EDD,
-            onPrimary = 0xFFFFFFFF,
-            secondary = 0xFFC77DFF,
-            background = 0xFF0F0C1B,
-            surface = 0xFF1A162B,
-            surfaceVariant = 0xFF2D1B4E,
-            accent = 0xFFE0AFA0
-        )
+        val data =
+            ColorSchemeData(
+                primary = 0xFF9D4EDD,
+                onPrimary = 0xFFFFFFFF,
+                secondary = 0xFFC77DFF,
+                background = 0xFF0F0C1B,
+                surface = 0xFF1A162B,
+                surfaceVariant = 0xFF2D1B4E,
+                accent = 0xFFE0AFA0,
+            )
 
         val scheme = ThemeHarmonizer.toMaterialColorScheme(data, isDark = true)
 

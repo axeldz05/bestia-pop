@@ -12,12 +12,12 @@ const val UI_STATE_STOP_TIMEOUT_MS = 5_000L
 fun <T> Flow<T>.stateInUi(
     scope: CoroutineScope,
     initial: T,
-    started: SharingStarted = SharingStarted.WhileSubscribed(UI_STATE_STOP_TIMEOUT_MS)
+    started: SharingStarted = SharingStarted.WhileSubscribed(UI_STATE_STOP_TIMEOUT_MS),
 ): StateFlow<T> = stateIn(scope, started, initial)
 
 fun <T, R> Flow<T>.mapToUiState(
     scope: CoroutineScope,
     initial: R,
     started: SharingStarted = SharingStarted.WhileSubscribed(UI_STATE_STOP_TIMEOUT_MS),
-    transform: (T) -> R
+    transform: (T) -> R,
 ): StateFlow<R> = map(transform).stateInUi(scope, initial, started)

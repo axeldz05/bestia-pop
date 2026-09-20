@@ -13,7 +13,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -24,12 +23,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
 
-fun playPauseVector(isPlaying: Boolean): ImageVector =
-    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
+fun playPauseVector(isPlaying: Boolean): ImageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
 
-fun playbackProgressFraction(positionMs: Long, durationMs: Long): Float =
+fun playbackProgressFraction(
+    positionMs: Long,
+    durationMs: Long,
+): Float =
     if (durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else {
@@ -37,29 +39,33 @@ fun playbackProgressFraction(positionMs: Long, durationMs: Long): Float =
     }
 
 /** L2: catalog/identify preview — tiny hint bar while duration is still unknown. */
-fun previewProgressFraction(positionMs: Long, durationMs: Long): Float = when {
-    durationMs > 0L -> playbackProgressFraction(positionMs, durationMs)
-    positionMs > 0L -> 0.05f
-    else -> 0f
-}
+fun previewProgressFraction(
+    positionMs: Long,
+    durationMs: Long,
+): Float =
+    when {
+        durationMs > 0L -> playbackProgressFraction(positionMs, durationMs)
+        positionMs > 0L -> 0.05f
+        else -> 0f
+    }
 
 data class PreviewFlags(
     val isThisPreview: Boolean,
     val isPlaying: Boolean,
-    val isResolving: Boolean
+    val isResolving: Boolean,
 )
 
 fun previewFlags(
     catalogPreviewKey: String?,
     trackKey: String?,
     isPlaying: Boolean,
-    resolving: Boolean
+    resolving: Boolean,
 ): PreviewFlags {
     val isThis = !catalogPreviewKey.isNullOrEmpty() && catalogPreviewKey == trackKey
     return PreviewFlags(
         isThisPreview = isThis,
         isPlaying = isThis && isPlaying,
-        isResolving = isThis && resolving
+        isResolving = isThis && resolving,
     )
 }
 
@@ -70,7 +76,7 @@ fun PlaybackScrubber(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    holdAtZero: Boolean = false
+    holdAtZero: Boolean = false,
 ) {
     val livePositionMs by positionMsFlow.collectAsStateWithLifecycle()
     val positionMs = if (holdAtZero) 0L else livePositionMs
@@ -94,26 +100,28 @@ fun PlaybackScrubber(
             },
             valueRange = 0f..maxDuration,
             enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-            ),
-            modifier = Modifier.fillMaxWidth()
+            colors =
+                SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
+            modifier = Modifier.fillMaxWidth(),
         )
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             ElapsedDurationText(
                 positionSeconds = displayPosition / 1000L,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
             TotalDurationText(
                 durationMs = durationMs,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
             )
         }
     }
@@ -122,23 +130,23 @@ fun PlaybackScrubber(
 @Composable
 private fun ElapsedDurationText(
     positionSeconds: Long,
-    color: Color
+    color: Color,
 ) {
     Text(
         text = formatDuration(positionSeconds * 1000L),
         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-        color = color
+        color = color,
     )
 }
 
 @Composable
 private fun TotalDurationText(
     durationMs: Long,
-    color: Color
+    color: Color,
 ) {
     Text(
         text = formatDuration(durationMs),
         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-        color = color
+        color = color,
     )
 }

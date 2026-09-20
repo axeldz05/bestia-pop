@@ -37,7 +37,7 @@ class ListenBrainzIntegrationCoordinator(
     private val enqueuePendingDownloads: suspend (Long, List<OnlineCatalogTrack>, Boolean) -> Unit,
     private val getCurrentPlaylistDetail: () -> PlaylistDetailNav,
     private val toast: (String) -> Unit,
-    private val toastPlaylistSaved: (Int, Int) -> Unit
+    private val toastPlaylistSaved: (Int, Int) -> Unit,
 ) {
     private val _tokenValidation = MutableStateFlow(LoadableUiState<String?>(null))
     val tokenValidation: StateFlow<LoadableUiState<String?>> = _tokenValidation.asStateFlow()
@@ -110,10 +110,11 @@ class ListenBrainzIntegrationCoordinator(
                 }
             } else {
                 listenBrainzPreferences.setUsername(null)
-                _tokenValidation.value = _tokenValidation.value.failure(
-                    message = result.message ?: "Token inválido",
-                    data = null
-                )
+                _tokenValidation.value =
+                    _tokenValidation.value.failure(
+                        message = result.message ?: "Token inválido",
+                        data = null,
+                    )
             }
         }
     }
@@ -129,15 +130,18 @@ class ListenBrainzIntegrationCoordinator(
     fun openListenBrainzPlaylist(mbid: String) {
         // Tracked so opening A then B cannot leave A's late response rendered under B's route.
         lbDetailJob?.cancel()
-        lbDetailJob = scope.launch {
-            loadListenBrainzPlaylist(mbid, forRestore = false)
-        }
+        lbDetailJob =
+            scope.launch {
+                loadListenBrainzPlaylist(mbid, forRestore = false)
+            }
     }
 
-    private fun isListenBrainzDetailCurrent(mbid: String): Boolean =
-        getCurrentPlaylistDetail().lbMbidOrNull() == mbid
+    private fun isListenBrainzDetailCurrent(mbid: String): Boolean = getCurrentPlaylistDetail().lbMbidOrNull() == mbid
 
-    suspend fun loadListenBrainzPlaylist(mbid: String, forRestore: Boolean): Boolean {
+    suspend fun loadListenBrainzPlaylist(
+        mbid: String,
+        forRestore: Boolean,
+    ): Boolean {
         val settings = listenBrainzPreferences.settingsFlow.first()
         if (!settings.showDiscoverPlaylists || mbid.isBlank()) {
             if (!forRestore) {
@@ -149,10 +153,11 @@ class ListenBrainzIntegrationCoordinator(
         }
         _lbPlaylistDetail.update { it.loading(data = null) }
         return when (
-            val result = ListenBrainzClient.fetchPlaylist(
-                playlistMbid = mbid,
-                token = settings.userToken
-            )
+            val result =
+                ListenBrainzClient.fetchPlaylist(
+                    playlistMbid = mbid,
+                    token = settings.userToken,
+                )
         ) {
             is LbApiResult.Success -> {
                 val library = repository.allSongsFlow.first()
@@ -175,9 +180,14 @@ class ListenBrainzIntegrationCoordinator(
         }
     }
 
-    private fun enrichLbPlaylistDetailArtwork(mbid: String, matched: MatchedLbPlaylist) {
+    private fun enrichLbPlaylistDetailArtwork(
+        mbid: String,
+        matched: MatchedLbPlaylist,
+    ) {
         val tracksMissingArt = matched.matches.filter { it.localSong == null && it.identity.artworkUri.isNullOrBlank() }
-        val coverMissing = matched.detail.summary.coverUrl.isNullOrBlank()
+        val coverMissing =
+            matched.detail.summary.coverUrl
+                .isNullOrBlank()
         if (tracksMissingArt.isEmpty() && !coverMissing) return
 
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -191,10 +201,11 @@ class ListenBrainzIntegrationCoordinator(
                                 if (cur.detail.summary.mbid != mbid) return@update state
                                 val updatedMatches = cur.matches.withArtwork(track.identity.artist, track.identity.title, art)
                                 val updatedCover = cur.detail.summary.coverUrl ?: art
-                                cur.copy(
-                                    detail = cur.detail.copy(summary = cur.detail.summary.copy(coverUrl = updatedCover)),
-                                    matches = updatedMatches
-                                ).let { state.copy(data = it) }
+                                cur
+                                    .copy(
+                                        detail = cur.detail.copy(summary = cur.detail.summary.copy(coverUrl = updatedCover)),
+                                        matches = updatedMatches,
+                                    ).let { state.copy(data = it) }
                             }
                         }
                     }
@@ -212,8 +223,9 @@ class ListenBrainzIntegrationCoordinator(
         val matched = _lbPlaylistDetail.value.data ?: return
         if (matched.matchedCount == 0 && matched.streamCount == 0) return
         scope.launch {
-            val playlistId = importListenBrainzPlaylistUseCase.createLocalFromMatched(matched)
-                ?: return@launch
+            val playlistId =
+                importListenBrainzPlaylistUseCase.createLocalFromMatched(matched)
+                    ?: return@launch
             toastPlaylistSaved(matched.matchedCount, matched.streamCount)
             onCreated?.invoke(playlistId)
         }
@@ -229,10 +241,11 @@ class ListenBrainzIntegrationCoordinator(
         if (unmatched.isEmpty() && matched.matchedCount == 0) return
 
         scope.launch {
-            val playlistId = importListenBrainzPlaylistUseCase.createLocalFromMatched(
-                matched = matched,
-                allowEmpty = unmatched.isNotEmpty()
-            ) ?: return@launch
+            val playlistId =
+                importListenBrainzPlaylistUseCase.createLocalFromMatched(
+                    matched = matched,
+                    allowEmpty = unmatched.isNotEmpty(),
+                ) ?: return@launch
 
             onCreated?.invoke(playlistId)
 
@@ -244,7 +257,7 @@ class ListenBrainzIntegrationCoordinator(
             enqueuePendingDownloads(
                 playlistId,
                 unmatched,
-                true
+                true,
             )
         }
     }
@@ -261,7 +274,7 @@ class ListenBrainzIntegrationCoordinator(
             enqueuePendingDownloads(
                 playlistId,
                 pending.map { it.toOnlineCatalogTrack() },
-                true
+                true,
             )
         }
     }
@@ -278,7 +291,10 @@ class ListenBrainzIntegrationCoordinator(
 
     private suspend fun libraryWithExtra(extraSong: Song?): List<Song> =
         repository.allSongsFlow.first().let { list ->
-            if (extraSong == null || list.any { it.id == extraSong.id }) list
-            else list + extraSong
+            if (extraSong == null || list.any { it.id == extraSong.id }) {
+                list
+            } else {
+                list + extraSong
+            }
         }
 }

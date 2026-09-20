@@ -13,7 +13,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IdentifyAlbumBatchResolverTest {
-
     @Test
     fun isEligibleForAlbumBatchIdentify_validatesNonGeneric() {
         assertTrue(isEligibleForAlbumBatchIdentify("Muse", "Absolution"))
@@ -33,10 +32,11 @@ class IdentifyAlbumBatchResolverTest {
         val s2 = song(2L, "Hysteria", "Muse", "Absolution", artworkUri = null, year = 2003, track = 8)
         val s3 = song(3L, "- unknown track", "Muse", "Absolution", artworkUri = null, year = 2003, track = 9)
 
-        val partition = partitionAlbumBatchSongs(
-            songs = listOf(s1, s2, s3),
-            batchFields = IdentifyApplyFields.ALL
-        )
+        val partition =
+            partitionAlbumBatchSongs(
+                songs = listOf(s1, s2, s3),
+                batchFields = IdentifyApplyFields.ALL,
+            )
 
         assertEquals(listOf(1L, 2L), partition.artworkOnlyIds)
         assertEquals(listOf(3L), partition.otherGapsIds)
@@ -55,13 +55,14 @@ class IdentifyAlbumBatchResolverTest {
         val generic1 = song(4L, "Track 1", "Unknown Artist", "Unknown Album", artworkUri = null)
         val generic2 = song(5L, "Track 2", "Unknown Artist", "Unknown Album", artworkUri = null)
 
-        val candidates = findAlbumBatchCandidates(
-            songs = listOf(muse1, muse2, singleSong, generic1, generic2),
-            remainingIds = setOf(1L, 2L, 3L, 4L, 5L),
-            inFlightIds = emptySet(),
-            batchFields = IdentifyApplyFields.ALL,
-            minGroupSize = 2
-        )
+        val candidates =
+            findAlbumBatchCandidates(
+                songs = listOf(muse1, muse2, singleSong, generic1, generic2),
+                remainingIds = setOf(1L, 2L, 3L, 4L, 5L),
+                inFlightIds = emptySet(),
+                batchFields = IdentifyApplyFields.ALL,
+                minGroupSize = 2,
+            )
 
         assertEquals(1, candidates.size)
         val candidate = candidates.single()
@@ -77,10 +78,11 @@ class IdentifyAlbumBatchResolverTest {
         val s1 = song(10L, "Track A", "Coldplay", "Parachutes", artworkUri = null)
         val s2 = song(11L, "Track B", "Coldplay", "Parachutes", artworkUri = null)
 
-        val candidate = findNextAlbumBatchCandidate(
-            availableSongs = listOf(s1, s2),
-            batchFields = IdentifyApplyFields.ALL
-        )
+        val candidate =
+            findNextAlbumBatchCandidate(
+                availableSongs = listOf(s1, s2),
+                batchFields = IdentifyApplyFields.ALL,
+            )
 
         assertNotNull(candidate)
         assertEquals("Coldplay", candidate?.artist)
@@ -93,14 +95,15 @@ class IdentifyAlbumBatchResolverTest {
         val s1 = song(10L, "Track A", "Coldplay", "Parachutes", artworkUri = null)
         val s2 = song(11L, "Track B", "Coldplay", "Parachutes", artworkUri = null)
 
-        val candidate = findNextAlbumBatchCandidateForSong(
-            targetSong = s1,
-            songs = listOf(s1, s2),
-            remainingIds = setOf(10L, 11L),
-            inFlightIds = emptySet(),
-            batchFields = IdentifyApplyFields.ALL,
-            minGroupSize = 2
-        )
+        val candidate =
+            findNextAlbumBatchCandidateForSong(
+                targetSong = s1,
+                songs = listOf(s1, s2),
+                remainingIds = setOf(10L, 11L),
+                inFlightIds = emptySet(),
+                batchFields = IdentifyApplyFields.ALL,
+                minGroupSize = 2,
+            )
 
         assertNotNull(candidate)
         assertEquals("Coldplay", candidate?.artist)
@@ -114,38 +117,42 @@ class IdentifyAlbumBatchResolverTest {
         val s2 = song(11L, "Track B", "Coldplay", "Parachutes", artworkUri = null)
         val key = albumGroupKey("Coldplay", "Parachutes")
 
-        val candidateAttempted = findNextAlbumBatchCandidateForSong(
-            targetSong = s1,
-            songs = listOf(s1, s2),
-            remainingIds = setOf(10L, 11L),
-            inFlightIds = emptySet(),
-            batchFields = IdentifyApplyFields.ALL,
-            attemptedGroupKeys = setOf(key)
-        )
+        val candidateAttempted =
+            findNextAlbumBatchCandidateForSong(
+                targetSong = s1,
+                songs = listOf(s1, s2),
+                remainingIds = setOf(10L, 11L),
+                inFlightIds = emptySet(),
+                batchFields = IdentifyApplyFields.ALL,
+                attemptedGroupKeys = setOf(key),
+            )
         assertNull(candidateAttempted)
 
-        val candidateInFlight = findNextAlbumBatchCandidateForSong(
-            targetSong = s1,
-            songs = listOf(s1, s2),
-            remainingIds = setOf(10L, 11L),
-            inFlightIds = setOf(11L),
-            batchFields = IdentifyApplyFields.ALL
-        )
+        val candidateInFlight =
+            findNextAlbumBatchCandidateForSong(
+                targetSong = s1,
+                songs = listOf(s1, s2),
+                remainingIds = setOf(10L, 11L),
+                inFlightIds = setOf(11L),
+                batchFields = IdentifyApplyFields.ALL,
+            )
         assertNull(candidateInFlight)
     }
 
     @Test
     fun buildKnownAlbumProposal_createsHighConfidenceProposal() {
         val song = song(1L, "Time is Running Out", "Muse", "Absolution", year = 2003, track = 3)
-        val album = KnownAlbumTracks(
-            key = "muse_absolution",
-            artist = "Muse",
-            album = "Absolution",
-            artworkUri = "http://art.jpg",
-            tracks = listOf(
-                KnownAlbumTrack("Time is Running Out", durationMs = 237_000L, trackNumber = 3, year = 2003)
+        val album =
+            KnownAlbumTracks(
+                key = "muse_absolution",
+                artist = "Muse",
+                album = "Absolution",
+                artworkUri = "http://art.jpg",
+                tracks =
+                    listOf(
+                        KnownAlbumTrack("Time is Running Out", durationMs = 237_000L, trackNumber = 3, year = 2003),
+                    ),
             )
-        )
         val match = KnownAlbumMatch(album, album.tracks.first(), 0.95f)
 
         val proposal = buildKnownAlbumProposal(song, match)
@@ -161,33 +168,37 @@ class IdentifyAlbumBatchResolverTest {
     }
 
     @Test
-    fun matchAndApplyKnownAlbumTracks_appliesMatchesAndCollectsReview() = runBlocking {
-        val s1 = song(1L, "Time is Running Out", "Muse", "Absolution", year = 2003, track = 3)
-        val s2 = song(2L, "Apocalypse Please", "Muse", "Absolution", year = 2003, track = 1)
-        val album = KnownAlbumTracks(
-            key = "muse_absolution",
-            artist = "Muse",
-            album = "Absolution",
-            artworkUri = "http://art.jpg",
-            tracks = listOf(
-                KnownAlbumTrack("Time is Running Out", durationMs = 237_000L, trackNumber = 3, year = 2003),
-                KnownAlbumTrack("Apocalypse Please", durationMs = 252_000L, trackNumber = 1, year = 2003)
-            )
-        )
+    fun matchAndApplyKnownAlbumTracks_appliesMatchesAndCollectsReview() =
+        runBlocking {
+            val s1 = song(1L, "Time is Running Out", "Muse", "Absolution", year = 2003, track = 3)
+            val s2 = song(2L, "Apocalypse Please", "Muse", "Absolution", year = 2003, track = 1)
+            val album =
+                KnownAlbumTracks(
+                    key = "muse_absolution",
+                    artist = "Muse",
+                    album = "Absolution",
+                    artworkUri = "http://art.jpg",
+                    tracks =
+                        listOf(
+                            KnownAlbumTrack("Time is Running Out", durationMs = 237_000L, trackNumber = 3, year = 2003),
+                            KnownAlbumTrack("Apocalypse Please", durationMs = 252_000L, trackNumber = 1, year = 2003),
+                        ),
+                )
 
-        val result = matchAndApplyKnownAlbumTracks(
-            songs = listOf(s1, s2),
-            knownAlbum = album,
-            batchFields = IdentifyApplyFields.ALL,
-            apply = { id, _, _ ->
-                if (id == 1L) IdentifyResult.Updated(id) else IdentifyResult.NoMatch
-            }
-        )
+            val result =
+                matchAndApplyKnownAlbumTracks(
+                    songs = listOf(s1, s2),
+                    knownAlbum = album,
+                    batchFields = IdentifyApplyFields.ALL,
+                    apply = { id, _, _ ->
+                        if (id == 1L) IdentifyResult.Updated(id) else IdentifyResult.NoMatch
+                    },
+                )
 
-        assertEquals(setOf(1L), result.appliedSongIds)
-        assertEquals(listOf(2L), result.reviewProposals.map { it.songId })
-        assertEquals(setOf(1L, 2L), result.completedSongIds)
-    }
+            assertEquals(setOf(1L), result.appliedSongIds)
+            assertEquals(listOf(2L), result.reviewProposals.map { it.songId })
+            assertEquals(setOf(1L, 2L), result.completedSongIds)
+        }
 
     private fun song(
         id: Long,
@@ -196,7 +207,7 @@ class IdentifyAlbumBatchResolverTest {
         album: String,
         artworkUri: String? = null,
         year: Int = 2000,
-        track: Int = 1
+        track: Int = 1,
     ) = Song(
         id = id,
         uriString = "file://song-$id.mp3",
@@ -205,6 +216,6 @@ class IdentifyAlbumBatchResolverTest {
         album = album,
         artworkUri = artworkUri,
         year = year,
-        trackNumber = track
+        trackNumber = track,
     )
 }

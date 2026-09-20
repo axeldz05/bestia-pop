@@ -15,7 +15,7 @@ import com.bestiapop.android.data.model.Song
  */
 data class AlbumBatchSongPartition(
     val artworkOnly: List<Song>,
-    val otherGaps: List<Song>
+    val otherGaps: List<Song>,
 ) {
     val artworkOnlyIds: List<Long> get() = artworkOnly.map { it.id }
     val otherGapsIds: List<Long> get() = otherGaps.map { it.id }
@@ -26,7 +26,7 @@ data class AlbumBatchSongPartition(
  */
 data class AlbumTrackMatchResult(
     val appliedSongIds: Set<Long> = emptySet(),
-    val reviewProposals: List<IdentifyProposal> = emptyList()
+    val reviewProposals: List<IdentifyProposal> = emptyList(),
 ) {
     val completedSongIds: Set<Long> get() = appliedSongIds + reviewProposals.map { it.songId }
 }
@@ -40,7 +40,7 @@ data class IdentifyAlbumBatchCandidate(
     val artist: String,
     val album: String,
     val songs: List<Song>,
-    val partition: AlbumBatchSongPartition
+    val partition: AlbumBatchSongPartition,
 ) {
     constructor(
         groupKey: String,
@@ -48,13 +48,13 @@ data class IdentifyAlbumBatchCandidate(
         album: String,
         songs: List<Song>,
         artworkOnlySongs: List<Song>,
-        otherGapsSongs: List<Song>
+        otherGapsSongs: List<Song>,
     ) : this(
         groupKey = groupKey,
         artist = artist,
         album = album,
         songs = songs,
-        partition = AlbumBatchSongPartition(artworkOnlySongs, otherGapsSongs)
+        partition = AlbumBatchSongPartition(artworkOnlySongs, otherGapsSongs),
     )
 
     val songIds: List<Long> get() = songs.map { it.id }
@@ -70,7 +70,10 @@ data class IdentifyAlbumBatchCandidate(
  * Valida si un par artista/álbum califica para identificación a nivel de álbum
  * (descarta nombres genéricos o placeholders).
  */
-fun isEligibleForAlbumBatchIdentify(artist: String, album: String): Boolean {
+fun isEligibleForAlbumBatchIdentify(
+    artist: String,
+    album: String,
+): Boolean {
     val trimmedArtist = artist.trim()
     val trimmedAlbum = album.trim()
     if (trimmedArtist.isEmpty() || IdentifyRanking.isPlaceholderArtist(trimmedArtist)) return false
@@ -86,16 +89,17 @@ fun isEligibleForAlbumBatchIdentify(artist: String, album: String): Boolean {
 fun partitionAlbumBatchSongs(
     songs: List<Song>,
     batchFields: IdentifyApplyFields,
-    fillGapsOnlyIds: Set<Long> = emptySet()
+    fillGapsOnlyIds: Set<Long> = emptySet(),
 ): AlbumBatchSongPartition {
     val artworkOnly = ArrayList<Song>()
     val otherGaps = ArrayList<Song>()
     for (song in songs) {
-        val effectiveFields = if (song.id in fillGapsOnlyIds) {
-            gapApplyFields(song)
-        } else {
-            batchFields
-        }
+        val effectiveFields =
+            if (song.id in fillGapsOnlyIds) {
+                gapApplyFields(song)
+            } else {
+                batchFields
+            }
         if (songHasOtherGapsThanArtwork(song, effectiveFields)) {
             otherGaps.add(song)
         } else {
@@ -111,7 +115,7 @@ fun partitionAlbumBatchSongs(
  */
 fun buildKnownAlbumProposal(
     song: Song,
-    match: KnownAlbumMatch
+    match: KnownAlbumMatch,
 ): IdentifyProposal {
     val candidate = match.toIdentifyCandidate()
     return IdentifyProposal(
@@ -120,7 +124,7 @@ fun buildKnownAlbumProposal(
         queryTitle = song.title,
         candidates = listOf(candidate),
         confidence = IdentifyConfidence.HIGH,
-        suggested = candidate
+        suggested = candidate,
     )
 }
 
@@ -136,7 +140,7 @@ suspend fun applyKnownAlbumMatches(
     batchFields: IdentifyApplyFields,
     fillGapsOnlyIds: Set<Long> = emptySet(),
     collectReviewProposals: Boolean = true,
-    apply: suspend (Long, IdentifyProposal, IdentifyApplyFields) -> IdentifyResult
+    apply: suspend (Long, IdentifyProposal, IdentifyApplyFields) -> IdentifyResult,
 ): AlbumTrackMatchResult {
     if (songs.isEmpty() || matches.isEmpty()) return AlbumTrackMatchResult()
     val applied = LinkedHashSet<Long>()
@@ -164,16 +168,17 @@ suspend fun matchAndApplyKnownAlbumTracks(
     fillGapsOnlyIds: Set<Long> = emptySet(),
     seedFolderPath: String = "",
     collectReviewProposals: Boolean = true,
-    apply: suspend (Long, IdentifyProposal, IdentifyApplyFields) -> IdentifyResult
+    apply: suspend (Long, IdentifyProposal, IdentifyApplyFields) -> IdentifyResult,
 ): AlbumTrackMatchResult {
     if (songs.isEmpty() || knownAlbum.tracks.size < 2) return AlbumTrackMatchResult()
     val queries = songs.map { knownAlbumQueryOf(it) }
-    val matches = assignUniqueKnownAlbumMatches(
-        queries = queries,
-        albums = listOf(knownAlbum),
-        scoped = true,
-        seedFolderPath = seedFolderPath
-    )
+    val matches =
+        assignUniqueKnownAlbumMatches(
+            queries = queries,
+            albums = listOf(knownAlbum),
+            scoped = true,
+            seedFolderPath = seedFolderPath,
+        )
     if (matches.isEmpty()) return AlbumTrackMatchResult()
     return applyKnownAlbumMatches(
         songs = songs,
@@ -181,7 +186,7 @@ suspend fun matchAndApplyKnownAlbumTracks(
         batchFields = batchFields,
         fillGapsOnlyIds = fillGapsOnlyIds,
         collectReviewProposals = collectReviewProposals,
-        apply = apply
+        apply = apply,
     )
 }
 
@@ -193,7 +198,7 @@ fun findAlbumBatchCandidates(
     batchFields: IdentifyApplyFields,
     fillGapsOnlyIds: Set<Long> = emptySet(),
     attemptedGroupKeys: Set<String> = emptySet(),
-    minGroupSize: Int = 2
+    minGroupSize: Int = 2,
 ): List<IdentifyAlbumBatchCandidate> {
     if (!batchFields.artwork && fillGapsOnlyIds.isEmpty()) return emptyList()
     if (availableSongs.size < minGroupSize) return emptyList()
@@ -209,17 +214,18 @@ fun findAlbumBatchCandidates(
     return grouped.mapNotNull { (key, groupSongs) ->
         if (groupSongs.size < minGroupSize) return@mapNotNull null
         val firstSong = groupSongs.first()
-        val partition = partitionAlbumBatchSongs(
-            songs = groupSongs,
-            batchFields = batchFields,
-            fillGapsOnlyIds = fillGapsOnlyIds
-        )
+        val partition =
+            partitionAlbumBatchSongs(
+                songs = groupSongs,
+                batchFields = batchFields,
+                fillGapsOnlyIds = fillGapsOnlyIds,
+            )
         IdentifyAlbumBatchCandidate(
             groupKey = key,
             artist = firstSong.artist,
             album = firstSong.album,
             songs = groupSongs,
-            partition = partition
+            partition = partition,
         )
     }
 }
@@ -234,7 +240,7 @@ fun findAlbumBatchCandidates(
     batchFields: IdentifyApplyFields,
     fillGapsOnlyIds: Set<Long> = emptySet(),
     attemptedGroupKeys: Set<String> = emptySet(),
-    minGroupSize: Int = 2
+    minGroupSize: Int = 2,
 ): List<IdentifyAlbumBatchCandidate> {
     val available = songs.filter { it.id in remainingIds && it.id !in inFlightIds }
     return findAlbumBatchCandidates(
@@ -242,7 +248,7 @@ fun findAlbumBatchCandidates(
         batchFields = batchFields,
         fillGapsOnlyIds = fillGapsOnlyIds,
         attemptedGroupKeys = attemptedGroupKeys,
-        minGroupSize = minGroupSize
+        minGroupSize = minGroupSize,
     )
 }
 
@@ -254,14 +260,15 @@ fun findNextAlbumBatchCandidate(
     batchFields: IdentifyApplyFields,
     fillGapsOnlyIds: Set<Long> = emptySet(),
     attemptedGroupKeys: Set<String> = emptySet(),
-    minGroupSize: Int = 2
-): IdentifyAlbumBatchCandidate? = findAlbumBatchCandidates(
-    availableSongs = availableSongs,
-    batchFields = batchFields,
-    fillGapsOnlyIds = fillGapsOnlyIds,
-    attemptedGroupKeys = attemptedGroupKeys,
-    minGroupSize = minGroupSize
-).firstOrNull()
+    minGroupSize: Int = 2,
+): IdentifyAlbumBatchCandidate? =
+    findAlbumBatchCandidates(
+        availableSongs = availableSongs,
+        batchFields = batchFields,
+        fillGapsOnlyIds = fillGapsOnlyIds,
+        attemptedGroupKeys = attemptedGroupKeys,
+        minGroupSize = minGroupSize,
+    ).firstOrNull()
 
 // --- L3 High-Level Utility ---
 
@@ -277,20 +284,21 @@ fun findNextAlbumBatchCandidateForSong(
     batchFields: IdentifyApplyFields,
     fillGapsOnlyIds: Set<Long> = emptySet(),
     attemptedGroupKeys: Set<String> = emptySet(),
-    minGroupSize: Int = 2
+    minGroupSize: Int = 2,
 ): IdentifyAlbumBatchCandidate? {
     if (!isEligibleForAlbumBatchIdentify(targetSong.artist, targetSong.album)) return null
     val targetKey = albumGroupKey(targetSong.artist, targetSong.album)
     if (targetKey in attemptedGroupKeys) return null
 
-    val candidates = findAlbumBatchCandidates(
-        songs = songs,
-        remainingIds = remainingIds,
-        inFlightIds = inFlightIds,
-        batchFields = batchFields,
-        fillGapsOnlyIds = fillGapsOnlyIds,
-        attemptedGroupKeys = attemptedGroupKeys,
-        minGroupSize = minGroupSize
-    )
+    val candidates =
+        findAlbumBatchCandidates(
+            songs = songs,
+            remainingIds = remainingIds,
+            inFlightIds = inFlightIds,
+            batchFields = batchFields,
+            fillGapsOnlyIds = fillGapsOnlyIds,
+            attemptedGroupKeys = attemptedGroupKeys,
+            minGroupSize = minGroupSize,
+        )
     return candidates.firstOrNull { it.groupKey == targetKey }
 }

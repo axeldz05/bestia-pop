@@ -51,7 +51,7 @@ data class IdentifyOverviewActions(
     val onReviewGroup: (String) -> Unit,
     val onReviewAll: () -> Unit,
     val onSearchGroupCandidates: (String, String) -> Unit,
-    val onSelectGroupCandidate: (String, Int) -> Unit
+    val onSelectGroupCandidate: (String, Int) -> Unit,
 )
 
 /** Level 2 action bundle for individual album group card interactions. */
@@ -59,7 +59,7 @@ data class IdentifyAlbumGroupActions(
     val onApplyAll: () -> Unit,
     val onReviewOneByOne: () -> Unit,
     val onSearchCandidates: (String) -> Unit,
-    val onSelectCandidate: (Int) -> Unit
+    val onSelectCandidate: (Int) -> Unit,
 )
 
 /** Level 2 compressed overview layout using [IdentifyOverviewActions]. */
@@ -67,28 +67,29 @@ data class IdentifyAlbumGroupActions(
 fun IdentifyReviewOverview(
     state: IdentifyReviewState,
     actions: IdentifyOverviewActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val remaining = remember(state.items, state.currentIndex) { state.remaining }
     val remainingById = remember(remaining) { remaining.associateBy { it.song.id } }
-    val groups = remember(
-        state.items,
-        state.currentIndex,
-        state.albumGroupCandidates,
-        state.albumGroupSelectedIndices
-    ) { state.albumGroups }
+    val groups =
+        remember(
+            state.items,
+            state.currentIndex,
+            state.albumGroupCandidates,
+            state.albumGroupSelectedIndices,
+        ) { state.albumGroups }
     val ungrouped = remember(state.items, state.currentIndex, state.albumGroups) { state.ungroupedCount }
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (groups.isNotEmpty()) {
             item {
                 Text(
                     text = "Álbumes identificados",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
             items(groups, key = { it.key }) { group ->
@@ -98,12 +99,13 @@ fun IdentifyReviewOverview(
                     titles = titles,
                     canApply = state.applyFields.hasAny && !state.isApplying,
                     applying = state.isApplying,
-                    actions = IdentifyAlbumGroupActions(
-                        onApplyAll = { actions.onApplyGroup(group.key) },
-                        onReviewOneByOne = { actions.onReviewGroup(group.key) },
-                        onSearchCandidates = { query -> actions.onSearchGroupCandidates(group.key, query) },
-                        onSelectCandidate = { index -> actions.onSelectGroupCandidate(group.key, index) }
-                    )
+                    actions =
+                        IdentifyAlbumGroupActions(
+                            onApplyAll = { actions.onApplyGroup(group.key) },
+                            onReviewOneByOne = { actions.onReviewGroup(group.key) },
+                            onSearchCandidates = { query -> actions.onSearchGroupCandidates(group.key, query) },
+                            onSelectCandidate = { index -> actions.onSelectGroupCandidate(group.key, index) },
+                        ),
                 )
             }
         }
@@ -111,7 +113,7 @@ fun IdentifyReviewOverview(
             item {
                 IdentifyUngroupedBlock(
                     count = ungrouped,
-                    onReview = actions.onReviewAll
+                    onReview = actions.onReviewAll,
                 )
             }
         }
@@ -127,17 +129,18 @@ fun IdentifyReviewOverview(
     onReviewAll: () -> Unit,
     onSearchGroupCandidates: (String, String) -> Unit,
     onSelectGroupCandidate: (String, Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) = IdentifyReviewOverview(
     state = state,
-    actions = IdentifyOverviewActions(
-        onApplyGroup = onApplyGroup,
-        onReviewGroup = onReviewGroup,
-        onReviewAll = onReviewAll,
-        onSearchGroupCandidates = onSearchGroupCandidates,
-        onSelectGroupCandidate = onSelectGroupCandidate
-    ),
-    modifier = modifier
+    actions =
+        IdentifyOverviewActions(
+            onApplyGroup = onApplyGroup,
+            onReviewGroup = onReviewGroup,
+            onReviewAll = onReviewAll,
+            onSearchGroupCandidates = onSearchGroupCandidates,
+            onSelectGroupCandidate = onSelectGroupCandidate,
+        ),
+    modifier = modifier,
 )
 
 /** Level 2 album group card using [IdentifyAlbumGroupActions]. */
@@ -148,7 +151,7 @@ fun IdentifyAlbumGroupCard(
     canApply: Boolean,
     applying: Boolean,
     actions: IdentifyAlbumGroupActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     var expandedTitles by remember(group.key) { mutableStateOf(false) }
     var expandedSearch by remember(group.key) { mutableStateOf(false) }
@@ -158,19 +161,20 @@ fun IdentifyAlbumGroupCard(
     val shape = RoundedCornerShape(12.dp)
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), shape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ArtworkThumbnail(
                 artworkUri = group.artworkUri,
                 size = 56.dp,
-                contentDescription = group.album
+                contentDescription = group.album,
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -179,39 +183,45 @@ fun IdentifyAlbumGroupCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = group.artist.ifBlank { group.currentArtist.ifBlank { "Artista desconocido" } },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
                 val yearText = if (group.year > 0) " · ${group.year}" else ""
                 val countText = "${group.songIds.size} canciones"
                 Text(
                     text = "$countText$yearText",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                 )
             }
         }
 
         // Breakdown of songs with only artwork vs other gaps
         if (group.artworkOnlySongIds.isNotEmpty() || group.otherGapsSongIds.isNotEmpty()) {
-            val statusLabel = when {
-                group.otherGapsSongIds.isEmpty() ->
-                    "${group.artworkOnlySongIds.size} se completarán con la portada del álbum"
-                group.artworkOnlySongIds.isEmpty() ->
-                    "${group.otherGapsSongIds.size} canciones tienen otros campos por revisar"
-                else ->
-                    "${group.artworkOnlySongIds.size} solo necesitan portada · ${group.otherGapsSongIds.size} con otros datos pendientes"
-            }
+            val statusLabel =
+                when {
+                    group.otherGapsSongIds.isEmpty() -> {
+                        "${group.artworkOnlySongIds.size} se completarán con la portada del álbum"
+                    }
+
+                    group.artworkOnlySongIds.isEmpty() -> {
+                        "${group.otherGapsSongIds.size} canciones tienen otros campos por revisar"
+                    }
+
+                    else -> {
+                        "${group.artworkOnlySongIds.size} solo necesitan portada · ${group.otherGapsSongIds.size} con otros datos pendientes"
+                    }
+                }
             Text(
                 text = statusLabel,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
 
@@ -220,44 +230,48 @@ fun IdentifyAlbumGroupCard(
             Text(
                 text = "Candidatos de portada (${group.candidates.size})",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(vertical = 4.dp)
+                contentPadding = PaddingValues(vertical = 4.dp),
             ) {
                 itemsIndexed(group.candidates) { idx, cand ->
                     val isSelected = idx == group.selectedCandidateIndex
-                    val borderColor = if (isSelected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                    }
+                    val borderColor =
+                        if (isSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                        }
                     val candShape = RoundedCornerShape(8.dp)
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .width(68.dp)
-                            .clip(candShape)
-                            .border(if (isSelected) 2.dp else 1.dp, borderColor, candShape)
-                            .background(
-                                if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                else MaterialTheme.colorScheme.surface
-                            )
-                            .clickable { actions.onSelectCandidate(idx) }
-                            .padding(4.dp)
+                        modifier =
+                            Modifier
+                                .width(68.dp)
+                                .clip(candShape)
+                                .border(if (isSelected) 2.dp else 1.dp, borderColor, candShape)
+                                .background(
+                                    if (isSelected) {
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    },
+                                ).clickable { actions.onSelectCandidate(idx) }
+                                .padding(4.dp),
                     ) {
                         ArtworkThumbnail(
                             artworkUri = cand.coverUrl,
                             size = 56.dp,
-                            contentDescription = cand.title
+                            contentDescription = cand.title,
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
                             text = cand.releaseYear.ifBlank { cand.title },
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -268,18 +282,18 @@ fun IdentifyAlbumGroupCard(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(
                 onClick = { expandedSearch = !expandedSearch },
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
             ) {
                 Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
                 Text(if (expandedSearch) "Ocultar buscador" else "Buscar otros candidatos")
             }
             TextButton(
                 onClick = { expandedTitles = !expandedTitles },
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
             ) {
                 Text(if (expandedTitles) "Ocultar canciones" else "Ver canciones (${titles.size})")
             }
@@ -290,7 +304,7 @@ fun IdentifyAlbumGroupCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
                     value = searchQuery,
@@ -299,11 +313,11 @@ fun IdentifyAlbumGroupCard(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { actions.onSearchCandidates(searchQuery) }),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 )
                 IconButton(
                     onClick = { actions.onSearchCandidates(searchQuery) },
-                    modifier = Modifier.align(Alignment.CenterVertically)
+                    modifier = Modifier.align(Alignment.CenterVertically),
                 ) {
                     Icon(Icons.Default.Search, contentDescription = "Buscar candidatos")
                 }
@@ -319,7 +333,7 @@ fun IdentifyAlbumGroupCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -328,23 +342,23 @@ fun IdentifyAlbumGroupCard(
         // Bottom Action buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Button(
                 onClick = actions.onApplyAll,
                 enabled = canApply,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) {
                 Text(
                     if (applying) "Aplicando…" else "Aplicar a álbum",
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             OutlinedButton(
                 onClick = actions.onReviewOneByOne,
                 enabled = !applying,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
             ) {
                 Text("Revisar canciones", maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -363,39 +377,41 @@ fun IdentifyAlbumGroupCard(
     onReviewOneByOne: () -> Unit,
     onSearchCandidates: (String) -> Unit,
     onSelectCandidate: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) = IdentifyAlbumGroupCard(
     group = group,
     titles = titles,
     canApply = canApply,
     applying = applying,
-    actions = IdentifyAlbumGroupActions(
-        onApplyAll = onApplyAll,
-        onReviewOneByOne = onReviewOneByOne,
-        onSearchCandidates = onSearchCandidates,
-        onSelectCandidate = onSelectCandidate
-    ),
-    modifier = modifier
+    actions =
+        IdentifyAlbumGroupActions(
+            onApplyAll = onApplyAll,
+            onReviewOneByOne = onReviewOneByOne,
+            onSearchCandidates = onSearchCandidates,
+            onSelectCandidate = onSelectCandidate,
+        ),
+    modifier = modifier,
 )
 
 @Composable
 fun IdentifyUngroupedBlock(
     count: Int,
-    onReview: () -> Unit
+    onReview: () -> Unit,
 ) {
     val shape = RoundedCornerShape(12.dp)
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), shape)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), shape)
+                .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             text = if (count == 1) "1 sin álbum claro" else "$count sin álbum claro",
             style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
         )
         TextButton(onClick = onReview, contentPadding = PaddingValues(0.dp)) {
             Text("Revisar una a una")

@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PlaybackCrossfadeTest {
-
     @Test
     fun calculateCrossfadeVolume_fadesInAtStart() {
         val duration = 100_000L

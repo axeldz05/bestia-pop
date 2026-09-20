@@ -40,7 +40,7 @@ internal class PlaybackTimelineSynchronizer(
     private val persistPlaybackSession: (force: Boolean) -> Unit,
     private val applyPendingExternalPlaybackModes: () -> Unit,
     private val restartAsyncPlaybackWork: () -> Unit,
-    private val setLiveSessionHydrated: (Boolean) -> Unit
+    private val setLiveSessionHydrated: (Boolean) -> Unit,
 ) {
     var timelineMaterialized = false
     var suppressPlaylistMutationCallbacks = false
@@ -55,12 +55,11 @@ internal class PlaybackTimelineSynchronizer(
         queueAppendJob = null
     }
 
-    fun hasMaterializedTimeline(): Boolean =
-        timelineMaterialized && (getController()?.mediaItemCount ?: 0) > 0
+    fun hasMaterializedTimeline(): Boolean = timelineMaterialized && (getController()?.mediaItemCount ?: 0) > 0
 
     fun mutateMaterializedTimeline(
         syncShuffle: Boolean = true,
-        mutation: (PlaybackControllerFacade) -> Unit
+        mutation: (PlaybackControllerFacade) -> Unit,
     ) {
         val player = getController() ?: return
         if (!hasMaterializedTimeline()) return
@@ -75,7 +74,10 @@ internal class PlaybackTimelineSynchronizer(
         }
     }
 
-    fun syncChangedTimelineItems(oldQueue: List<PlayableItem>, newQueue: List<PlayableItem>) {
+    fun syncChangedTimelineItems(
+        oldQueue: List<PlayableItem>,
+        newQueue: List<PlayableItem>,
+    ) {
         mutateMaterializedTimeline(syncShuffle = false) { player ->
             newQueue.forEachIndexed { index, item ->
                 if (item !== oldQueue.getOrNull(index)) {
@@ -89,8 +91,10 @@ internal class PlaybackTimelineSynchronizer(
         val player = getController() ?: return false
         if (!hasMaterializedTimeline() || newOrder.isEmpty()) return false
         val current = getCurrentItem() ?: return false
-        val playIndex = newOrder.indexOfFirst { it.queueEntryId == current.queueEntryId }
-            .takeIf { it >= 0 } ?: return false
+        val playIndex =
+            newOrder
+                .indexOfFirst { it.queueEntryId == current.queueEntryId }
+                .takeIf { it >= 0 } ?: return false
         val playerIndex = player.currentMediaItemIndex
         if (playerIndex !in 0 until player.mediaItemCount) return false
         suppressPlaylistMutationCallbacks = true
@@ -115,7 +119,7 @@ internal class PlaybackTimelineSynchronizer(
         newOrder: List<PlayableItem>,
         focusIndex: Int,
         positionMs: Long,
-        startPlaying: Boolean
+        startPlaying: Boolean,
     ) {
         setQueue(newOrder)
         setLastMediaItemIndex(focusIndex)
@@ -132,7 +136,7 @@ internal class PlaybackTimelineSynchronizer(
         startIndex: Int,
         startPositionMs: Long,
         startPlaying: Boolean,
-        newPlayback: Boolean = false
+        newPlayback: Boolean = false,
     ) {
         val player = getController() ?: return
         if (items.isEmpty()) return
@@ -156,7 +160,7 @@ internal class PlaybackTimelineSynchronizer(
             player.setMediaItems(
                 initialItems,
                 initialIndex,
-                startPositionMs.coerceAtLeast(0L)
+                startPositionMs.coerceAtLeast(0L),
             )
         } finally {
             suppressPlaylistMutationCallbacks = false
@@ -178,44 +182,45 @@ internal class PlaybackTimelineSynchronizer(
 
         if (useWindow) {
             val generation = getPlaybackGeneration()
-            queueAppendJob = scope.launch(Dispatchers.Default) {
-                var addedAny = false
-                if (windowEnd < items.size) {
-                    val tail = items.subList(windowEnd, items.size)
-                    for (chunk in tail.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
-                        if (!isActive || !isPlaybackGenerationCurrent(generation)) break
-                        delay(40L)
+            queueAppendJob =
+                scope.launch(Dispatchers.Default) {
+                    var addedAny = false
+                    if (windowEnd < items.size) {
+                        val tail = items.subList(windowEnd, items.size)
+                        for (chunk in tail.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
+                            if (!isActive || !isPlaybackGenerationCurrent(generation)) break
+                            delay(40L)
+                            withContext(Dispatchers.Main.immediate) {
+                                if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
+                                    mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(chunk) }
+                                    addedAny = true
+                                }
+                            }
+                        }
+                    }
+                    if (windowStart > 0) {
+                        val head = items.subList(0, windowStart)
+                        var insertIndex = 0
+                        for (chunk in head.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
+                            if (!isActive || !isPlaybackGenerationCurrent(generation)) break
+                            delay(40L)
+                            withContext(Dispatchers.Main.immediate) {
+                                if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
+                                    mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(insertIndex, chunk) }
+                                    insertIndex += chunk.size
+                                    addedAny = true
+                                }
+                            }
+                        }
+                    }
+                    if (addedAny && isActive && isPlaybackGenerationCurrent(generation)) {
                         withContext(Dispatchers.Main.immediate) {
                             if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
-                                mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(chunk) }
-                                addedAny = true
+                                syncShuffleToPlayer()
                             }
                         }
                     }
                 }
-                if (windowStart > 0) {
-                    val head = items.subList(0, windowStart)
-                    var insertIndex = 0
-                    for (chunk in head.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
-                        if (!isActive || !isPlaybackGenerationCurrent(generation)) break
-                        delay(40L)
-                        withContext(Dispatchers.Main.immediate) {
-                            if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
-                                mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(insertIndex, chunk) }
-                                insertIndex += chunk.size
-                                addedAny = true
-                            }
-                        }
-                    }
-                }
-                if (addedAny && isActive && isPlaybackGenerationCurrent(generation)) {
-                    withContext(Dispatchers.Main.immediate) {
-                        if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
-                            syncShuffleToPlayer()
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -246,14 +251,15 @@ internal class PlaybackTimelineSynchronizer(
         val oldQueueEntryIds = oldQueue.map { it.queueEntryId }
         val newQueueEntryIds = rebuilt.map { it.queueEntryId }
 
-        val isWindowOfOldQueue = oldQueue.size > INITIAL_PLAYBACK_WINDOW_SIZE &&
+        val isWindowOfOldQueue =
+            oldQueue.size > INITIAL_PLAYBACK_WINDOW_SIZE &&
                 newQueueEntryIds.size <= INITIAL_PLAYBACK_WINDOW_SIZE &&
                 newQueueEntryIds.isNotEmpty() &&
                 run {
                     val firstIndex = oldQueueEntryIds.indexOf(newQueueEntryIds.first())
                     firstIndex >= 0 &&
-                            firstIndex + newQueueEntryIds.size <= oldQueueEntryIds.size &&
-                            oldQueueEntryIds.subList(firstIndex, firstIndex + newQueueEntryIds.size) == newQueueEntryIds
+                        firstIndex + newQueueEntryIds.size <= oldQueueEntryIds.size &&
+                        oldQueueEntryIds.subList(firstIndex, firstIndex + newQueueEntryIds.size) == newQueueEntryIds
                 }
         val structureChanged = !isWindowOfOldQueue && oldQueueEntryIds != newQueueEntryIds
         if (structureChanged) invalidatePlaybackWork(false)
@@ -261,15 +267,16 @@ internal class PlaybackTimelineSynchronizer(
         val index = player.currentMediaItemIndex.coerceIn(rebuilt.indices)
         val targetQueueEntryId = rebuilt[index].queueEntryId
 
-        val liveQueue = if (isWindowOfOldQueue) {
-            oldQueue
-        } else if (structureChanged) {
-            rebuilt.map { rebuiltItem ->
-                oldQueue.firstOrNull { it.queueEntryId == rebuiltItem.queueEntryId } ?: rebuiltItem
+        val liveQueue =
+            if (isWindowOfOldQueue) {
+                oldQueue
+            } else if (structureChanged) {
+                rebuilt.map { rebuiltItem ->
+                    oldQueue.firstOrNull { it.queueEntryId == rebuiltItem.queueEntryId } ?: rebuiltItem
+                }
+            } else {
+                oldQueue
             }
-        } else {
-            oldQueue
-        }
 
         val liveCurrentItem = liveQueue.firstOrNull { it.queueEntryId == targetQueueEntryId } ?: rebuilt[index]
         val occurrenceChanged = getCurrentItem()?.queueEntryId != liveCurrentItem.queueEntryId
@@ -278,8 +285,9 @@ internal class PlaybackTimelineSynchronizer(
         timelineMaterialized = true
         setLiveSessionHydrated(true)
         setLastMediaItemIndex(
-            liveQueue.indexOfFirst { it.queueEntryId == targetQueueEntryId }
-                .takeIf { it >= 0 } ?: index
+            liveQueue
+                .indexOfFirst { it.queueEntryId == targetQueueEntryId }
+                .takeIf { it >= 0 } ?: index,
         )
         setPlaybackPositionMs(player.currentPosition.coerceAtLeast(0L))
         setCurrentItem(
@@ -289,7 +297,7 @@ internal class PlaybackTimelineSynchronizer(
                 PlaybackChangeHint.NEW_PLAYBACK
             } else {
                 PlaybackChangeHint.METADATA_UPDATE
-            }
+            },
         )
         applyPendingExternalPlaybackModes()
         if (structureChanged) {

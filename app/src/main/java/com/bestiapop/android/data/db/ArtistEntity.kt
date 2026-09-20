@@ -9,8 +9,8 @@ import androidx.room.PrimaryKey
     tableName = "artists",
     indices = [
         Index(value = ["normalizedName"], unique = true),
-        Index(value = ["name"])
-    ]
+        Index(value = ["name"]),
+    ],
 )
 @Immutable
 data class ArtistEntity(
@@ -18,5 +18,5 @@ data class ArtistEntity(
     val id: Long = 0,
     val name: String,
     val normalizedName: String,
-    val photoUri: String? = null
+    val photoUri: String? = null,
 )

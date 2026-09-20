@@ -33,7 +33,7 @@ class UiNavigationCoordinator(
     private val onRestoreCfRecommendations: suspend () -> Boolean,
     private val isLbPlaylistDetailLoaded: () -> Boolean,
     private val isCfRecommendationsLoaded: () -> Boolean,
-    private val toast: (String) -> Unit
+    private val toast: (String) -> Unit,
 ) {
     private val _navigation = MutableStateFlow(UiNavigationState())
     val navigation: StateFlow<UiNavigationState> = _navigation.asStateFlow()
@@ -52,9 +52,7 @@ class UiNavigationCoordinator(
     private val _pendingSettingsSection = MutableStateFlow<String?>(null)
     val pendingSettingsSection: StateFlow<String?> = _pendingSettingsSection.asStateFlow()
 
-    fun updateNavigation(
-        transform: (UiNavigationState) -> UiNavigationState
-    ): Boolean {
+    fun updateNavigation(transform: (UiNavigationState) -> UiNavigationState): Boolean {
         while (true) {
             val current = _navigation.value
             val updated = transform(current)
@@ -68,7 +66,10 @@ class UiNavigationCoordinator(
         }
     }
 
-    fun setSelectedNavIndex(index: Int, persist: Boolean = true) {
+    fun setSelectedNavIndex(
+        index: Int,
+        persist: Boolean = true,
+    ) {
         val sanitized = LibraryUiPreferencesCodec.sanitizeNavIndex(index)
         navIndexBeforeTransient = null
         if (_selectedNavIndex.value == sanitized && _navigation.value.selectedNavIndex == sanitized) {
@@ -122,7 +123,10 @@ class UiNavigationCoordinator(
         }
     }
 
-    fun openLibraryAlbum(name: String, fromNestedParent: Boolean = false) {
+    fun openLibraryAlbum(
+        name: String,
+        fromNestedParent: Boolean = false,
+    ) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         if (updateNavigation {
@@ -173,7 +177,10 @@ class UiNavigationCoordinator(
         }
     }
 
-    fun renameRestoredLibraryAlbum(sourceKey: String, targetKey: String) {
+    fun renameRestoredLibraryAlbum(
+        sourceKey: String,
+        targetKey: String,
+    ) {
         if (updateNavigation {
                 it.copy(libraryStack = it.libraryStack.renameAlbum(sourceKey, targetKey))
             }
@@ -192,7 +199,7 @@ class UiNavigationCoordinator(
                 selectedNavIndex = NAV_LIBRARY,
                 libraryBrowseFilter = LibraryBrowseFilter.PLAYLISTS,
                 libraryStack = LibraryBrowseStack(),
-                playlistDetail = PlaylistDetailNav.Local(id)
+                playlistDetail = PlaylistDetailNav.Local(id),
             )
         }
         persistNavSnapshot()
@@ -245,14 +252,15 @@ class UiNavigationCoordinator(
     fun pruneRestoredLibraryStack(songs: List<Song>) {
         val lookups = LibraryStackLookups.fromSongs(songs)
         val stack = _navigation.value.libraryStack
-        val pruned = LibraryUiPreferencesCodec.pruneLibraryStack(
-            albumName = stack.albumName,
-            artistName = stack.artistName,
-            genreName = stack.genreName,
-            albumExists = lookups.albumExists,
-            artistExists = lookups.artistExists,
-            genreExists = lookups.genreExists
-        )
+        val pruned =
+            LibraryUiPreferencesCodec.pruneLibraryStack(
+                albumName = stack.albumName,
+                artistName = stack.artistName,
+                genreName = stack.genreName,
+                albumExists = lookups.albumExists,
+                artistExists = lookups.artistExists,
+                genreExists = lookups.genreExists,
+            )
         if (updateNavigation { it.copy(libraryStack = it.libraryStack.applyPruned(pruned)) }) {
             persistNavSnapshot()
         }
@@ -271,11 +279,12 @@ class UiNavigationCoordinator(
         if (detail !is PlaylistDetailNav.ListenBrainz && detail !is PlaylistDetailNav.CfRecommendations) {
             return
         }
-        val needsFetch = when (detail) {
-            is PlaylistDetailNav.ListenBrainz -> !isLbPlaylistDetailLoaded()
-            PlaylistDetailNav.CfRecommendations -> !isCfRecommendationsLoaded()
-            else -> false
-        }
+        val needsFetch =
+            when (detail) {
+                is PlaylistDetailNav.ListenBrainz -> !isLbPlaylistDetailLoaded()
+                PlaylistDetailNav.CfRecommendations -> !isCfRecommendationsLoaded()
+                else -> false
+            }
         if (!needsFetch) return
         scope.launch { restoreDiscoverDetailOrFallback() }
     }
@@ -292,7 +301,9 @@ class UiNavigationCoordinator(
                 if (!ok) fallbackDiscoverRestore(announce = true)
             }
 
-            else -> Unit
+            else -> {
+                Unit
+            }
         }
     }
 

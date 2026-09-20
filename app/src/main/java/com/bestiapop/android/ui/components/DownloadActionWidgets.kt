@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.bestiapop.android.data.model.CatalogAlbum
-import com.bestiapop.android.domain.usecase.RelatedAlbumItem
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -35,8 +33,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.domain.usecase.RelatedAlbumItem
 import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /** L1: circular progress + percent label. */
@@ -46,13 +46,13 @@ fun DownloadProgressPercent(percent: Int) {
         CircularProgressIndicator(
             modifier = Modifier.size(20.dp),
             strokeWidth = 2.dp,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
             text = "$percent%",
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -63,7 +63,7 @@ fun DownloadQueuedLabel() {
     Text(
         text = DownloadMessages.queued,
         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
     )
 }
 
@@ -75,13 +75,13 @@ fun DownloadSuccessReadyLabel(label: String = "Listo") {
             imageVector = Icons.Default.CheckCircle,
             contentDescription = DownloadMessages.downloadedShort,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp)
+            modifier = Modifier.size(22.dp),
         )
         Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -92,17 +92,17 @@ fun DownloadOutlinedActionButton(
     label: String,
     onClick: () -> Unit,
     contentDescription: String = label,
-    horizontalPadding: Int = 8
+    horizontalPadding: Int = 8,
 ) {
     OutlinedButton(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
-        contentPadding = PaddingValues(horizontal = horizontalPadding.dp, vertical = 4.dp)
+        contentPadding = PaddingValues(horizontal = horizontalPadding.dp, vertical = 4.dp),
     ) {
         Icon(
             Icons.Default.Refresh,
             contentDescription = contentDescription,
-            modifier = Modifier.size(16.dp)
+            modifier = Modifier.size(16.dp),
         )
         Spacer(modifier = Modifier.width(4.dp))
         Text(label, style = MaterialTheme.typography.labelSmall)
@@ -114,19 +114,19 @@ fun DownloadOutlinedActionButton(
 fun RetryCycleDismissActions(
     onRetry: () -> Unit,
     onCycle: () -> Unit,
-    onDismiss: (() -> Unit)? = null
+    onDismiss: (() -> Unit)? = null,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         DownloadOutlinedActionButton(
             label = DownloadMessages.retry,
             onClick = onRetry,
-            contentDescription = DownloadMessages.retry
+            contentDescription = DownloadMessages.retry,
         )
         IconButton(onClick = onCycle) {
             Icon(
                 Icons.Default.Search,
                 contentDescription = DownloadMessages.searchAnother,
-                tint = MaterialTheme.colorScheme.primary
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
         if (onDismiss != null) {
@@ -134,7 +134,7 @@ fun RetryCycleDismissActions(
                 Icon(
                     Icons.Default.Close,
                     contentDescription = DownloadMessages.dismiss,
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
             }
         }
@@ -147,36 +147,48 @@ fun PreviewPlayPauseButton(
     isResolving: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
-    enabled: Boolean = true
+    enabled: Boolean = true,
 ) {
-    val playTint = if (enabled) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-    }
+    val playTint =
+        if (enabled) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+        }
     IconButton(onClick = onClick, enabled = enabled) {
         when {
-            isResolving -> CircularProgressIndicator(
-                modifier = Modifier.size(22.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary
-            )
-            isPlaying -> Icon(
-                imageVector = Icons.Default.Pause,
-                contentDescription = "Pausar preview",
-                tint = MaterialTheme.colorScheme.primary
-            )
-            else -> Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = "Preview",
-                tint = playTint
-            )
+            isResolving -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            isPlaying -> {
+                Icon(
+                    imageVector = Icons.Default.Pause,
+                    contentDescription = "Pausar preview",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            else -> {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Preview",
+                    tint = playTint,
+                )
+            }
         }
     }
 }
 
 /** L1 UI lookup by artist+title (claim ownership remains in ProcessDownloadCoordinator). */
-fun List<ActiveDownload>.findUiDownloadByTrack(artist: String, title: String): ActiveDownload? {
+fun List<ActiveDownload>.findUiDownloadByTrack(
+    artist: String,
+    title: String,
+): ActiveDownload? {
     val key = TrackMatchKeys.downloadIdFor(artist, title)
     if (key.isEmpty()) return null
     val variants = TrackMatchKeys.downloadIdVariantsFor(artist, title)
@@ -189,8 +201,7 @@ fun List<ActiveDownload>.findUiDownloadByTrack(artist: String, title: String): A
 }
 
 /** Level 2: UI lookup directly using [TrackMeta] without unpacking artist and title primitives. */
-fun List<ActiveDownload>.findUiDownloadByTrack(meta: TrackMeta): ActiveDownload? =
-    findUiDownloadByTrack(meta.artist, meta.title)
+fun List<ActiveDownload>.findUiDownloadByTrack(meta: TrackMeta): ActiveDownload? = findUiDownloadByTrack(meta.artist, meta.title)
 
 /** Level 1: Aggregate download state and progress for album collections. */
 data class ActiveAlbumDownloadProgress(
@@ -199,7 +210,7 @@ data class ActiveAlbumDownloadProgress(
     val activeCount: Int = 0,
     val completedCount: Int = 0,
     val totalCount: Int = 0,
-    val progressPercent: Int = 0
+    val progressPercent: Int = 0,
 ) {
     val isActive: Boolean get() = isDownloading || isQueued
 }
@@ -207,42 +218,54 @@ data class ActiveAlbumDownloadProgress(
 /** Level 1: Query download progress across active transfers for a given album. */
 fun List<ActiveDownload>.findAlbumDownloadProgress(
     albumTitle: String,
-    artistName: String = ""
+    artistName: String = "",
 ): ActiveAlbumDownloadProgress {
     if (isEmpty() || albumTitle.isBlank()) return ActiveAlbumDownloadProgress()
     val normAlbum = TrackMatchKeys.normalize(albumTitle)
     val normArtist = TrackMatchKeys.normalize(artistName)
-    val matching = filter { d ->
-        val dAlbum = TrackMatchKeys.normalize(d.album)
-        val dArtist = TrackMatchKeys.normalize(d.artist)
-        dAlbum.isNotEmpty() && dAlbum == normAlbum && (normArtist.isEmpty() || dArtist.isEmpty() || dArtist == normArtist || TrackMatchKeys.containsNormalized(dArtist, normArtist) || TrackMatchKeys.containsNormalized(normArtist, dArtist))
-    }
+    val matching =
+        filter { d ->
+            val dAlbum = TrackMatchKeys.normalize(d.album)
+            val dArtist = TrackMatchKeys.normalize(d.artist)
+            dAlbum.isNotEmpty() && dAlbum == normAlbum &&
+                (
+                    normArtist.isEmpty() || dArtist.isEmpty() || dArtist == normArtist ||
+                        TrackMatchKeys.containsNormalized(
+                            dArtist,
+                            normArtist,
+                        ) ||
+                        TrackMatchKeys.containsNormalized(normArtist, dArtist)
+                )
+        }
     if (matching.isEmpty()) return ActiveAlbumDownloadProgress()
     val downloading = matching.filter { it.state == CandidateDownloadState.DOWNLOADING }
     val queued = matching.filter { it.state == CandidateDownloadState.QUEUED }
     val success = matching.filter { it.state == CandidateDownloadState.SUCCESS }
-    val avgPercent = if (downloading.isNotEmpty()) {
-        downloading.map { it.progressPercent }.average().toInt()
-    } else 0
+    val avgPercent =
+        if (downloading.isNotEmpty()) {
+            downloading.map { it.progressPercent }.average().toInt()
+        } else {
+            0
+        }
     return ActiveAlbumDownloadProgress(
         isDownloading = downloading.isNotEmpty(),
         isQueued = queued.isNotEmpty(),
         activeCount = downloading.size + queued.size,
         completedCount = success.size,
         totalCount = matching.size,
-        progressPercent = avgPercent
+        progressPercent = avgPercent,
     )
 }
 
 /** Level 1: Quick check if an album has active downloads in flight or queued. */
-fun List<ActiveDownload>.isAlbumDownloading(albumTitle: String, artistName: String = ""): Boolean =
-    findAlbumDownloadProgress(albumTitle, artistName).isActive
+fun List<ActiveDownload>.isAlbumDownloading(
+    albumTitle: String,
+    artistName: String = "",
+): Boolean = findAlbumDownloadProgress(albumTitle, artistName).isActive
 
-fun List<ActiveDownload>.isAlbumDownloading(album: CatalogAlbum): Boolean =
-    isAlbumDownloading(album.title, album.artist)
+fun List<ActiveDownload>.isAlbumDownloading(album: CatalogAlbum): Boolean = isAlbumDownloading(album.title, album.artist)
 
-fun List<ActiveDownload>.isAlbumDownloading(album: RelatedAlbumItem): Boolean =
-    isAlbumDownloading(album.title, album.artist)
+fun List<ActiveDownload>.isAlbumDownloading(album: RelatedAlbumItem): Boolean = isAlbumDownloading(album.title, album.artist)
 
 /** Level 1: Circular download progress indicator overlay for media cards. */
 @Composable
@@ -250,20 +273,21 @@ fun BoxScope.MediaCardDownloadSpinner(
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
     indicatorSize: Dp = 16.dp,
-    strokeWidth: Dp = 2.dp
+    strokeWidth: Dp = 2.dp,
 ) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier
-            .align(Alignment.BottomEnd)
-            .padding(4.dp)
-            .size(size)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
+        modifier =
+            modifier
+                .align(Alignment.BottomEnd)
+                .padding(4.dp)
+                .size(size)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape),
     ) {
         CircularProgressIndicator(
             modifier = Modifier.size(indicatorSize),
             strokeWidth = strokeWidth,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -273,19 +297,20 @@ fun BoxScope.MediaCardDownloadSpinner(
 fun AlbumDownloadStateButton(
     progress: ActiveAlbumDownloadProgress,
     onDownload: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     if (progress.isActive) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = modifier
-                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(16.dp))
-                .padding(horizontal = 10.dp, vertical = 6.dp)
+            modifier =
+                modifier
+                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
         ) {
             CircularProgressIndicator(
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
             Spacer(modifier = Modifier.width(6.dp))
             val pct = progress.progressPercent
@@ -293,18 +318,18 @@ fun AlbumDownloadStateButton(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
             )
         }
     } else {
         IconButton(
             onClick = onDownload,
-            modifier = modifier.background(MaterialTheme.colorScheme.primaryContainer, androidx.compose.foundation.shape.CircleShape)
+            modifier = modifier.background(MaterialTheme.colorScheme.primaryContainer, androidx.compose.foundation.shape.CircleShape),
         ) {
             Icon(
                 imageVector = Icons.Default.Download,
                 contentDescription = "Descargar todo",
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
     }
@@ -321,15 +346,29 @@ fun downloadStateStatusLabel(
     successLabel: String = DownloadMessages.downloadedShort,
     queuedLabel: String = DownloadMessages.queued,
     downloadingFallback: String = DownloadMessages.downloadingEllipsis,
-    idleLabel: String? = null
-): String? = when (state) {
-    CandidateDownloadState.QUEUED -> queuedLabel
-    CandidateDownloadState.DOWNLOADING ->
-        progressMessage?.takeIf { it.isNotBlank() } ?: downloadingFallback
-    CandidateDownloadState.SUCCESS -> successLabel
-    CandidateDownloadState.ERROR -> errorMessage?.takeIf { it.isNotBlank() }
-    CandidateDownloadState.IDLE -> idleLabel
-}
+    idleLabel: String? = null,
+): String? =
+    when (state) {
+        CandidateDownloadState.QUEUED -> {
+            queuedLabel
+        }
+
+        CandidateDownloadState.DOWNLOADING -> {
+            progressMessage?.takeIf { it.isNotBlank() } ?: downloadingFallback
+        }
+
+        CandidateDownloadState.SUCCESS -> {
+            successLabel
+        }
+
+        CandidateDownloadState.ERROR -> {
+            errorMessage?.takeIf { it.isNotBlank() }
+        }
+
+        CandidateDownloadState.IDLE -> {
+            idleLabel
+        }
+    }
 
 /**
  * L1: in-flight status plus a cancel button. Queued and downloading rows had no way out, so a job
@@ -339,7 +378,7 @@ fun downloadStateStatusLabel(
 @Composable
 private fun DownloadInFlightActions(
     onDismiss: (() -> Unit)?,
-    status: @Composable () -> Unit
+    status: @Composable () -> Unit,
 ) {
     if (onDismiss == null) {
         status()
@@ -351,7 +390,7 @@ private fun DownloadInFlightActions(
             Icon(
                 imageVector = Icons.Default.Close,
                 contentDescription = DownloadMessages.cancelDownload,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
         }
     }
@@ -369,56 +408,83 @@ fun DownloadStateTrailing(
     onSuccessPlay: (() -> Unit)? = null,
     successLabel: String? = null,
     successContent: (@Composable () -> Unit)? = null,
-    idleContent: (@Composable () -> Unit)? = null
+    idleContent: (@Composable () -> Unit)? = null,
 ) {
     when (state) {
-        CandidateDownloadState.QUEUED -> DownloadInFlightActions(onDismiss) { DownloadQueuedLabel() }
-        CandidateDownloadState.DOWNLOADING ->
-            DownloadInFlightActions(onDismiss) { DownloadProgressPercent(percent) }
-        CandidateDownloadState.ERROR -> when {
-            onRetry != null && onCycle != null -> RetryCycleDismissActions(
-                onRetry = onRetry,
-                onCycle = onCycle,
-                onDismiss = onDismiss
-            )
-            onRetry != null -> DownloadOutlinedActionButton(
-                label = DownloadMessages.retry,
-                onClick = onRetry
-            )
+        CandidateDownloadState.QUEUED -> {
+            DownloadInFlightActions(onDismiss) { DownloadQueuedLabel() }
         }
-        CandidateDownloadState.SUCCESS -> when {
-            successContent != null -> successContent()
-            onSuccessPlay != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onSuccessPlay) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Reproducir",
-                        tint = MaterialTheme.colorScheme.primary
+
+        CandidateDownloadState.DOWNLOADING -> {
+            DownloadInFlightActions(onDismiss) { DownloadProgressPercent(percent) }
+        }
+
+        CandidateDownloadState.ERROR -> {
+            when {
+                onRetry != null && onCycle != null -> {
+                    RetryCycleDismissActions(
+                        onRetry = onRetry,
+                        onCycle = onCycle,
+                        onDismiss = onDismiss,
                     )
                 }
-                if (onDismiss != null) {
-                    IconButton(onClick = onDismiss) {
+
+                onRetry != null -> {
+                    DownloadOutlinedActionButton(
+                        label = DownloadMessages.retry,
+                        onClick = onRetry,
+                    )
+                }
+            }
+        }
+
+        CandidateDownloadState.SUCCESS -> {
+            when {
+                successContent != null -> {
+                    successContent()
+                }
+
+                onSuccessPlay != null -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onSuccessPlay) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Reproducir",
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        if (onDismiss != null) {
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Limpiar",
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                successLabel != null -> {
+                    Text(
+                        text = successLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                onDownload != null -> {
+                    IconButton(onClick = onDownload) {
                         Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Limpiar",
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            imageVector = Icons.Default.Download,
+                            contentDescription = DownloadMessages.downloadAction,
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
             }
-            successLabel != null -> Text(
-                text = successLabel,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            onDownload != null -> IconButton(onClick = onDownload) {
-                Icon(
-                    imageVector = Icons.Default.Download,
-                    contentDescription = DownloadMessages.downloadAction,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
         }
+
         CandidateDownloadState.IDLE, null -> {
             if (idleContent != null) {
                 idleContent()
@@ -427,7 +493,7 @@ fun DownloadStateTrailing(
                     Icon(
                         imageVector = Icons.Default.Download,
                         contentDescription = DownloadMessages.downloadAction,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -444,20 +510,20 @@ fun DownloadMissingTracksButton(
     label: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.Download
+    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.Download,
 ) {
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(12.dp),
-        modifier = modifier
+        modifier = modifier,
     ) {
         Icon(imageVector = icon, contentDescription = null)
         Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = label,
             maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }
 }
@@ -470,14 +536,13 @@ fun DownloadMissingTracksButton(
     onClick: () -> Unit,
     count: Int? = null,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
 ) {
     val label = if (count != null && count > 0) "Descargar faltantes ($count)" else "Descargar faltantes"
     DownloadMissingTracksButton(
         onClick = onClick,
         label = label,
         modifier = modifier,
-        enabled = enabled
+        enabled = enabled,
     )
 }
-

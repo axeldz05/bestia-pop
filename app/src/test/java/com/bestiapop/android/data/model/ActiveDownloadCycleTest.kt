@@ -6,11 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ActiveDownloadCycleTest {
-
     private fun track(
         id: String,
         title: String = "Song",
-        artist: String = "Artist"
+        artist: String = "Artist",
     ) = OnlineCatalogTrack(
         id = id,
         title = title,
@@ -18,20 +17,20 @@ class ActiveDownloadCycleTest {
         album = "Album",
         artworkUri = null,
         durationMs = 1000L,
-        audioUrl = id
+        audioUrl = id,
     )
 
     private fun download(
         candidates: List<OnlineCatalogTrack>,
         index: Int = 0,
-        state: CandidateDownloadState = CandidateDownloadState.ERROR
+        state: CandidateDownloadState = CandidateDownloadState.ERROR,
     ) = ActiveDownload(
         id = "job-1",
         source = ActiveDownloadSource.CATALOG,
         candidates = candidates,
         currentCandidateIndex = index,
         state = state,
-        errorMessage = "fail"
+        errorMessage = "fail",
     )
 
     @Test
@@ -39,10 +38,11 @@ class ActiveDownloadCycleTest {
         val a = track("a")
         val b = track("b")
         val c = track("c")
-        val result = ActiveDownload.withCycledCandidate(
-            download(listOf(a, b, c), index = 0),
-            listOf(a, b, c)
-        )
+        val result =
+            ActiveDownload.withCycledCandidate(
+                download(listOf(a, b, c), index = 0),
+                listOf(a, b, c),
+            )
         assertEquals(1, result.currentCandidateIndex)
         assertEquals("b", result.currentTrack?.id)
         assertEquals(CandidateDownloadState.ERROR, result.state)
@@ -54,10 +54,11 @@ class ActiveDownloadCycleTest {
         val placeholder = track("artist song")
         val yt1 = track("vid1", title = "Song (Official)")
         val yt2 = track("vid2", title = "Song Live")
-        val result = ActiveDownload.withCycledCandidate(
-            download(listOf(placeholder)),
-            listOf(yt1, yt2)
-        )
+        val result =
+            ActiveDownload.withCycledCandidate(
+                download(listOf(placeholder)),
+                listOf(yt1, yt2),
+            )
         assertNotEquals(placeholder.id, result.currentTrack?.id)
         assertEquals(2, result.candidates.size)
         assertEquals(CandidateDownloadState.ERROR, result.state)
@@ -67,10 +68,11 @@ class ActiveDownloadCycleTest {
     fun withCycledCandidate_fromIdleKeepsIdle() {
         val a = track("a")
         val b = track("b")
-        val result = ActiveDownload.withCycledCandidate(
-            download(listOf(a, b), state = CandidateDownloadState.IDLE),
-            listOf(a, b)
-        )
+        val result =
+            ActiveDownload.withCycledCandidate(
+                download(listOf(a, b), state = CandidateDownloadState.IDLE),
+                listOf(a, b),
+            )
         assertEquals(CandidateDownloadState.IDLE, result.state)
         assertEquals(null, result.errorMessage)
         assertEquals("b", result.currentTrack?.id)
@@ -89,14 +91,15 @@ class ActiveDownloadCycleTest {
     fun asError_preservesDurableExecutionContext() {
         val identity = TrackIdentity(title = "Song", artist = "Artist")
         val target = DownloadPlaylistDestination(7L, identity)
-        val active = download(listOf(track("a")), state = CandidateDownloadState.DOWNLOADING)
-            .copy(
-                playlistTargets = listOf(target),
-                lookupIdentity = identity,
-                downloadStarted = true,
-                storageCommitted = true,
-                batchId = "batch-1"
-            )
+        val active =
+            download(listOf(track("a")), state = CandidateDownloadState.DOWNLOADING)
+                .copy(
+                    playlistTargets = listOf(target),
+                    lookupIdentity = identity,
+                    downloadStarted = true,
+                    storageCommitted = true,
+                    batchId = "batch-1",
+                )
 
         val failed = active.asError("offline", interrupted = true)
 
@@ -115,11 +118,11 @@ class ActiveDownloadCycleTest {
 
         assertEquals(
             listOf(explicit),
-            resolveDownloadPlaylistDestinations(listOf(explicit), 7L, identity)
+            resolveDownloadPlaylistDestinations(listOf(explicit), 7L, identity),
         )
         assertEquals(
             listOf(DownloadPlaylistDestination(7L, identity)),
-            resolveDownloadPlaylistDestinations(emptyList(), 7L, identity)
+            resolveDownloadPlaylistDestinations(emptyList(), 7L, identity),
         )
     }
 }

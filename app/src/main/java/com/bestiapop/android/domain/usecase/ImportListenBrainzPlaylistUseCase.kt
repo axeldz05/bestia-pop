@@ -12,9 +12,8 @@ import com.bestiapop.android.domain.repository.IMusicRepository
  * matched tracks as song cross-refs; unmatched as metadata-only pending rows.
  */
 class ImportListenBrainzPlaylistUseCase(
-    private val repository: IMusicRepository
+    private val repository: IMusicRepository,
 ) {
-
     /**
      * Creates a playlist with LB title/description, adds matched local songs,
      * and persists unmatched tracks as [PlaylistPendingTrack] (no CDN URLs).
@@ -23,21 +22,21 @@ class ImportListenBrainzPlaylistUseCase(
      */
     suspend fun createLocalFromMatched(
         matched: MatchedLbPlaylist,
-        allowEmpty: Boolean = false
+        allowEmpty: Boolean = false,
     ): Long? {
         val summary = matched.detail.summary
         val name = summary.title.ifBlank { "Para Ti" }
-        val resolvedCover = summary.coverUrl
-            ?: matched.matches.firstArtworkUri()
+        val resolvedCover =
+            summary.coverUrl
+                ?: matched.matches.firstArtworkUri()
         return repository.createPlaylistWithPlayables(
             name = name,
             items = matched.toPlayableItems(),
             description = summary.description,
             coverUri = resolvedCover,
-            allowEmpty = allowEmpty
+            allowEmpty = allowEmpty,
         )
     }
 
-    fun unmatchedCatalogTracks(matched: MatchedLbPlaylist): List<OnlineCatalogTrack> =
-        matched.matches.unmatchedCatalogTracks()
+    fun unmatchedCatalogTracks(matched: MatchedLbPlaylist): List<OnlineCatalogTrack> = matched.matches.unmatchedCatalogTracks()
 }

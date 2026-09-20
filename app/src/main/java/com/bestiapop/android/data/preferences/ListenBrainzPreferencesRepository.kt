@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 private val Context.listenBrainzDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "listenbrainz_settings"
+    name = "listenbrainz_settings",
 )
 
 data class ListenBrainzSettings(
@@ -24,7 +24,7 @@ data class ListenBrainzSettings(
     val saveWhileListeningPercent: Int = DEFAULT_SAVE_WHILE_LISTENING_PERCENT,
     val userToken: String = "",
     val username: String? = null,
-    val lastSyncAt: Long? = null
+    val lastSyncAt: Long? = null,
 ) {
     val showDiscoverPlaylists: Boolean
         get() = enabled && discoverEnabled && !username.isNullOrBlank()
@@ -34,11 +34,11 @@ const val DEFAULT_SAVE_WHILE_LISTENING_PERCENT = 25
 const val MIN_SAVE_WHILE_LISTENING_PERCENT = 5
 const val MAX_SAVE_WHILE_LISTENING_PERCENT = 100
 
-fun clampSaveWhileListeningPercent(percent: Int): Int =
-    percent.coerceIn(MIN_SAVE_WHILE_LISTENING_PERCENT, MAX_SAVE_WHILE_LISTENING_PERCENT)
+fun clampSaveWhileListeningPercent(percent: Int): Int = percent.coerceIn(MIN_SAVE_WHILE_LISTENING_PERCENT, MAX_SAVE_WHILE_LISTENING_PERCENT)
 
-class ListenBrainzPreferencesRepository(private val context: Context) {
-
+class ListenBrainzPreferencesRepository(
+    private val context: Context,
+) {
     private object Keys {
         val ENABLED = booleanPreferencesKey("enabled")
         val DISCOVER_ENABLED = booleanPreferencesKey("discover_enabled")
@@ -49,19 +49,21 @@ class ListenBrainzPreferencesRepository(private val context: Context) {
         val LAST_SYNC_AT = longPreferencesKey("last_sync_at")
     }
 
-    val settingsFlow: Flow<ListenBrainzSettings> = context.listenBrainzDataStore.data.map { prefs ->
-        ListenBrainzSettings(
-            enabled = prefs[Keys.ENABLED] ?: false,
-            discoverEnabled = prefs[Keys.DISCOVER_ENABLED] ?: false,
-            saveWhileListening = prefs[Keys.SAVE_WHILE_LISTENING] ?: false,
-            saveWhileListeningPercent = clampSaveWhileListeningPercent(
-                prefs[Keys.SAVE_WHILE_LISTENING_PERCENT] ?: DEFAULT_SAVE_WHILE_LISTENING_PERCENT
-            ),
-            userToken = prefs[Keys.USER_TOKEN].orEmpty(),
-            username = prefs[Keys.USERNAME],
-            lastSyncAt = prefs[Keys.LAST_SYNC_AT]
-        )
-    }
+    val settingsFlow: Flow<ListenBrainzSettings> =
+        context.listenBrainzDataStore.data.map { prefs ->
+            ListenBrainzSettings(
+                enabled = prefs[Keys.ENABLED] ?: false,
+                discoverEnabled = prefs[Keys.DISCOVER_ENABLED] ?: false,
+                saveWhileListening = prefs[Keys.SAVE_WHILE_LISTENING] ?: false,
+                saveWhileListeningPercent =
+                    clampSaveWhileListeningPercent(
+                        prefs[Keys.SAVE_WHILE_LISTENING_PERCENT] ?: DEFAULT_SAVE_WHILE_LISTENING_PERCENT,
+                    ),
+                userToken = prefs[Keys.USER_TOKEN].orEmpty(),
+                username = prefs[Keys.USERNAME],
+                lastSyncAt = prefs[Keys.LAST_SYNC_AT],
+            )
+        }
 
     suspend fun setEnabled(enabled: Boolean) {
         context.listenBrainzDataStore.put(Keys.ENABLED, enabled)
@@ -78,7 +80,7 @@ class ListenBrainzPreferencesRepository(private val context: Context) {
     suspend fun setSaveWhileListeningPercent(percent: Int) {
         context.listenBrainzDataStore.put(
             Keys.SAVE_WHILE_LISTENING_PERCENT,
-            clampSaveWhileListeningPercent(percent)
+            clampSaveWhileListeningPercent(percent),
         )
     }
 

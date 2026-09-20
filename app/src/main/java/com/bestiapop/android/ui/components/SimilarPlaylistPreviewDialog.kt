@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.components
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,7 +37,7 @@ fun SimilarPlaylistPreviewDialog(
     onCreatePlaylist: () -> Unit,
     onPlay: () -> Unit,
     onEnqueue: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val selectedCount = state.selectedItems.size
     val canConfirm = !state.loading && selectedCount > 0
@@ -51,13 +51,13 @@ fun SimilarPlaylistPreviewDialog(
                     MusicPlayerViewModel.RADIO_LOADING_LABEL
                 } else {
                     "Similares (${state.items.size})"
-                }
+                },
             )
         },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
                     value = state.playlistName,
@@ -65,73 +65,77 @@ fun SimilarPlaylistPreviewDialog(
                     label = { Text("Nombre de playlist") },
                     singleLine = true,
                     enabled = !state.loading,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     RadioModeChip(
                         label = "Solo conocidos",
                         selected = state.mode == RadioMode.KNOWN,
                         enabled = !state.loading,
-                        onClick = { onModeChange(RadioMode.KNOWN) }
+                        onClick = { onModeChange(RadioMode.KNOWN) },
                     )
                     RadioModeChip(
                         label = "Solo nuevos",
                         selected = state.mode == RadioMode.NEW,
                         enabled = !state.loading,
-                        onClick = { onModeChange(RadioMode.NEW) }
+                        onClick = { onModeChange(RadioMode.NEW) },
                     )
                     RadioModeChip(
                         label = "Ambos",
                         selected = state.mode == RadioMode.BOTH,
                         enabled = !state.loading,
-                        onClick = { onModeChange(RadioMode.BOTH) }
+                        onClick = { onModeChange(RadioMode.BOTH) },
                     )
                 }
                 if (state.loading) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        horizontalArrangement = Arrangement.Center
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                        horizontalArrangement = Arrangement.Center,
                     ) {
                         CircularProgressIndicator()
                     }
                 } else if (state.items.isEmpty()) {
                     Text(
-                        text = when {
-                            state.failedOnline -> "No pude completar la búsqueda online. Probá de nuevo o usá solo conocidos."
-                            else -> "No encontré canciones parecidas"
-                        },
+                        text =
+                            when {
+                                state.failedOnline -> "No pude completar la búsqueda online. Probá de nuevo o usá solo conocidos."
+                                else -> "No encontré canciones parecidas"
+                            },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     Text(
                         text = "$selectedCount seleccionadas · ${state.seedCount} seeds",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 320.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         items(
                             items = state.items,
-                            key = { SimilarPlaylistPreviewState.previewKey(it) }
+                            key = { SimilarPlaylistPreviewState.previewKey(it) },
                         ) { item ->
                             val key = SimilarPlaylistPreviewState.previewKey(item)
                             val checked = key in state.selectedKeys
                             SimilarPreviewRow(
                                 item = item,
                                 checked = checked,
-                                onToggle = { onToggleItem(key) }
+                                onToggle = { onToggleItem(key) },
                             )
                         }
                     }
@@ -155,7 +159,7 @@ fun SimilarPlaylistPreviewDialog(
                     Text("Cancelar")
                 }
             }
-        }
+        },
     )
 }
 
@@ -164,13 +168,13 @@ private fun RadioModeChip(
     label: String,
     selected: Boolean,
     enabled: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     FilterChip(
         selected = selected,
         onClick = onClick,
         enabled = enabled,
-        label = { Text(label) }
+        label = { Text(label) },
     )
 }
 
@@ -178,20 +182,21 @@ private fun RadioModeChip(
 private fun SimilarPreviewRow(
     item: PlayableItem,
     checked: Boolean,
-    onToggle: () -> Unit
+    onToggle: () -> Unit,
 ) {
     TrackMetaRow(
         artworkUri = item.artworkUri,
         title = item.title,
-        subtitle = joinMeta(
-            item.artist,
-            if (item is PlayableItem.Remote) "stream" else null,
-            sep = " · "
-        ),
+        subtitle =
+            joinMeta(
+                item.artist,
+                if (item is PlayableItem.Remote) "stream" else null,
+                sep = " · ",
+            ),
         highlighted = checked,
         leading = {
             Checkbox(checked = checked, onCheckedChange = null)
         },
-        onClick = onToggle
+        onClick = onToggle,
     )
 }

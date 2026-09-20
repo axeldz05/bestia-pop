@@ -12,10 +12,10 @@ import java.text.Normalizer
  * word order (genres), or script (CJK ↔ Latin romanizations).
  */
 object MetadataSplitter {
-
-    private val COLLAB_REGEX = Regex(
-        """(?i)\s+(?:feat\.?|ft\.?|featuring|with|con|pres\.?|presents|vs\.?)\s+|(?<=\S)\s+x\s+(?=\S)"""
-    )
+    private val COLLAB_REGEX =
+        Regex(
+            """(?i)\s+(?:feat\.?|ft\.?|featuring|with|con|pres\.?|presents|vs\.?)\s+|(?<=\S)\s+x\s+(?=\S)""",
+        )
     private val TAG_DELIM_REGEX = Regex("""\s*;\s*|\s*\\\\\s*|\u0000+""")
     private val SPACED_SLASH_REGEX = Regex("""\s+/\s+""")
     private val GUEST_DELIM_REGEX = Regex("""\s*,\s*|\s+&\s+""")
@@ -29,8 +29,7 @@ object MetadataSplitter {
     private val WHITESPACE = Regex("\\s+")
     private val HYPHENS_DASHES = Regex("[\\-–—]")
 
-    private fun foldDiacritics(text: String): String =
-        Normalizer.normalize(text, Normalizer.Form.NFD).replace(COMBINING_MARKS, "")
+    private fun foldDiacritics(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFD).replace(COMBINING_MARKS, "")
 
     /**
      * Algorithmic genre-token stemmer: strips common English/Spanish inflectional
@@ -44,14 +43,18 @@ object MetadataSplitter {
      * Does **not** strip `-es` after vowels or sibilants (`blues`, `oldies`,
      * `bass`, `house`, `grunge`) to avoid false collapses.
      */
-    private fun stemGenreToken(token: String): String = when {
-        token.length > 4 && token.endsWith("ica") -> token.dropLast(1)
-        token.length > 4 && token.endsWith("iva") -> token.dropLast(1) + "e"
-        // Only strip trailing 's' after consonants that typically form regular plurals
-        token.length > 3 && token.endsWith("s") && !token.endsWith("ss") &&
-            token[token.length - 2].let { it in "ktnpd" } -> token.dropLast(1)
-        else -> token
-    }
+    private fun stemGenreToken(token: String): String =
+        when {
+            token.length > 4 && token.endsWith("ica") -> token.dropLast(1)
+
+            token.length > 4 && token.endsWith("iva") -> token.dropLast(1) + "e"
+
+            // Only strip trailing 's' after consonants that typically form regular plurals
+            token.length > 3 && token.endsWith("s") && !token.endsWith("ss") &&
+                token[token.length - 2].let { it in "ktnpd" } -> token.dropLast(1)
+
+            else -> token
+        }
 
     /**
      * Extracts the Latin-script content from a mixed-script string,
@@ -83,11 +86,13 @@ object MetadataSplitter {
      * the search haystack already includes transliterated Latin for findability.
      */
     fun artistIdentityKey(name: String): String {
-        val folded = foldDiacritics(name).lowercase()
-            .replace(CONNECTORS, " ")
-            .replace(HYPHENS_DASHES, " ")
-            .replace(WHITESPACE, " ")
-            .trim()
+        val folded =
+            foldDiacritics(name)
+                .lowercase()
+                .replace(CONNECTORS, " ")
+                .replace(HYPHENS_DASHES, " ")
+                .replace(WHITESPACE, " ")
+                .trim()
         // For mixed-script names, use the Latin portion as canonical key
         val latinContent = extractLatinContent(folded)
         if (latinContent.length >= 3 && latinContent != folded) {
@@ -105,13 +110,15 @@ object MetadataSplitter {
      * `Pop Rock`, `Rock & Pop`, `rock pop`, and `pop-rock` all collapse to the same key.
      */
     fun genreIdentityKey(name: String): String {
-        val folded = foldDiacritics(name).lowercase()
-            .replace(CONNECTORS, " ")
-            .replace(HYPHENS_DASHES, " ")
-            .replace('/', ' ')
-            .replace('\\', ' ')
-            .replace(WHITESPACE, " ")
-            .trim()
+        val folded =
+            foldDiacritics(name)
+                .lowercase()
+                .replace(CONNECTORS, " ")
+                .replace(HYPHENS_DASHES, " ")
+                .replace('/', ' ')
+                .replace('\\', ' ')
+                .replace(WHITESPACE, " ")
+                .trim()
         val tokens = folded.split(' ').filter { it.isNotEmpty() }
         val stemmed = tokens.map { stemGenreToken(it) }
         return stemmed.sorted().joinToString(" ")
@@ -137,11 +144,12 @@ object MetadataSplitter {
 
     private fun hasNonLatinScript(text: String): Boolean =
         text.any { ch ->
-            ch.isLetter() && Character.UnicodeScript.of(ch.code).let { script ->
-                script != Character.UnicodeScript.LATIN &&
-                    script != Character.UnicodeScript.COMMON &&
-                    script != Character.UnicodeScript.INHERITED
-            }
+            ch.isLetter() &&
+                Character.UnicodeScript.of(ch.code).let { script ->
+                    script != Character.UnicodeScript.LATIN &&
+                        script != Character.UnicodeScript.COMMON &&
+                        script != Character.UnicodeScript.INHERITED
+                }
         }
 
     private fun hasExtraDiacritics(text: String): Boolean {
@@ -161,7 +169,10 @@ object MetadataSplitter {
         return letters.any { it.isUpperCase() } && letters.any { it.isLowerCase() }
     }
 
-    private fun compareArtistVariants(a: String, b: String): Int {
+    private fun compareArtistVariants(
+        a: String,
+        b: String,
+    ): Int {
         // 1. Non-Latin beats Latin-only
         val aNonLatin = hasNonLatinScript(a)
         val bNonLatin = hasNonLatinScript(b)
@@ -211,26 +222,35 @@ object MetadataSplitter {
 
     private fun isTitleCase(text: String): Boolean {
         val words = text.split(' ').filter { it.isNotEmpty() }
-        return words.isNotEmpty() && words.all { word ->
-            word[0].isUpperCase() && (word.length == 1 || word.drop(1).any { it.isLowerCase() })
-        }
+        return words.isNotEmpty() &&
+            words.all { word ->
+                word[0].isUpperCase() && (word.length == 1 || word.drop(1).any { it.isLowerCase() })
+            }
     }
 
     private fun toTitleCase(text: String): String {
         if (text.isEmpty()) return text
-        val cleaned = text.replace(HYPHENS_DASHES, " ")
-            .replace(CONNECTORS, " ")
-            .replace('/', ' ')
-            .replace('\\', ' ')
-            .replace(WHITESPACE, " ")
-            .trim()
+        val cleaned =
+            text
+                .replace(HYPHENS_DASHES, " ")
+                .replace(CONNECTORS, " ")
+                .replace('/', ' ')
+                .replace('\\', ' ')
+                .replace(WHITESPACE, " ")
+                .trim()
         return cleaned.split(' ').joinToString(" ") { word ->
-            if (word.isEmpty()) word
-            else word[0].uppercaseChar() + word.substring(1).lowercase()
+            if (word.isEmpty()) {
+                word
+            } else {
+                word[0].uppercaseChar() + word.substring(1).lowercase()
+            }
         }
     }
 
-    private fun compareGenreVariants(a: String, b: String): Int {
+    private fun compareGenreVariants(
+        a: String,
+        b: String,
+    ): Int {
         // 1. Space-separated beats hyphenated / connector
         val aHasConnector = a.contains('&') || a.contains('-') || a.contains('–') || a.contains('/')
         val bHasConnector = b.contains('&') || b.contains('-') || b.contains('–') || b.contains('/')
@@ -268,7 +288,7 @@ object MetadataSplitter {
      */
     fun splitArtists(
         rawArtist: String?,
-        knownArtists: Collection<String> = emptySet()
+        knownArtists: Collection<String> = emptySet(),
     ): List<String> {
         val raw = rawArtist?.trim().orEmpty()
         if (raw.isEmpty() || raw.equals("Unknown Artist", ignoreCase = true)) {
@@ -371,7 +391,7 @@ object MetadataSplitter {
      */
     private fun discardRedundantComposites(
         result: MutableList<String>,
-        knownArtists: Collection<String>
+        knownArtists: Collection<String>,
     ) {
         val identityKeys = result.map { artistIdentityKey(it) }.toSet()
         val toRemove = mutableListOf<Int>()
@@ -394,17 +414,21 @@ object MetadataSplitter {
 
     private fun trySplitUsingKnownArtists(
         raw: String,
-        knownArtists: Collection<String>
+        knownArtists: Collection<String>,
     ): List<String>? {
-        val normKnown = knownArtists.asSequence()
-            .map { normalizeKey(it) }
-            .filter { it.length >= 2 }
-            .toSet()
+        val normKnown =
+            knownArtists
+                .asSequence()
+                .map { normalizeKey(it) }
+                .filter { it.length >= 2 }
+                .toSet()
         if (normKnown.isEmpty()) return null
 
-        val parts = raw.split(CANDIDATE_SPLIT_REGEX)
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+        val parts =
+            raw
+                .split(CANDIDATE_SPLIT_REGEX)
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
         if (parts.size < 2) return null
 
         // Split only if all sub-parts are known artists in the library
@@ -457,16 +481,18 @@ object MetadataSplitter {
     fun <T> buildCandidateArtists(
         items: Collection<T>,
         artistOf: (T) -> String,
-        isPlaceholder: (String) -> Boolean = { false }
+        isPlaceholder: (String) -> Boolean = { false },
     ): Set<String> {
         val candidates = HashSet<String>(items.size)
         for (item in items) {
             val a = artistOf(item).trim()
             if (a.isNotEmpty() && !isPlaceholder(a)) {
-                val featHead = a.substringBefore(" feat.")
-                    .substringBefore(" ft.")
-                    .substringBefore(";")
-                    .trim()
+                val featHead =
+                    a
+                        .substringBefore(" feat.")
+                        .substringBefore(" ft.")
+                        .substringBefore(";")
+                        .trim()
                 if (featHead.isNotEmpty()) candidates.add(featHead)
                 candidates.add(a)
             }

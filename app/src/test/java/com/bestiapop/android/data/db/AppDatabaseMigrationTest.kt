@@ -27,7 +27,6 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], application = Application::class)
 @Category(MediumTest::class)
 class AppDatabaseMigrationTest {
-
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
 
@@ -44,323 +43,375 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migration8To10_preservesStateAndMovesLastPlayedToPlayStats() = runTest {
-        createLegacyDatabase(version = 8, schema = ::createVersion8Schema) { db ->
-            db.execSQL(
-                """
-                INSERT INTO songs (
-                    id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
-                    artworkUri, lyrics, folderPath, dateAdded
-                ) VALUES (
-                    7, '/music/before.mp3', 'Before migration', 'Artist', 'Album', 'Rock',
-                    123000, 2020, 4, 'file:///cover.jpg', 'lyrics', '/music', 111
+    fun migration8To10_preservesStateAndMovesLastPlayedToPlayStats() =
+        runTest {
+            createLegacyDatabase(version = 8, schema = ::createVersion8Schema) { db ->
+                db.execSQL(
+                    """
+                    INSERT INTO songs (
+                        id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
+                        artworkUri, lyrics, folderPath, dateAdded
+                    ) VALUES (
+                        7, '/music/before.mp3', 'Before migration', 'Artist', 'Album', 'Rock',
+                        123000, 2020, 4, 'file:///cover.jpg', 'lyrics', '/music', 111
+                    )
+                    """.trimIndent(),
                 )
-                """.trimIndent()
+                db.execSQL("UPDATE songs SET lastPlayedAt = 555 WHERE id = 7")
+                db.execSQL(
+                    "INSERT INTO playlists (playlistId, name, description, coverUri, createdAt) " +
+                        "VALUES (3, 'Kept playlist', 'Description', 'file:///playlist.jpg', 222)",
+                )
+                db.execSQL(
+                    "INSERT INTO playlist_song_cross_ref (playlistId, songId, position) VALUES (3, 7, 5)",
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO pending_listens (
+                        id, listenedAt, trackName, artistName, releaseName, durationMs,
+                        createdAt, attempts, lastError
+                    ) VALUES (9, 333, 'Pending', 'Artist', 'Album', 123000, 444, 2, 'offline')
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO playlist_pending_tracks (
+                        id, playlistId, title, artist, releaseName, recordingMbid, position
+                    ) VALUES (11, 3, 'Remote', 'Remote Artist', 'Remote Album', 'recording-id', 6)
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO album_overrides (
+                        albumKey, displayName, artist, genre, year, artworkUri
+                    ) VALUES ('Album', 'Display Album', 'Artist', 'Rock', 2020, 'file:///album.jpg')
+                    """.trimIndent(),
+                )
+            }
+
+            val database = AppDatabase.getDatabase(context)
+            val musicDao = database.musicDao()
+            val migratedSong = musicDao.getSongById(7L)
+
+            assertEquals("Before migration", migratedSong?.title)
+            assertEquals(555L, migratedSong?.lastPlayedAt)
+            assertEquals(555L, musicDao.getPlayStat(7L))
+            assertEquals(listOf(3L), musicDao.getPlaylistIdsForSong(7L))
+            assertEquals("Description", musicDao.getPlaylistById(3L)?.description)
+            val migratedPending = musicDao.getPlaylistPendingTracksFlow(3L).first().single()
+            assertEquals("Remote Album", migratedPending.releaseName)
+            assertEquals(0, migratedPending.trackNumber)
+            assertNull(migratedPending.artworkUri)
+            assertEquals("Display Album", musicDao.getAlbumOverride("Album")?.displayName)
+            assertEquals(
+                "offline",
+                database
+                    .pendingListenDao()
+                    .getOldest(10)
+                    .single()
+                    .lastError,
             )
-            db.execSQL("UPDATE songs SET lastPlayedAt = 555 WHERE id = 7")
-            db.execSQL(
-                "INSERT INTO playlists (playlistId, name, description, coverUri, createdAt) " +
-                    "VALUES (3, 'Kept playlist', 'Description', 'file:///playlist.jpg', 222)"
-            )
-            db.execSQL(
-                "INSERT INTO playlist_song_cross_ref (playlistId, songId, position) VALUES (3, 7, 5)"
-            )
-            db.execSQL(
-                """
-                INSERT INTO pending_listens (
-                    id, listenedAt, trackName, artistName, releaseName, durationMs,
-                    createdAt, attempts, lastError
-                ) VALUES (9, 333, 'Pending', 'Artist', 'Album', 123000, 444, 2, 'offline')
-                """.trimIndent()
-            )
-            db.execSQL(
-                """
-                INSERT INTO playlist_pending_tracks (
-                    id, playlistId, title, artist, releaseName, recordingMbid, position
-                ) VALUES (11, 3, 'Remote', 'Remote Artist', 'Remote Album', 'recording-id', 6)
-                """.trimIndent()
-            )
-            db.execSQL(
-                """
-                INSERT INTO album_overrides (
-                    albumKey, displayName, artist, genre, year, artworkUri
-                ) VALUES ('Album', 'Display Album', 'Artist', 'Rock', 2020, 'file:///album.jpg')
-                """.trimIndent()
+
+            musicDao.updateLastPlayedAt(7L, 9_999L)
+            assertEquals(555L, musicDao.getSongById(7L)?.lastPlayedAt)
+            assertEquals(9_999L, musicDao.getPlayStat(7L))
+            assertEquals(
+                0L,
+                musicDao
+                    .getAllSongsFlow()
+                    .first()
+                    .single { it.id == 7L }
+                    .lastPlayedAt,
             )
         }
-
-        val database = AppDatabase.getDatabase(context)
-        val musicDao = database.musicDao()
-        val migratedSong = musicDao.getSongById(7L)
-
-        assertEquals("Before migration", migratedSong?.title)
-        assertEquals(555L, migratedSong?.lastPlayedAt)
-        assertEquals(555L, musicDao.getPlayStat(7L))
-        assertEquals(listOf(3L), musicDao.getPlaylistIdsForSong(7L))
-        assertEquals("Description", musicDao.getPlaylistById(3L)?.description)
-        val migratedPending = musicDao.getPlaylistPendingTracksFlow(3L).first().single()
-        assertEquals("Remote Album", migratedPending.releaseName)
-        assertEquals(0, migratedPending.trackNumber)
-        assertNull(migratedPending.artworkUri)
-        assertEquals("Display Album", musicDao.getAlbumOverride("Album")?.displayName)
-        assertEquals("offline", database.pendingListenDao().getOldest(10).single().lastError)
-
-        musicDao.updateLastPlayedAt(7L, 9_999L)
-        assertEquals(555L, musicDao.getSongById(7L)?.lastPlayedAt)
-        assertEquals(9_999L, musicDao.getPlayStat(7L))
-        assertEquals(0L, musicDao.getAllSongsFlow().first().single { it.id == 7L }.lastPlayedAt)
-    }
 
     @Test
-    fun migration10To11_createsIndexesOnSongsTable() = runTest {
-        createLegacyDatabase(version = 10, schema = ::createVersion10Schema) { db ->
-            db.execSQL(
-                """
-                INSERT INTO songs (
-                    id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
-                    artworkUri, lyrics, folderPath, dateAdded, lastPlayedAt
-                ) VALUES (
-                    1, '/music/song1.mp3', 'Song 1', 'Artist A', 'Album X', 'Pop',
-                    200000, 2022, 1, NULL, NULL, '/music', 123456, 0
+    fun migration10To11_createsIndexesOnSongsTable() =
+        runTest {
+            createLegacyDatabase(version = 10, schema = ::createVersion10Schema) { db ->
+                db.execSQL(
+                    """
+                    INSERT INTO songs (
+                        id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
+                        artworkUri, lyrics, folderPath, dateAdded, lastPlayedAt
+                    ) VALUES (
+                        1, '/music/song1.mp3', 'Song 1', 'Artist A', 'Album X', 'Pop',
+                        200000, 2022, 1, NULL, NULL, '/music', 123456, 0
+                    )
+                    """.trimIndent(),
                 )
-                """.trimIndent()
-            )
+            }
+
+            val database = AppDatabase.getDatabase(context)
+            val musicDao = database.musicDao()
+            val songs = musicDao.getAllSongs()
+            assertEquals(1, songs.size)
+            assertEquals("Song 1", songs[0].title)
+
+            val helper =
+                FrameworkSQLiteOpenHelperFactory().create(
+                    SupportSQLiteOpenHelper.Configuration
+                        .builder(context)
+                        .name(DATABASE_NAME)
+                        .callback(
+                            object : SupportSQLiteOpenHelper.Callback(AppDatabase.VERSION) {
+                                override fun onCreate(db: SupportSQLiteDatabase) {}
+
+                                override fun onUpgrade(
+                                    db: SupportSQLiteDatabase,
+                                    oldVersion: Int,
+                                    newVersion: Int,
+                                ) {}
+                            },
+                        ).build(),
+                )
+            val db = helper.readableDatabase
+            val cursor = db.query("PRAGMA index_list('songs')")
+            val indexNames = mutableListOf<String>()
+            while (cursor.moveToNext()) {
+                indexNames.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+            }
+            cursor.close()
+            helper.close()
+
+            assertTrue(indexNames.contains("index_songs_album"))
+            assertTrue(indexNames.contains("index_songs_dateAdded"))
+            assertTrue(indexNames.contains("index_songs_artist_album"))
         }
-
-        val database = AppDatabase.getDatabase(context)
-        val musicDao = database.musicDao()
-        val songs = musicDao.getAllSongs()
-        assertEquals(1, songs.size)
-        assertEquals("Song 1", songs[0].title)
-
-        val helper = FrameworkSQLiteOpenHelperFactory().create(
-            SupportSQLiteOpenHelper.Configuration.builder(context)
-                .name(DATABASE_NAME)
-                .callback(object : SupportSQLiteOpenHelper.Callback(AppDatabase.VERSION) {
-                    override fun onCreate(db: SupportSQLiteDatabase) {}
-                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
-                })
-                .build()
-        )
-        val db = helper.readableDatabase
-        val cursor = db.query("PRAGMA index_list('songs')")
-        val indexNames = mutableListOf<String>()
-        while (cursor.moveToNext()) {
-            indexNames.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
-        }
-        cursor.close()
-        helper.close()
-
-        assertTrue(indexNames.contains("index_songs_album"))
-        assertTrue(indexNames.contains("index_songs_dateAdded"))
-        assertTrue(indexNames.contains("index_songs_artist_album"))
-    }
 
     @Test
-    fun migration11To12_createsTitleIndexOnSongsTable() = runTest {
-        createLegacyDatabase(version = 11, schema = ::createVersion11Schema) { db ->
-            db.execSQL(
-                """
-                INSERT INTO songs (
-                    id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
-                    artworkUri, lyrics, folderPath, dateAdded, lastPlayedAt
-                ) VALUES (
-                    1, '/music/song1.mp3', 'Song 1', 'Artist A', 'Album X', 'Pop',
-                    200000, 2022, 1, NULL, NULL, '/music', 123456, 0
+    fun migration11To12_createsTitleIndexOnSongsTable() =
+        runTest {
+            createLegacyDatabase(version = 11, schema = ::createVersion11Schema) { db ->
+                db.execSQL(
+                    """
+                    INSERT INTO songs (
+                        id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
+                        artworkUri, lyrics, folderPath, dateAdded, lastPlayedAt
+                    ) VALUES (
+                        1, '/music/song1.mp3', 'Song 1', 'Artist A', 'Album X', 'Pop',
+                        200000, 2022, 1, NULL, NULL, '/music', 123456, 0
+                    )
+                    """.trimIndent(),
                 )
-                """.trimIndent()
-            )
+            }
+
+            val database = AppDatabase.getDatabase(context)
+            val musicDao = database.musicDao()
+            val songs = musicDao.getAllSongs()
+            assertEquals(1, songs.size)
+            assertEquals("Song 1", songs[0].title)
+
+            val helper =
+                FrameworkSQLiteOpenHelperFactory().create(
+                    SupportSQLiteOpenHelper.Configuration
+                        .builder(context)
+                        .name(DATABASE_NAME)
+                        .callback(
+                            object : SupportSQLiteOpenHelper.Callback(AppDatabase.VERSION) {
+                                override fun onCreate(db: SupportSQLiteDatabase) {}
+
+                                override fun onUpgrade(
+                                    db: SupportSQLiteDatabase,
+                                    oldVersion: Int,
+                                    newVersion: Int,
+                                ) {}
+                            },
+                        ).build(),
+                )
+            val db = helper.readableDatabase
+            val cursor = db.query("PRAGMA index_list('songs')")
+            val indexNames = mutableListOf<String>()
+            while (cursor.moveToNext()) {
+                indexNames.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+            }
+            cursor.close()
+            helper.close()
+
+            assertTrue(indexNames.contains("index_songs_title"))
         }
-
-        val database = AppDatabase.getDatabase(context)
-        val musicDao = database.musicDao()
-        val songs = musicDao.getAllSongs()
-        assertEquals(1, songs.size)
-        assertEquals("Song 1", songs[0].title)
-
-        val helper = FrameworkSQLiteOpenHelperFactory().create(
-            SupportSQLiteOpenHelper.Configuration.builder(context)
-                .name(DATABASE_NAME)
-                .callback(object : SupportSQLiteOpenHelper.Callback(AppDatabase.VERSION) {
-                    override fun onCreate(db: SupportSQLiteDatabase) {}
-                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
-                })
-                .build()
-        )
-        val db = helper.readableDatabase
-        val cursor = db.query("PRAGMA index_list('songs')")
-        val indexNames = mutableListOf<String>()
-        while (cursor.moveToNext()) {
-            indexNames.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
-        }
-        cursor.close()
-        helper.close()
-
-        assertTrue(indexNames.contains("index_songs_title"))
-    }
 
     @Test
-    fun migration12To13_createsArtistAlbumIndexOnSongsTable() = runTest {
-        createLegacyDatabase(version = 12, schema = ::createVersion12Schema) { db ->
-            db.execSQL(
-                """
-                INSERT INTO songs (
-                    id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
-                    artworkUri, lyrics, folderPath, dateAdded, lastPlayedAt
-                ) VALUES (
-                    1, '/music/song1.mp3', 'Song 1', 'Artist A', 'Album X', 'Pop',
-                    200000, 2022, 1, NULL, NULL, '/music', 123456, 0
+    fun migration12To13_createsArtistAlbumIndexOnSongsTable() =
+        runTest {
+            createLegacyDatabase(version = 12, schema = ::createVersion12Schema) { db ->
+                db.execSQL(
+                    """
+                    INSERT INTO songs (
+                        id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
+                        artworkUri, lyrics, folderPath, dateAdded, lastPlayedAt
+                    ) VALUES (
+                        1, '/music/song1.mp3', 'Song 1', 'Artist A', 'Album X', 'Pop',
+                        200000, 2022, 1, NULL, NULL, '/music', 123456, 0
+                    )
+                    """.trimIndent(),
                 )
-                """.trimIndent()
-            )
+            }
+
+            val database = AppDatabase.getDatabase(context)
+            val musicDao = database.musicDao()
+            val songs = musicDao.getAllSongs()
+            assertEquals(1, songs.size)
+            assertEquals("Song 1", songs[0].title)
+
+            val helper =
+                FrameworkSQLiteOpenHelperFactory().create(
+                    SupportSQLiteOpenHelper.Configuration
+                        .builder(context)
+                        .name(DATABASE_NAME)
+                        .callback(
+                            object : SupportSQLiteOpenHelper.Callback(AppDatabase.VERSION) {
+                                override fun onCreate(db: SupportSQLiteDatabase) {}
+
+                                override fun onUpgrade(
+                                    db: SupportSQLiteDatabase,
+                                    oldVersion: Int,
+                                    newVersion: Int,
+                                ) {}
+                            },
+                        ).build(),
+                )
+            val db = helper.readableDatabase
+            val cursor = db.query("PRAGMA index_list('songs')")
+            val indexNames = mutableListOf<String>()
+            while (cursor.moveToNext()) {
+                indexNames.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+            }
+            cursor.close()
+            helper.close()
+
+            assertTrue(indexNames.contains("index_songs_artist_album"))
+            assertFalse(indexNames.contains("index_songs_artist"))
         }
-
-        val database = AppDatabase.getDatabase(context)
-        val musicDao = database.musicDao()
-        val songs = musicDao.getAllSongs()
-        assertEquals(1, songs.size)
-        assertEquals("Song 1", songs[0].title)
-
-        val helper = FrameworkSQLiteOpenHelperFactory().create(
-            SupportSQLiteOpenHelper.Configuration.builder(context)
-                .name(DATABASE_NAME)
-                .callback(object : SupportSQLiteOpenHelper.Callback(AppDatabase.VERSION) {
-                    override fun onCreate(db: SupportSQLiteDatabase) {}
-                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
-                })
-                .build()
-        )
-        val db = helper.readableDatabase
-        val cursor = db.query("PRAGMA index_list('songs')")
-        val indexNames = mutableListOf<String>()
-        while (cursor.moveToNext()) {
-            indexNames.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
-        }
-        cursor.close()
-        helper.close()
-
-        assertTrue(indexNames.contains("index_songs_artist_album"))
-        assertFalse(indexNames.contains("index_songs_artist"))
-    }
 
     @Test
-    fun migration1To13_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
-        createLegacyDatabase(version = 1, schema = ::createVersion1Schema) { db ->
-            db.execSQL(
-                legacySongInsert(
-                    id = 1,
-                    uri = "/music/duplicate.mp3",
-                    title = "Duplicate kept"
+    fun migration1To13_runsWholeChainAndKeepsLegacyLibraryDataUsable() =
+        runTest {
+            createLegacyDatabase(version = 1, schema = ::createVersion1Schema) { db ->
+                db.execSQL(
+                    legacySongInsert(
+                        id = 1,
+                        uri = "/music/duplicate.mp3",
+                        title = "Duplicate kept",
+                    ),
                 )
-            )
-            db.execSQL(
-                legacySongInsert(
-                    id = 2,
-                    uri = "/music/duplicate.mp3",
-                    title = "Duplicate removed"
+                db.execSQL(
+                    legacySongInsert(
+                        id = 2,
+                        uri = "/music/duplicate.mp3",
+                        title = "Duplicate removed",
+                    ),
                 )
-            )
-            db.execSQL(
-                legacySongInsert(
-                    id = 3,
-                    uri = "/music/playlist.mp3",
-                    title = "Playlist song"
+                db.execSQL(
+                    legacySongInsert(
+                        id = 3,
+                        uri = "/music/playlist.mp3",
+                        title = "Playlist song",
+                    ),
                 )
+                db.execSQL(
+                    "INSERT INTO playlists (playlistId, name, createdAt) VALUES (5, 'Legacy playlist', 555)",
+                )
+                db.execSQL(
+                    "INSERT INTO playlist_song_cross_ref (playlistId, songId, position) VALUES (5, 3, 2)",
+                )
+            }
+
+            val database = AppDatabase.getDatabase(context)
+            val musicDao = database.musicDao()
+            val songs = musicDao.getAllSongs()
+
+            assertEquals(2, songs.size)
+            assertEquals(1, songs.count { it.uriString == "/music/duplicate.mp3" })
+            assertEquals(
+                "Duplicate kept",
+                songs.single { it.uriString == "/music/duplicate.mp3" }.title,
             )
-            db.execSQL(
-                "INSERT INTO playlists (playlistId, name, createdAt) VALUES (5, 'Legacy playlist', 555)"
+            assertEquals(0L, songs.single { it.id == 3L }.lastPlayedAt)
+            assertEquals(listOf(5L), musicDao.getPlaylistIdsForSong(3L))
+            assertEquals("Legacy playlist", musicDao.getPlaylistById(5L)?.name)
+            assertNull(musicDao.getPlaylistById(5L)?.description)
+            assertEquals(
+                -1L,
+                musicDao.insertSong(
+                    Song(
+                        uriString = "/music/playlist.mp3",
+                        title = "Must not replace",
+                        artist = "Other",
+                    ),
+                ),
             )
-            db.execSQL(
-                "INSERT INTO playlist_song_cross_ref (playlistId, songId, position) VALUES (5, 3, 2)"
+
+            musicDao.upsertAlbumOverride(
+                AlbumOverride(albumKey = "Legacy Album", displayName = "Restored Album"),
             )
+            musicDao.insertPlaylistPendingTracks(
+                listOf(
+                    PlaylistPendingTrackEntity(
+                        playlistId = 5L,
+                        title = "Pending remote",
+                        artist = "Remote Artist",
+                        releaseName = "Remote Album",
+                        trackNumber = 5,
+                    ),
+                ),
+            )
+            database.pendingListenDao().insert(
+                PendingListenEntity(
+                    listenedAt = 777L,
+                    trackName = "Queued listen",
+                    artistName = "Artist",
+                    createdAt = 888L,
+                ),
+            )
+
+            assertEquals("Restored Album", musicDao.getAlbumOverride("Legacy Album")?.displayName)
+            assertEquals(
+                "Pending remote",
+                musicDao
+                    .getPlaylistPendingTracksFlow(5L)
+                    .first()
+                    .single()
+                    .title,
+            )
+            assertEquals(
+                5,
+                musicDao
+                    .getPlaylistPendingTracksFlow(5L)
+                    .first()
+                    .single()
+                    .trackNumber,
+            )
+            assertEquals(1, database.pendingListenDao().count())
         }
-
-        val database = AppDatabase.getDatabase(context)
-        val musicDao = database.musicDao()
-        val songs = musicDao.getAllSongs()
-
-        assertEquals(2, songs.size)
-        assertEquals(1, songs.count { it.uriString == "/music/duplicate.mp3" })
-        assertEquals(
-            "Duplicate kept",
-            songs.single { it.uriString == "/music/duplicate.mp3" }.title
-        )
-        assertEquals(0L, songs.single { it.id == 3L }.lastPlayedAt)
-        assertEquals(listOf(5L), musicDao.getPlaylistIdsForSong(3L))
-        assertEquals("Legacy playlist", musicDao.getPlaylistById(5L)?.name)
-        assertNull(musicDao.getPlaylistById(5L)?.description)
-        assertEquals(
-            -1L,
-            musicDao.insertSong(
-                Song(
-                    uriString = "/music/playlist.mp3",
-                    title = "Must not replace",
-                    artist = "Other"
-                )
-            )
-        )
-
-        musicDao.upsertAlbumOverride(
-            AlbumOverride(albumKey = "Legacy Album", displayName = "Restored Album")
-        )
-        musicDao.insertPlaylistPendingTracks(
-            listOf(
-                PlaylistPendingTrackEntity(
-                    playlistId = 5L,
-                    title = "Pending remote",
-                    artist = "Remote Artist",
-                    releaseName = "Remote Album",
-                    trackNumber = 5
-                )
-            )
-        )
-        database.pendingListenDao().insert(
-            PendingListenEntity(
-                listenedAt = 777L,
-                trackName = "Queued listen",
-                artistName = "Artist",
-                createdAt = 888L
-            )
-        )
-
-        assertEquals("Restored Album", musicDao.getAlbumOverride("Legacy Album")?.displayName)
-        assertEquals(
-            "Pending remote",
-            musicDao.getPlaylistPendingTracksFlow(5L).first().single().title
-        )
-        assertEquals(
-            5,
-            musicDao.getPlaylistPendingTracksFlow(5L).first().single().trackNumber
-        )
-        assertEquals(1, database.pendingListenDao().count())
-    }
 
     private fun createLegacyDatabase(
         version: Int,
         schema: (SupportSQLiteDatabase) -> Unit,
-        seed: (SupportSQLiteDatabase) -> Unit
+        seed: (SupportSQLiteDatabase) -> Unit,
     ) {
-        val helper = FrameworkSQLiteOpenHelperFactory().create(
-            SupportSQLiteOpenHelper.Configuration.builder(context)
-                .name(DATABASE_NAME)
-                .callback(
-                    object : SupportSQLiteOpenHelper.Callback(version) {
-                        override fun onCreate(db: SupportSQLiteDatabase) {
-                            schema(db)
-                            seed(db)
-                        }
+        val helper =
+            FrameworkSQLiteOpenHelperFactory().create(
+                SupportSQLiteOpenHelper.Configuration
+                    .builder(context)
+                    .name(DATABASE_NAME)
+                    .callback(
+                        object : SupportSQLiteOpenHelper.Callback(version) {
+                            override fun onCreate(db: SupportSQLiteDatabase) {
+                                schema(db)
+                                seed(db)
+                            }
 
-                        override fun onUpgrade(
-                            db: SupportSQLiteDatabase,
-                            oldVersion: Int,
-                            newVersion: Int
-                        ) {
-                            error("Unexpected legacy helper upgrade $oldVersion->$newVersion")
-                        }
-                    }
-                )
-                .build()
-        )
+                            override fun onUpgrade(
+                                db: SupportSQLiteDatabase,
+                                oldVersion: Int,
+                                newVersion: Int,
+                            ) {
+                                error("Unexpected legacy helper upgrade $oldVersion->$newVersion")
+                            }
+                        },
+                    ).build(),
+            )
         try {
             helper.writableDatabase
         } finally {
@@ -377,7 +428,7 @@ class AppDatabaseMigrationTest {
                 name TEXT NOT NULL,
                 createdAt INTEGER NOT NULL
             )
-            """.trimIndent()
+            """.trimIndent(),
         )
         createPlaylistCrossRefTable(db)
     }
@@ -385,7 +436,7 @@ class AppDatabaseMigrationTest {
     private fun createVersion7Schema(db: SupportSQLiteDatabase) {
         createSongsTableWithoutLastPlayed(db)
         db.execSQL(
-            "CREATE UNIQUE INDEX IF NOT EXISTS index_songs_uriString ON songs (uriString)"
+            "CREATE UNIQUE INDEX IF NOT EXISTS index_songs_uriString ON songs (uriString)",
         )
         db.execSQL(
             """
@@ -396,12 +447,12 @@ class AppDatabaseMigrationTest {
                 coverUri TEXT,
                 createdAt INTEGER NOT NULL
             )
-            """.trimIndent()
+            """.trimIndent(),
         )
         createPlaylistCrossRefTable(db)
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS index_playlist_song_cross_ref_songId " +
-                "ON playlist_song_cross_ref (songId)"
+                "ON playlist_song_cross_ref (songId)",
         )
         db.execSQL(
             """
@@ -416,11 +467,11 @@ class AppDatabaseMigrationTest {
                 attempts INTEGER NOT NULL,
                 lastError TEXT
             )
-            """.trimIndent()
+            """.trimIndent(),
         )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS index_pending_listens_listenedAt " +
-                "ON pending_listens (listenedAt)"
+                "ON pending_listens (listenedAt)",
         )
         db.execSQL(
             """
@@ -433,15 +484,15 @@ class AppDatabaseMigrationTest {
                 recordingMbid TEXT,
                 position INTEGER NOT NULL
             )
-            """.trimIndent()
+            """.trimIndent(),
         )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS index_playlist_pending_tracks_playlistId " +
-                "ON playlist_pending_tracks (playlistId)"
+                "ON playlist_pending_tracks (playlistId)",
         )
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS index_playlist_pending_tracks_playlistId_artist_title " +
-                "ON playlist_pending_tracks (playlistId, artist, title)"
+                "ON playlist_pending_tracks (playlistId, artist, title)",
         )
         db.execSQL(
             """
@@ -453,21 +504,21 @@ class AppDatabaseMigrationTest {
                 year INTEGER NOT NULL,
                 artworkUri TEXT
             )
-            """.trimIndent()
+            """.trimIndent(),
         )
     }
 
     private fun createVersion8Schema(db: SupportSQLiteDatabase) {
         createVersion7Schema(db)
         db.execSQL(
-            "ALTER TABLE songs ADD COLUMN lastPlayedAt INTEGER NOT NULL DEFAULT 0"
+            "ALTER TABLE songs ADD COLUMN lastPlayedAt INTEGER NOT NULL DEFAULT 0",
         )
     }
 
     private fun createVersion10Schema(db: SupportSQLiteDatabase) {
         createVersion8Schema(db)
         db.execSQL(
-            "ALTER TABLE playlist_pending_tracks ADD COLUMN trackNumber INTEGER NOT NULL DEFAULT 0"
+            "ALTER TABLE playlist_pending_tracks ADD COLUMN trackNumber INTEGER NOT NULL DEFAULT 0",
         )
         db.execSQL(
             """
@@ -476,7 +527,7 @@ class AppDatabaseMigrationTest {
                 lastPlayedAt INTEGER NOT NULL,
                 PRIMARY KEY(songId)
             )
-            """.trimIndent()
+            """.trimIndent(),
         )
     }
 
@@ -510,7 +561,7 @@ class AppDatabaseMigrationTest {
                 folderPath TEXT NOT NULL,
                 dateAdded INTEGER NOT NULL
             )
-            """.trimIndent()
+            """.trimIndent(),
         )
     }
 
@@ -523,11 +574,15 @@ class AppDatabaseMigrationTest {
                 position INTEGER NOT NULL,
                 PRIMARY KEY (playlistId, songId)
             )
-            """.trimIndent()
+            """.trimIndent(),
         )
     }
 
-    private fun legacySongInsert(id: Long, uri: String, title: String): String =
+    private fun legacySongInsert(
+        id: Long,
+        uri: String,
+        title: String,
+    ): String =
         """
         INSERT INTO songs (
             id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
@@ -539,7 +594,7 @@ class AppDatabaseMigrationTest {
         """.trimIndent()
 
     private fun resetAppDatabaseSingleton() {
-        val instanceField = AppDatabase::class.java.getDeclaredField("INSTANCE")
+        val instanceField = AppDatabase::class.java.getDeclaredField("instance")
         instanceField.isAccessible = true
         (instanceField.get(null) as? AppDatabase)?.close()
         instanceField.set(null, null)

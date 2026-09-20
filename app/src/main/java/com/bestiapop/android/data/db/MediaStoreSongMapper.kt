@@ -11,17 +11,19 @@ fun Cursor.toSong(): Song {
     val id = getLong(getColumnIndexOrThrow(MediaStore.Audio.Media._ID))
     val title = getString(getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)) ?: "Track $id"
     val rawArtist = getString(getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST))
-    val artist = if (rawArtist == MediaStore.UNKNOWN_STRING || rawArtist.isNullOrEmpty()) {
-        "Unknown Artist"
-    } else {
-        rawArtist
-    }
+    val artist =
+        if (rawArtist == MediaStore.UNKNOWN_STRING || rawArtist.isNullOrEmpty()) {
+            "Unknown Artist"
+        } else {
+            rawArtist
+        }
     val rawAlbum = getString(getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM))
-    val album = if (rawAlbum == MediaStore.UNKNOWN_STRING || rawAlbum.isNullOrEmpty()) {
-        "Unknown Album"
-    } else {
-        rawAlbum
-    }
+    val album =
+        if (rawAlbum == MediaStore.UNKNOWN_STRING || rawAlbum.isNullOrEmpty()) {
+            "Unknown Album"
+        } else {
+            rawAlbum
+        }
     val duration = getLong(getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION))
     val year = getInt(getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR))
     val track = getInt(getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK))
@@ -29,27 +31,40 @@ fun Cursor.toSong(): Song {
     val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
     val albumIdIdx = getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
     val albumId = if (albumIdIdx != -1) getLong(albumIdIdx) else -1L
-    val artworkUri = if (albumId > 0) {
-        ContentUris.withAppendedId(
-            "content://media/external/audio/albumart".toUri(),
-            albumId
-        ).toString()
-    } else {
-        null
-    }
+    val artworkUri =
+        if (albumId > 0) {
+            ContentUris
+                .withAppendedId(
+                    "content://media/external/audio/albumart".toUri(),
+                    albumId,
+                ).toString()
+        } else {
+            null
+        }
 
     val dateAddedIdx = getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
     val dateAddedSec = if (dateAddedIdx != -1) getLong(dateAddedIdx) else 0L
     val dateModifiedIdx = getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
     val dateModifiedSec = if (dateModifiedIdx != -1) getLong(dateModifiedIdx) else 0L
 
-    val dateAddedMs = when {
-        dateAddedSec > 0L -> dateAddedSec * 1000L
-        dateModifiedSec > 0L -> dateModifiedSec * 1000L
-        filePath.isNotBlank() && File(filePath).exists() && File(filePath).lastModified() > 0L ->
-            File(filePath).lastModified()
-        else -> System.currentTimeMillis()
-    }
+    val dateAddedMs =
+        when {
+            dateAddedSec > 0L -> {
+                dateAddedSec * 1000L
+            }
+
+            dateModifiedSec > 0L -> {
+                dateModifiedSec * 1000L
+            }
+
+            filePath.isNotBlank() && File(filePath).exists() && File(filePath).lastModified() > 0L -> {
+                File(filePath).lastModified()
+            }
+
+            else -> {
+                System.currentTimeMillis()
+            }
+        }
 
     return Song(
         uriString = uri,
@@ -63,6 +78,6 @@ fun Cursor.toSong(): Song {
         artworkUri = artworkUri,
         lyrics = null,
         folderPath = filePath,
-        dateAdded = dateAddedMs
+        dateAdded = dateAddedMs,
     )
 }

@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicReference
 internal data class MusicServiceAppliedSettings(
     val leftGain: Float,
     val rightGain: Float,
-    val targetGainMb: Int
+    val targetGainMb: Int,
 )
 
 /**

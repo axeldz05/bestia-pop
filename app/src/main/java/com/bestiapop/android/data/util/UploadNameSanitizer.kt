@@ -43,11 +43,11 @@ object UploadNameSanitizer {
         return listOf(current, legacyAscii, legacyUnderscores).distinct()
     }
 
-    private fun isPathUnsafe(ch: Char): Boolean = when (ch) {
-        '/', '\\', ':', '*', '?', '"', '<', '>', '|', '\u0000' -> true
-        else -> ch < ' ' && ch != '\t'
-    }
+    private fun isPathUnsafe(ch: Char): Boolean =
+        when (ch) {
+            '/', '\\', ':', '*', '?', '"', '<', '>', '|', '\u0000' -> true
+            else -> ch < ' ' && ch != '\t'
+        }
 
-    private fun fileNameOnly(rawName: String): String =
-        rawName.substringAfterLast("/").substringAfterLast("\\")
+    private fun fileNameOnly(rawName: String): String = rawName.substringAfterLast("/").substringAfterLast("\\")
 }

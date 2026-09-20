@@ -26,7 +26,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private val Context.playbackSessionDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "playback_session"
+    name = "playback_session",
 )
 
 /**
@@ -37,21 +37,22 @@ data class LastPlayedSnapshot(
     val songId: Long,
     val uriString: String,
     val positionMs: Long = 0L,
-    val identity: TrackIdentity = TrackIdentity(title = "")
+    val identity: TrackIdentity = TrackIdentity(title = ""),
 ) : TrackMeta by identity
 
 sealed class PersistedQueueItem {
     data class Local(
         val songId: Long,
         val uriString: String,
-        val identity: TrackIdentity = TrackIdentity(title = "")
-    ) : PersistedQueueItem(), TrackMeta by identity
+        val identity: TrackIdentity = TrackIdentity(title = ""),
+    ) : PersistedQueueItem(),
+        TrackMeta by identity
 
     data class Remote(
         val identity: TrackIdentity,
         val recordingMbid: String? = null,
         val youtubeQueryOrId: String? = null,
-        val videoId: String? = null
+        val videoId: String? = null,
     ) : PersistedQueueItem()
 }
 
@@ -59,24 +60,25 @@ data class QueueSnapshot(
     val currentIndex: Int,
     val positionMs: Long,
     val items: List<PersistedQueueItem>,
-    val shufflePlayOrder: List<Int>? = null
+    val shufflePlayOrder: List<Int>? = null,
 )
 
 data class HydratedQueue(
     val items: List<PlayableItem>,
     val currentIndex: Int,
     val positionMs: Long,
-    val shufflePlayOrder: List<Int>? = null
+    val shufflePlayOrder: List<Int>? = null,
 )
 
 object LastPlayedCodec {
     fun encode(snapshot: LastPlayedSnapshot): String =
-        JSONObject().apply {
-            put("songId", snapshot.songId)
-            put("uriString", snapshot.uriString)
-            put("positionMs", snapshot.positionMs)
-            TrackIdentityJson.putInto(this, snapshot.identity)
-        }.toString()
+        JSONObject()
+            .apply {
+                put("songId", snapshot.songId)
+                put("uriString", snapshot.uriString)
+                put("positionMs", snapshot.positionMs)
+                TrackIdentityJson.putInto(this, snapshot.identity)
+            }.toString()
 
     fun decode(json: String): LastPlayedSnapshot? {
         if (json.isBlank()) return null
@@ -88,7 +90,7 @@ object LastPlayedCodec {
                 songId = obj.optLong("songId", 0L),
                 uriString = uri,
                 positionMs = obj.optLong("positionMs", 0L).coerceAtLeast(0L),
-                identity = TrackIdentityJson.decode(obj)
+                identity = TrackIdentityJson.decode(obj),
             )
         } catch (_: Exception) {
             null
@@ -102,37 +104,39 @@ object LastPlayedCodec {
  */
 object QueueSnapshotCodec {
     fun encode(snapshot: QueueSnapshot): String =
-        JSONObject().apply {
-            put("currentIndex", snapshot.currentIndex)
-            put("positionMs", snapshot.positionMs)
-            val arr = JSONArray()
-            for (item in snapshot.items) {
-                arr.put(encodeItem(item))
-            }
-            put("items", arr)
-            snapshot.shufflePlayOrder?.let { order ->
-                val orderArr = JSONArray()
-                for (idx in order) orderArr.put(idx)
-                put("shufflePlayOrder", orderArr)
-            }
-        }.toString()
+        JSONObject()
+            .apply {
+                put("currentIndex", snapshot.currentIndex)
+                put("positionMs", snapshot.positionMs)
+                val arr = JSONArray()
+                for (item in snapshot.items) {
+                    arr.put(encodeItem(item))
+                }
+                put("items", arr)
+                snapshot.shufflePlayOrder?.let { order ->
+                    val orderArr = JSONArray()
+                    for (idx in order) orderArr.put(idx)
+                    put("shufflePlayOrder", orderArr)
+                }
+            }.toString()
 
     fun decode(json: String): QueueSnapshot? {
         if (json.isBlank()) return null
         return try {
             val obj = JSONObject(json)
             val arr = obj.optJSONArray("items") ?: return null
-            val items = buildList {
-                for (i in 0 until arr.length()) {
-                    decodeItem(arr.getJSONObject(i))?.let { add(it) }
+            val items =
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        decodeItem(arr.getJSONObject(i))?.let { add(it) }
+                    }
                 }
-            }
             if (items.isEmpty()) return null
             QueueSnapshot(
                 currentIndex = obj.optInt("currentIndex", 0).coerceAtLeast(0),
                 positionMs = obj.optLong("positionMs", 0L).coerceAtLeast(0L),
                 items = items,
-                shufflePlayOrder = decodePlayOrder(obj.optJSONArray("shufflePlayOrder"))
+                shufflePlayOrder = decodePlayOrder(obj.optJSONArray("shufflePlayOrder")),
             )
         } catch (_: Exception) {
             null
@@ -143,13 +147,14 @@ object QueueSnapshotCodec {
         items: List<PlayableItem>,
         currentIndex: Int,
         positionMs: Long,
-        shufflePlayOrder: List<Int>? = null
-    ): QueueSnapshot = QueueSnapshot(
-        currentIndex = currentIndex.coerceAtLeast(0),
-        positionMs = positionMs.coerceAtLeast(0L),
-        items = items.map { toPersisted(it) },
-        shufflePlayOrder = PlaybackQueueOrder.validPlayOrderOrNull(shufflePlayOrder, items.size)
-    )
+        shufflePlayOrder: List<Int>? = null,
+    ): QueueSnapshot =
+        QueueSnapshot(
+            currentIndex = currentIndex.coerceAtLeast(0),
+            positionMs = positionMs.coerceAtLeast(0L),
+            items = items.map { toPersisted(it) },
+            shufflePlayOrder = PlaybackQueueOrder.validPlayOrderOrNull(shufflePlayOrder, items.size),
+        )
 
     private fun decodePlayOrder(arr: JSONArray?): List<Int>? {
         if (arr == null || arr.length() == 0) return null
@@ -160,35 +165,47 @@ object QueueSnapshotCodec {
         }
     }
 
-    private fun toPersisted(item: PlayableItem): PersistedQueueItem = when (item) {
-        is PlayableItem.Local -> PersistedQueueItem.Local(
-            songId = item.song.id,
-            uriString = item.song.uriString,
-            identity = item.song.toIdentity()
-        )
-        is PlayableItem.Remote -> PersistedQueueItem.Remote(
-            identity = item.identity,
-            recordingMbid = item.recordingMbid,
-            youtubeQueryOrId = item.youtubeQueryOrId,
-            videoId = item.resolved?.videoId?.takeIf { it.isNotBlank() }
-        )
-    }
+    private fun toPersisted(item: PlayableItem): PersistedQueueItem =
+        when (item) {
+            is PlayableItem.Local -> {
+                PersistedQueueItem.Local(
+                    songId = item.song.id,
+                    uriString = item.song.uriString,
+                    identity = item.song.toIdentity(),
+                )
+            }
 
-    private fun encodeItem(item: PersistedQueueItem): JSONObject = when (item) {
-        is PersistedQueueItem.Local -> JSONObject().apply {
-            put("kind", "local")
-            put("songId", item.songId)
-            put("uriString", item.uriString)
-            TrackIdentityJson.putInto(this, item.identity)
+            is PlayableItem.Remote -> {
+                PersistedQueueItem.Remote(
+                    identity = item.identity,
+                    recordingMbid = item.recordingMbid,
+                    youtubeQueryOrId = item.youtubeQueryOrId,
+                    videoId = item.resolved?.videoId?.takeIf { it.isNotBlank() },
+                )
+            }
         }
-        is PersistedQueueItem.Remote -> JSONObject().apply {
-            put("kind", "remote")
-            TrackIdentityJson.putInto(this, item.identity)
-            put("recordingMbid", item.recordingMbid ?: JSONObject.NULL)
-            put("youtubeQueryOrId", item.youtubeQueryOrId ?: JSONObject.NULL)
-            put("videoId", item.videoId ?: JSONObject.NULL)
+
+    private fun encodeItem(item: PersistedQueueItem): JSONObject =
+        when (item) {
+            is PersistedQueueItem.Local -> {
+                JSONObject().apply {
+                    put("kind", "local")
+                    put("songId", item.songId)
+                    put("uriString", item.uriString)
+                    TrackIdentityJson.putInto(this, item.identity)
+                }
+            }
+
+            is PersistedQueueItem.Remote -> {
+                JSONObject().apply {
+                    put("kind", "remote")
+                    TrackIdentityJson.putInto(this, item.identity)
+                    put("recordingMbid", item.recordingMbid ?: JSONObject.NULL)
+                    put("youtubeQueryOrId", item.youtubeQueryOrId ?: JSONObject.NULL)
+                    put("videoId", item.videoId ?: JSONObject.NULL)
+                }
+            }
         }
-    }
 
     private fun decodeItem(obj: JSONObject): PersistedQueueItem? {
         return try {
@@ -199,9 +216,10 @@ object QueueSnapshotCodec {
                     PersistedQueueItem.Local(
                         songId = obj.optLong("songId", 0L),
                         uriString = uri,
-                        identity = TrackIdentityJson.decode(obj)
+                        identity = TrackIdentityJson.decode(obj),
                     )
                 }
+
                 "remote" -> {
                     val identity = TrackIdentityJson.decode(obj)
                     val query = obj.optNullableString("youtubeQueryOrId")
@@ -215,10 +233,13 @@ object QueueSnapshotCodec {
                         identity = identity,
                         recordingMbid = obj.optNullableString("recordingMbid"),
                         youtubeQueryOrId = query,
-                        videoId = videoId
+                        videoId = videoId,
                     )
                 }
-                else -> null
+
+                else -> {
+                    null
+                }
             }
         } catch (_: Exception) {
             null
@@ -237,17 +258,21 @@ object PlaybackHydration {
     fun resolveIdleSeed(
         library: List<Song>,
         lastPlayed: LastPlayedSnapshot?,
-        random: (List<Song>) -> Song = { it.random() }
+        random: (List<Song>) -> Song = { it.random() },
     ): Song? {
         if (library.isEmpty()) return null
-        val matched = lastPlayed?.let { snap ->
-            library.find { snap.songId > 0L && it.id == snap.songId }
-                ?: library.find { matchesLastPlayed(it, snap) }
-        }
+        val matched =
+            lastPlayed?.let { snap ->
+                library.find { snap.songId > 0L && it.id == snap.songId }
+                    ?: library.find { matchesLastPlayed(it, snap) }
+            }
         return matched ?: random(library)
     }
 
-    fun matchesLastPlayed(song: Song, lastPlayed: LastPlayedSnapshot): Boolean {
+    fun matchesLastPlayed(
+        song: Song,
+        lastPlayed: LastPlayedSnapshot,
+    ): Boolean {
         if (lastPlayed.songId > 0L && song.id == lastPlayed.songId) return true
         if (song.uriString == lastPlayed.uriString) return true
         val songCanon = AudioPersistRef.canonicalize(song.uriString, song.folderPath).uriString
@@ -257,7 +282,10 @@ object PlaybackHydration {
     }
 
     /** Position to show / resume when [song] matches [lastPlayed]. */
-    fun resumePositionMs(song: Song, lastPlayed: LastPlayedSnapshot?): Long {
+    fun resumePositionMs(
+        song: Song,
+        lastPlayed: LastPlayedSnapshot?,
+    ): Long {
         if (lastPlayed == null) return 0L
         if (!matchesLastPlayed(song, lastPlayed)) return 0L
         val cap = song.durationMs.takeIf { it > 0 } ?: lastPlayed.durationMs
@@ -265,42 +293,50 @@ object PlaybackHydration {
         return if (cap > 0) pos.coerceAtMost(cap) else pos
     }
 
-    fun snapshotFromSong(song: Song, positionMs: Long): LastPlayedSnapshot =
+    fun snapshotFromSong(
+        song: Song,
+        positionMs: Long,
+    ): LastPlayedSnapshot =
         LastPlayedSnapshot(
             songId = song.id,
             uriString = song.uriString,
             positionMs = positionMs.coerceAtLeast(0L),
-            identity = song.toIdentity()
+            identity = song.toIdentity(),
         )
 
-    fun matchPersistedLocal(item: PersistedQueueItem.Local, library: List<Song>): Song? {
+    fun matchPersistedLocal(
+        item: PersistedQueueItem.Local,
+        library: List<Song>,
+    ): Song? {
         if (library.isEmpty()) return null
-        val snap = LastPlayedSnapshot(
-            songId = item.songId,
-            uriString = item.uriString,
-            identity = item.identity
-        )
+        val snap =
+            LastPlayedSnapshot(
+                songId = item.songId,
+                uriString = item.uriString,
+                identity = item.identity,
+            )
         return library.find { item.songId > 0L && it.id == item.songId }
             ?: library.find { matchesLastPlayed(it, snap) }
     }
 
     fun toPlayableRemote(item: PersistedQueueItem.Remote): PlayableItem.Remote {
         val videoId = item.videoId?.takeIf { it.isNotBlank() }
-        val resolved = if (videoId != null) {
-            ResolvedStream(
-                audioUrl = "",
-                userAgent = "",
-                videoId = videoId,
-                resolvedAtEpochMs = 0L
-            )
-        } else {
-            null
-        }
+        val resolved =
+            if (videoId != null) {
+                ResolvedStream(
+                    audioUrl = "",
+                    userAgent = "",
+                    videoId = videoId,
+                    resolvedAtEpochMs = 0L,
+                )
+            } else {
+                null
+            }
         return PlayableItem.remoteFrom(
             identity = item.identity,
             recordingMbid = item.recordingMbid,
             youtubeQueryOrId = item.youtubeQueryOrId ?: videoId,
-            resolved = resolved
+            resolved = resolved,
         )
     }
 
@@ -308,14 +344,22 @@ object PlaybackHydration {
      * Rematch persisted queue against [library]. Drops deleted locals.
      * If the current item is gone, advances to the next surviving item (position 0).
      */
-    fun hydrateQueue(snapshot: QueueSnapshot?, library: List<Song>): HydratedQueue? {
+    fun hydrateQueue(
+        snapshot: QueueSnapshot?,
+        library: List<Song>,
+    ): HydratedQueue? {
         if (snapshot == null || snapshot.items.isEmpty()) return null
         val resolved = ArrayList<Pair<Int, PlayableItem>>(snapshot.items.size)
         snapshot.items.forEachIndexed { origIdx, persisted ->
             when (persisted) {
-                is PersistedQueueItem.Local -> matchPersistedLocal(persisted, library)
-                    ?.let { resolved.add(origIdx to it.toPlayable()) }
-                is PersistedQueueItem.Remote -> resolved.add(origIdx to toPlayableRemote(persisted))
+                is PersistedQueueItem.Local -> {
+                    matchPersistedLocal(persisted, library)
+                        ?.let { resolved.add(origIdx to it.toPlayable()) }
+                }
+
+                is PersistedQueueItem.Remote -> {
+                    resolved.add(origIdx to toPlayableRemote(persisted))
+                }
             }
         }
         if (resolved.isEmpty()) return null
@@ -325,30 +369,33 @@ object PlaybackHydration {
         val newIndex = resolved.indexOfFirst { it.first == currentPair.first }.coerceAtLeast(0)
         val sameCurrent = currentPair.first == targetOrig
         val current = items[newIndex]
-        val positionMs = if (sameCurrent) {
-            val cap = current.durationMs.takeIf { it > 0 } ?: snapshot.positionMs
-            val pos = snapshot.positionMs.coerceAtLeast(0L)
-            if (cap > 0) pos.coerceAtMost(cap) else pos
-        } else {
-            0L
-        }
+        val positionMs =
+            if (sameCurrent) {
+                val cap = current.durationMs.takeIf { it > 0 } ?: snapshot.positionMs
+                val pos = snapshot.positionMs.coerceAtLeast(0L)
+                if (cap > 0) pos.coerceAtMost(cap) else pos
+            } else {
+                0L
+            }
         val oldToNew = resolved.mapIndexed { newIdx, pair -> pair.first to newIdx }.toMap()
-        val remappedOrder = PlaybackQueueOrder.remapPlayOrder(
-            snapshot.shufflePlayOrder,
-            oldToNew,
-            items.size
-        )
+        val remappedOrder =
+            PlaybackQueueOrder.remapPlayOrder(
+                snapshot.shufflePlayOrder,
+                oldToNew,
+                items.size,
+            )
         return HydratedQueue(
             items = items,
             currentIndex = newIndex,
             positionMs = positionMs,
-            shufflePlayOrder = remappedOrder
+            shufflePlayOrder = remappedOrder,
         )
     }
 }
 
-class PlaybackSessionStore(private val context: Context) {
-
+class PlaybackSessionStore(
+    private val context: Context,
+) {
     private object Keys {
         val LAST_PLAYED_JSON = stringPreferencesKey("last_played_json")
         val QUEUE_JSON = stringPreferencesKey("queue_json")
@@ -368,7 +415,10 @@ class PlaybackSessionStore(private val context: Context) {
     }
 
     suspend fun loadQueue(): QueueSnapshot? {
-        val json = context.playbackSessionDataStore.data.first()[Keys.QUEUE_JSON].orEmpty()
+        val json =
+            context.playbackSessionDataStore.data
+                .first()[Keys.QUEUE_JSON]
+                .orEmpty()
         return QueueSnapshotCodec.decode(json)
     }
 
@@ -383,7 +433,7 @@ class PlaybackSessionStore(private val context: Context) {
     suspend fun saveSession(
         lastPlayed: LastPlayedSnapshot? = null,
         queue: QueueSnapshot? = null,
-        clearQueue: Boolean = false
+        clearQueue: Boolean = false,
     ) {
         context.playbackSessionDataStore.edit { prefs ->
             if (lastPlayed != null) {

@@ -13,17 +13,17 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class RefreshingMediaNotificationProviderTest {
-
     @Test
     fun lastMediaNotification_startsNull() {
         val context = ApplicationProvider.getApplicationContext<Application>()
-        val provider = RefreshingMediaNotificationProvider(
-            context = context,
-            notificationId = 100,
-            channelId = "test_channel",
-            channelNameResourceId = android.R.string.ok,
-            requestNotificationRefresh = {}
-        )
+        val provider =
+            RefreshingMediaNotificationProvider(
+                context = context,
+                notificationId = 100,
+                channelId = "test_channel",
+                channelNameResourceId = android.R.string.ok,
+                requestNotificationRefresh = {},
+            )
 
         assertNull(provider.lastMediaNotification)
     }

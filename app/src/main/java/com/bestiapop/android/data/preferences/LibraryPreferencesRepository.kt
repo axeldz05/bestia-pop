@@ -14,52 +14,57 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.libraryDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "library_settings"
+    name = "library_settings",
 )
 
 /**
  * Library disk-import flags plus persisted display + UI navigation snapshot.
  * Survives app updates; cleared on uninstall / clear data.
  */
-class LibraryPreferencesRepository(private val context: Context) {
-
-    val displaySettingsFlow: Flow<LibraryDisplaySettings> = context.libraryDataStore.data.map { prefs ->
-        val sortOptionName = LibraryUiPreferencesCodec.sanitizeSortOptionName(
-            prefs[Keys.SORT_OPTION]
-        )
-        LibraryDisplaySettings(
-            sortOptionName = sortOptionName,
-            sortDirectionName = LibraryUiPreferencesCodec.sanitizeSortDirectionName(
-                prefs[Keys.SORT_DIRECTION],
-                sortOptionName
-            ),
-            viewModeName = LibraryUiPreferencesCodec.sanitizeViewModeName(
-                prefs[Keys.VIEW_MODE]
+class LibraryPreferencesRepository(
+    private val context: Context,
+) {
+    val displaySettingsFlow: Flow<LibraryDisplaySettings> =
+        context.libraryDataStore.data.map { prefs ->
+            val sortOptionName =
+                LibraryUiPreferencesCodec.sanitizeSortOptionName(
+                    prefs[Keys.SORT_OPTION],
+                )
+            LibraryDisplaySettings(
+                sortOptionName = sortOptionName,
+                sortDirectionName =
+                    LibraryUiPreferencesCodec.sanitizeSortDirectionName(
+                        prefs[Keys.SORT_DIRECTION],
+                        sortOptionName,
+                    ),
+                viewModeName =
+                    LibraryUiPreferencesCodec.sanitizeViewModeName(
+                        prefs[Keys.VIEW_MODE],
+                    ),
             )
-        )
-    }
+        }
 
-    val navSnapshotFlow: Flow<UiNavSnapshot> = context.libraryDataStore.data.map { prefs ->
-        LibraryUiPreferencesCodec.sanitizeNavSnapshot(
-            navIndex = prefs[Keys.NAV_INDEX],
-            browseFilterName = prefs[Keys.LIBRARY_BROWSE_FILTER],
-            libraryTab = prefs[Keys.LIBRARY_TAB],
-            libraryArtistName = prefs[Keys.LIBRARY_ARTIST],
-            libraryAlbumName = prefs[Keys.LIBRARY_ALBUM],
-            libraryGenreName = prefs[Keys.LIBRARY_GENRE],
-            playlistDetailKind = prefs[Keys.PLAYLIST_DETAIL_KIND],
-            playlistLocalId = prefs[Keys.PLAYLIST_LOCAL_ID],
-            playlistLbMbid = prefs[Keys.PLAYLIST_LB_MBID]
-        )
-    }
+    val navSnapshotFlow: Flow<UiNavSnapshot> =
+        context.libraryDataStore.data.map { prefs ->
+            LibraryUiPreferencesCodec.sanitizeNavSnapshot(
+                navIndex = prefs[Keys.NAV_INDEX],
+                browseFilterName = prefs[Keys.LIBRARY_BROWSE_FILTER],
+                libraryTab = prefs[Keys.LIBRARY_TAB],
+                libraryArtistName = prefs[Keys.LIBRARY_ARTIST],
+                libraryAlbumName = prefs[Keys.LIBRARY_ALBUM],
+                libraryGenreName = prefs[Keys.LIBRARY_GENRE],
+                playlistDetailKind = prefs[Keys.PLAYLIST_DETAIL_KIND],
+                playlistLocalId = prefs[Keys.PLAYLIST_LOCAL_ID],
+                playlistLbMbid = prefs[Keys.PLAYLIST_LB_MBID],
+            )
+        }
 
     val initialScanCompletedFlow: Flow<Boolean> =
         context.libraryDataStore.data.map { prefs ->
             prefs[Keys.INITIAL_SCAN_COMPLETED] ?: false
         }
 
-    suspend fun isInitialScanCompleted(): Boolean =
-        initialScanCompletedFlow.first()
+    suspend fun isInitialScanCompleted(): Boolean = initialScanCompletedFlow.first()
 
     suspend fun setInitialScanCompleted(completed: Boolean = true) {
         context.libraryDataStore.put(Keys.INITIAL_SCAN_COMPLETED, completed)
@@ -71,45 +76,50 @@ class LibraryPreferencesRepository(private val context: Context) {
      * gone is a marker that survives it.
      */
     suspend fun highestDbVersionSeen(): Int =
-        context.libraryDataStore.data.map { prefs ->
-            prefs[Keys.HIGHEST_DB_VERSION] ?: 0
-        }.first()
+        context.libraryDataStore.data
+            .map { prefs ->
+                prefs[Keys.HIGHEST_DB_VERSION] ?: 0
+            }.first()
 
     suspend fun setHighestDbVersionSeen(version: Int) {
         context.libraryDataStore.put(Keys.HIGHEST_DB_VERSION, version)
     }
 
     suspend fun isLegacyYouTubeMusicMigrated(): Boolean =
-        context.libraryDataStore.data.map { prefs ->
-            prefs[Keys.LEGACY_YTM_MIGRATED] ?: false
-        }.first()
+        context.libraryDataStore.data
+            .map { prefs ->
+                prefs[Keys.LEGACY_YTM_MIGRATED] ?: false
+            }.first()
 
     suspend fun setLegacyYouTubeMusicMigrated() {
         context.libraryDataStore.put(Keys.LEGACY_YTM_MIGRATED, true)
     }
 
     suspend fun isDeviceDateAddedMigrated(): Boolean =
-        context.libraryDataStore.data.map { prefs ->
-            prefs[Keys.DEVICE_DATE_ADDED_MIGRATED] ?: false
-        }.first()
+        context.libraryDataStore.data
+            .map { prefs ->
+                prefs[Keys.DEVICE_DATE_ADDED_MIGRATED] ?: false
+            }.first()
 
     suspend fun setDeviceDateAddedMigrated() {
         context.libraryDataStore.put(Keys.DEVICE_DATE_ADDED_MIGRATED, true)
     }
 
     suspend fun isCanonicalAudioUrisMigrated(): Boolean =
-        context.libraryDataStore.data.map { prefs ->
-            prefs[Keys.CANONICAL_AUDIO_URIS_MIGRATED] ?: false
-        }.first()
+        context.libraryDataStore.data
+            .map { prefs ->
+                prefs[Keys.CANONICAL_AUDIO_URIS_MIGRATED] ?: false
+            }.first()
 
     suspend fun setCanonicalAudioUrisMigrated() {
         context.libraryDataStore.put(Keys.CANONICAL_AUDIO_URIS_MIGRATED, true)
     }
 
     suspend fun isEmbeddedFileTagsMigrated(): Boolean =
-        context.libraryDataStore.data.map { prefs ->
-            prefs[Keys.EMBEDDED_FILE_TAGS_MIGRATED] ?: false
-        }.first()
+        context.libraryDataStore.data
+            .map { prefs ->
+                prefs[Keys.EMBEDDED_FILE_TAGS_MIGRATED] ?: false
+            }.first()
 
     suspend fun setEmbeddedFileTagsMigrated() {
         context.libraryDataStore.put(Keys.EMBEDDED_FILE_TAGS_MIGRATED, true)
@@ -124,39 +134,44 @@ class LibraryPreferencesRepository(private val context: Context) {
         }
     }
 
-    suspend fun setSortDirectionName(name: String, sortOptionName: String) {
+    suspend fun setSortDirectionName(
+        name: String,
+        sortOptionName: String,
+    ) {
         context.libraryDataStore.put(
             Keys.SORT_DIRECTION,
-            LibraryUiPreferencesCodec.sanitizeSortDirectionName(name, sortOptionName)
+            LibraryUiPreferencesCodec.sanitizeSortDirectionName(name, sortOptionName),
         )
     }
 
     suspend fun setViewModeName(name: String) {
         context.libraryDataStore.put(
             Keys.VIEW_MODE,
-            LibraryUiPreferencesCodec.sanitizeViewModeName(name)
+            LibraryUiPreferencesCodec.sanitizeViewModeName(name),
         )
     }
 
-    val discoverSourceFlow: Flow<DiscoverSourcePreference> = context.libraryDataStore.data.map { prefs ->
-        parseDiscoverSourcePreference(prefs[Keys.DISCOVER_SOURCE])
-    }
+    val discoverSourceFlow: Flow<DiscoverSourcePreference> =
+        context.libraryDataStore.data.map { prefs ->
+            parseDiscoverSourcePreference(prefs[Keys.DISCOVER_SOURCE])
+        }
 
     suspend fun setDiscoverSourcePreference(preference: DiscoverSourcePreference) {
         context.libraryDataStore.put(Keys.DISCOVER_SOURCE, preference.name)
     }
 
     suspend fun setNavSnapshot(snapshot: UiNavSnapshot) {
-        val clean = LibraryUiPreferencesCodec.sanitizeNavSnapshot(
-            navIndex = snapshot.navIndex,
-            browseFilterName = snapshot.browseFilterName,
-            libraryArtistName = snapshot.libraryArtistName,
-            libraryAlbumName = snapshot.libraryAlbumName,
-            libraryGenreName = snapshot.libraryGenreName,
-            playlistDetailKind = snapshot.playlistDetailKind,
-            playlistLocalId = snapshot.playlistLocalId,
-            playlistLbMbid = snapshot.playlistLbMbid
-        )
+        val clean =
+            LibraryUiPreferencesCodec.sanitizeNavSnapshot(
+                navIndex = snapshot.navIndex,
+                browseFilterName = snapshot.browseFilterName,
+                libraryArtistName = snapshot.libraryArtistName,
+                libraryAlbumName = snapshot.libraryAlbumName,
+                libraryGenreName = snapshot.libraryGenreName,
+                playlistDetailKind = snapshot.playlistDetailKind,
+                playlistLocalId = snapshot.playlistLocalId,
+                playlistLbMbid = snapshot.playlistLbMbid,
+            )
         context.libraryDataStore.edit { prefs ->
             prefs[Keys.NAV_INDEX] = clean.navIndex
             prefs[Keys.LIBRARY_BROWSE_FILTER] = clean.browseFilterName
@@ -177,25 +192,28 @@ class LibraryPreferencesRepository(private val context: Context) {
         }
     }
 
-    val libraryBlobsSettingsFlow: Flow<LibraryBlobsSettings> = context.libraryDataStore.data.map { prefs ->
-        LibraryUiPreferencesCodec.decodeBlobsSettings(prefs[Keys.LIBRARY_BLOBS_SETTINGS])
-    }
+    val libraryBlobsSettingsFlow: Flow<LibraryBlobsSettings> =
+        context.libraryDataStore.data.map { prefs ->
+            LibraryUiPreferencesCodec.decodeBlobsSettings(prefs[Keys.LIBRARY_BLOBS_SETTINGS])
+        }
 
     suspend fun setLibraryBlobsSettings(settings: LibraryBlobsSettings) {
         context.libraryDataStore.put(
             Keys.LIBRARY_BLOBS_SETTINGS,
-            LibraryUiPreferencesCodec.encodeBlobsSettings(settings)
+            LibraryUiPreferencesCodec.encodeBlobsSettings(settings),
         )
     }
 
-    val fastScrollSettingsFlow: Flow<FastScrollSettings> = context.libraryDataStore.data.map { prefs ->
-        val enabled = prefs[Keys.FAST_SCROLL_ENABLED] ?: true
-        val side = when (prefs[Keys.FAST_SCROLL_SIDE]?.uppercase()) {
-            "LEFT" -> FastScrollSide.LEFT
-            else -> FastScrollSide.RIGHT
+    val fastScrollSettingsFlow: Flow<FastScrollSettings> =
+        context.libraryDataStore.data.map { prefs ->
+            val enabled = prefs[Keys.FAST_SCROLL_ENABLED] ?: true
+            val side =
+                when (prefs[Keys.FAST_SCROLL_SIDE]?.uppercase()) {
+                    "LEFT" -> FastScrollSide.LEFT
+                    else -> FastScrollSide.RIGHT
+                }
+            FastScrollSettings(enabled = enabled, side = side)
         }
-        FastScrollSettings(enabled = enabled, side = side)
-    }
 
     suspend fun setFastScrollEnabled(enabled: Boolean) {
         context.libraryDataStore.put(Keys.FAST_SCROLL_ENABLED, enabled)
@@ -205,13 +223,15 @@ class LibraryPreferencesRepository(private val context: Context) {
         context.libraryDataStore.put(Keys.FAST_SCROLL_SIDE, side.name)
     }
 
-    val submenuGestureSettingsFlow: Flow<SubmenuGestureSettings> = context.libraryDataStore.data.map { prefs ->
-        val swipeBackEnabled = prefs[Keys.SUBMENU_SWIPE_BACK_ENABLED] ?: true
-        val actionName = prefs[Keys.SUBMENU_SWIPE_LEFT_ACTION]
-        val action = SubmenuSwipeAction.entries.find { it.name.equals(actionName, ignoreCase = true) }
-            ?: SubmenuSwipeAction.ENQUEUE_ALL
-        SubmenuGestureSettings(swipeBackEnabled = swipeBackEnabled, swipeLeftAction = action)
-    }
+    val submenuGestureSettingsFlow: Flow<SubmenuGestureSettings> =
+        context.libraryDataStore.data.map { prefs ->
+            val swipeBackEnabled = prefs[Keys.SUBMENU_SWIPE_BACK_ENABLED] ?: true
+            val actionName = prefs[Keys.SUBMENU_SWIPE_LEFT_ACTION]
+            val action =
+                SubmenuSwipeAction.entries.find { it.name.equals(actionName, ignoreCase = true) }
+                    ?: SubmenuSwipeAction.ENQUEUE_ALL
+            SubmenuGestureSettings(swipeBackEnabled = swipeBackEnabled, swipeLeftAction = action)
+        }
 
     suspend fun setSubmenuSwipeBackEnabled(enabled: Boolean) {
         context.libraryDataStore.put(Keys.SUBMENU_SWIPE_BACK_ENABLED, enabled)

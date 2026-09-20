@@ -31,9 +31,9 @@ import com.bestiapop.android.data.model.IdentifySearchFilters
  * Designed with Continuous Granularity:
  * - Level 2: Bundled model [IdentifySearchFilters]
  * - Level 1: Individual primitive fields for fine-grained control
+ *
+ * Level 2: Advanced filters panel accepting bundled [IdentifySearchFilters].
  */
-
-/** Level 2: Advanced filters panel accepting bundled [IdentifySearchFilters]. */
 @Composable
 fun CatalogAdvancedFiltersPanel(
     filters: IdentifySearchFilters,
@@ -42,7 +42,7 @@ fun CatalogAdvancedFiltersPanel(
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
     title: String? = "Filtros de búsqueda avanzada",
-    showActionButtons: Boolean = true
+    showActionButtons: Boolean = true,
 ) {
     CatalogAdvancedFiltersPanel(
         artist = filters.artist,
@@ -55,7 +55,7 @@ fun CatalogAdvancedFiltersPanel(
         onClear = onClear,
         modifier = modifier,
         title = title,
-        showActionButtons = showActionButtons
+        showActionButtons = showActionButtons,
     )
 }
 
@@ -72,68 +72,74 @@ fun CatalogAdvancedFiltersPanel(
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
     title: String? = "Filtros de búsqueda avanzada",
-    showActionButtons: Boolean = true
+    showActionButtons: Boolean = true,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
         shape = RoundedCornerShape(16.dp),
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp),
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             if (title != null) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            val searchActions = KeyboardActions(
-                onSearch = { onApply() },
-                onDone = { onApply() }
-            )
+            val searchActions =
+                KeyboardActions(
+                    onSearch = { onApply() },
+                    onDone = { onApply() },
+                )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
                     value = artist,
                     onValueChange = onArtistChange,
                     label = { Text("Artista") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("catalog-filter-artist"),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .testTag("catalog-filter-artist"),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = searchActions
+                    keyboardActions = searchActions,
                 )
                 OutlinedTextField(
                     value = album,
                     onValueChange = onAlbumChange,
                     label = { Text("Álbum") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("catalog-filter-album"),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .testTag("catalog-filter-album"),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = searchActions
+                    keyboardActions = searchActions,
                 )
                 OutlinedTextField(
                     value = year,
                     onValueChange = onYearChange,
                     label = { Text("Año") },
-                    modifier = Modifier
-                        .width(76.dp)
-                        .testTag("catalog-filter-year"),
+                    modifier =
+                        Modifier
+                            .width(76.dp)
+                            .testTag("catalog-filter-year"),
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Search
-                    ),
-                    keyboardActions = searchActions
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Search,
+                        ),
+                    keyboardActions = searchActions,
                 )
             }
 
@@ -142,18 +148,18 @@ fun CatalogAdvancedFiltersPanel(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
                 ) {
                     TextButton(
                         onClick = onClear,
-                        modifier = Modifier.testTag("catalog-filter-clear")
+                        modifier = Modifier.testTag("catalog-filter-clear"),
                     ) {
                         Text("Limpiar")
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = onApply,
-                        modifier = Modifier.testTag("catalog-filter-apply")
+                        modifier = Modifier.testTag("catalog-filter-apply"),
                     ) {
                         Text("Aplicar")
                     }

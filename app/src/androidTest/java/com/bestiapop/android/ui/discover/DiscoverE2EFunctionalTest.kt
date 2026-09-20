@@ -4,9 +4,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -29,9 +29,10 @@ class DiscoverE2EFunctionalTest {
     private val ui = ComposeE2EProbe(composeRule, UI_TIMEOUT_MS, fixture::diagnostic)
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeRule)
 
     @Before
     fun setUp() {
@@ -58,7 +59,8 @@ class DiscoverE2EFunctionalTest {
         ui.await("Recomendados card after returning from Para Ti") {
             ui.exists(hasText("Recomendados para vos"))
         }
-        composeRule.onNodeWithText("Recomendados para vos")
+        composeRule
+            .onNodeWithText("Recomendados para vos")
             .performScrollTo()
             .performClick()
         awaitMixedDetail()
@@ -70,11 +72,12 @@ class DiscoverE2EFunctionalTest {
                 ui.exists(hasText("2 en biblioteca · 0 en stream")) &&
                 !ui.exists(hasText("Stream"))
         }
-        composeRule.onAllNodesWithText("2 en biblioteca · 0 en stream")
+        composeRule
+            .onAllNodesWithText("2 en biblioteca · 0 en stream")
             .onFirst()
             .assertIsDisplayed()
         fixture.verifyExactlyOnePersistedRemoteAndFile(
-            expectedSource = ActiveDownloadSource.DISCOVER
+            expectedSource = ActiveDownloadSource.DISCOVER,
         )
     }
 
@@ -93,7 +96,7 @@ class DiscoverE2EFunctionalTest {
                 ui.exists(hasText("2 en biblioteca · 0 en stream"))
         }
         fixture.verifyExactlyOnePersistedRemoteAndFile(
-            expectedSource = ActiveDownloadSource.SAVE_WHILE_LISTENING
+            expectedSource = ActiveDownloadSource.SAVE_WHILE_LISTENING,
         )
     }
 

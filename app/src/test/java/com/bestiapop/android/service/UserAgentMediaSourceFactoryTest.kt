@@ -17,17 +17,18 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class)
 @UnstableApi
 class UserAgentMediaSourceFactoryTest {
-
     @Test
     fun unresolvedRemotePlaceholder_createMediaSourceDoesNotThrow() {
-        val remote = PlayableItem.remoteFrom(
-            identity = TrackIdentity(title = "Preview", artist = "Artist"),
-            youtubeQueryOrId = "Artist Preview"
-        )
+        val remote =
+            PlayableItem.remoteFrom(
+                identity = TrackIdentity(title = "Preview", artist = "Artist"),
+                youtubeQueryOrId = "Artist Preview",
+            )
         val mediaItem = PlaybackMediaItemCodec.encode(remote) { error("local unused") }
         assertEquals(Uri.EMPTY, mediaItem.localConfiguration?.uri)
-        val source = UserAgentMediaSourceFactory(ApplicationProvider.getApplicationContext())
-            .createMediaSource(mediaItem)
+        val source =
+            UserAgentMediaSourceFactory(ApplicationProvider.getApplicationContext())
+                .createMediaSource(mediaItem)
         assertNotNull(source)
     }
 }

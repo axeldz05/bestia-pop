@@ -25,11 +25,12 @@ fun LibraryGenreList(
     sortOption: SortOption = SortOption.TITLE,
     fastScrollSettings: FastScrollSettings = FastScrollSettings(),
     listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val sections = remember(genres, sortOption) {
-        FastScrollSections.fromGenres(genres, sortOption)
-    }
+    val sections =
+        remember(genres, sortOption) {
+            FastScrollSections.fromGenres(genres, sortOption)
+        }
 
     FastScrollLazyColumn(
         items = genres,
@@ -38,7 +39,7 @@ fun LibraryGenreList(
         emptyText = "Ningún género coincide",
         fastScrollSettings = fastScrollSettings,
         listState = listState,
-        modifier = modifier
+        modifier = modifier,
     ) { genre ->
         GenreListItem(
             genre = genre,
@@ -46,7 +47,7 @@ fun LibraryGenreList(
             onClick = { actions.onClick(genre) },
             onPlay = { actions.onPlay(genre) },
             onShuffle = { actions.onShuffle(genre) },
-            onSwipeAction = actions.onSwipeAction?.let { cb -> { cb(genre) } }
+            onSwipeAction = actions.onSwipeAction?.let { cb -> { cb(genre) } },
         )
     }
 }
@@ -61,22 +62,23 @@ fun LibraryGenreList(
     onPlayGenre: (GenreGroup) -> Unit,
     onShuffleGenre: (GenreGroup) -> Unit,
     listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val actions = remember(onGenreClick, onPlayGenre, onShuffleGenre) {
-        AggregateBrowseActions(
-            onClick = onGenreClick,
-            onPlay = onPlayGenre,
-            onShuffle = onShuffleGenre
-        )
-    }
+    val actions =
+        remember(onGenreClick, onPlayGenre, onShuffleGenre) {
+            AggregateBrowseActions(
+                onClick = onGenreClick,
+                onPlay = onPlayGenre,
+                onShuffle = onShuffleGenre,
+            )
+        }
     LibraryGenreList(
         genres = genres,
         actions = actions,
         sortOption = sortOption,
         fastScrollSettings = fastScrollSettings,
         listState = listState,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -88,22 +90,24 @@ fun GenreListItem(
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
-    onSwipeAction: (() -> Unit)? = null
+    onSwipeAction: (() -> Unit)? = null,
 ) {
-    val sortInfo = remember(genre.dateAdded, sortOption) {
-        formatSortRelevantInfo(
-            sortOption = sortOption,
-            genre = null,
-            dateAdded = genre.dateAdded,
-            alreadyShowsArtist = false,
-            alreadyShowsAlbum = false,
-            alreadyShowsTitle = true
-        )
-    }
-    val subtitle = remember(genre.songCount, sortInfo) {
-        val base = "${genre.songCount} canciones"
-        if (sortInfo.isNullOrBlank()) base else "$base • $sortInfo"
-    }
+    val sortInfo =
+        remember(genre.dateAdded, sortOption) {
+            formatSortRelevantInfo(
+                sortOption = sortOption,
+                genre = null,
+                dateAdded = genre.dateAdded,
+                alreadyShowsArtist = false,
+                alreadyShowsAlbum = false,
+                alreadyShowsTitle = true,
+            )
+        }
+    val subtitle =
+        remember(genre.songCount, sortInfo) {
+            val base = "${genre.songCount} canciones"
+            if (sortInfo.isNullOrBlank()) base else "$base • $sortInfo"
+        }
 
     LibraryAggregateListItem(
         title = genre.name,
@@ -117,6 +121,6 @@ fun GenreListItem(
         onPlay = onPlay,
         onShuffle = onShuffle,
         swipeAction = swipeAction,
-        onSwipeAction = onSwipeAction
+        onSwipeAction = onSwipeAction,
     )
 }

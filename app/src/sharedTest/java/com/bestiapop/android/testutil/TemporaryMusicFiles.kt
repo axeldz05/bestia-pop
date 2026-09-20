@@ -24,7 +24,10 @@ class TemporaryMusicFiles : ExternalResource() {
         folder.delete()
     }
 
-    fun create(name: String, bytes: ByteArray = ByteArray(0)): File {
+    fun create(
+        name: String,
+        bytes: ByteArray = ByteArray(0),
+    ): File {
         require(name.isNotBlank()) { "Temporary music file name must not be blank" }
         require('/' !in name && '\\' !in name) {
             "Temporary music file name must not contain path separators: $name"

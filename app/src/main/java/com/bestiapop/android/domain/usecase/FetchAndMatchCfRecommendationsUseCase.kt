@@ -18,17 +18,16 @@ class FetchAndMatchCfRecommendationsUseCase(
         token: String?,
         count: Int,
         offset: Int,
-        artistType: String
+        artistType: String,
     ) -> LbApiResult<CfRecommendationsPayload>,
     private val fetchRecordingMetadata: suspend (
         mbids: List<String>,
-        token: String?
-    ) -> LbApiResult<Map<String, LbRecordingMetadata>>
+        token: String?,
+    ) -> LbApiResult<Map<String, LbRecordingMetadata>>,
 ) {
-
     constructor() : this(
         fetchCf = ListenBrainzClient::fetchCfRecordingRecommendations,
-        fetchRecordingMetadata = ListenBrainzClient::fetchRecordingMetadata
+        fetchRecordingMetadata = ListenBrainzClient::fetchRecordingMetadata,
     )
 
     suspend fun execute(
@@ -37,29 +36,31 @@ class FetchAndMatchCfRecommendationsUseCase(
         library: List<Song>,
         count: Int = DEFAULT_COUNT,
         offset: Int = 0,
-        artistType: String = ARTIST_TYPE_TOP
+        artistType: String = ARTIST_TYPE_TOP,
     ): LbApiResult<MatchedCfRecommendations> {
         if (username.isBlank()) {
             return LbApiResult.Failure("Usuario vacío")
         }
 
         val payloadResult = fetchCf(username, token, count, offset, artistType)
-        val payload = when (payloadResult) {
-            is LbApiResult.Success -> payloadResult.data
-            is LbApiResult.Failure -> return payloadResult
-        }
+        val payload =
+            when (payloadResult) {
+                is LbApiResult.Success -> payloadResult.data
+                is LbApiResult.Failure -> return payloadResult
+            }
 
         if (payload.recordings.isEmpty()) {
             return LbApiResult.Success(
-                MatchedCfRecommendations(payload = payload, matches = emptyList())
+                MatchedCfRecommendations(payload = payload, matches = emptyList()),
             )
         }
 
         val mbids = payload.recordings.map { it.recordingMbid }
-        val metaByMbid = when (val metaResult = fetchRecordingMetadata(mbids, token)) {
-            is LbApiResult.Success -> metaResult.data
-            is LbApiResult.Failure -> emptyMap()
-        }
+        val metaByMbid =
+            when (val metaResult = fetchRecordingMetadata(mbids, token)) {
+                is LbApiResult.Success -> metaResult.data
+                is LbApiResult.Failure -> emptyMap()
+            }
 
         return LbApiResult.Success(matchFromMetadata(payload, metaByMbid, library))
     }
@@ -68,24 +69,26 @@ class FetchAndMatchCfRecommendationsUseCase(
     fun matchFromMetadata(
         payload: CfRecommendationsPayload,
         metaByMbid: Map<String, LbRecordingMetadata>,
-        library: List<Song>
+        library: List<Song>,
     ): MatchedCfRecommendations {
-        val scored = payload.recordings.mapNotNull { rec ->
-            val meta = metaByMbid[rec.recordingMbid] ?: return@mapNotNull null
-            meta to rec.score
-        }
-        val matches = TrackMatchKeys.matchAgainstLibrary(
-            items = scored,
-            library = library,
-            metaOf = { it.first },
-            skipBlank = true
-        ) { (meta, score), local ->
-            meta.identity.toMatchedRemote(
-                localSong = local,
-                recordingMbid = meta.recordingMbid,
-                score = score
-            )
-        }
+        val scored =
+            payload.recordings.mapNotNull { rec ->
+                val meta = metaByMbid[rec.recordingMbid] ?: return@mapNotNull null
+                meta to rec.score
+            }
+        val matches =
+            TrackMatchKeys.matchAgainstLibrary(
+                items = scored,
+                library = library,
+                metaOf = { it.first },
+                skipBlank = true,
+            ) { (meta, score), local ->
+                meta.identity.toMatchedRemote(
+                    localSong = local,
+                    recordingMbid = meta.recordingMbid,
+                    score = score,
+                )
+            }
         return MatchedCfRecommendations(payload = payload, matches = matches)
     }
 

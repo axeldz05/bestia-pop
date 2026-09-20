@@ -5,7 +5,7 @@ import java.util.concurrent.atomic.AtomicLong
 /** Opaque generation captured when an asynchronous remote selection starts. */
 @JvmInline
 value class PlaybackSelectionIntentToken internal constructor(
-    internal val generation: Long
+    internal val generation: Long,
 )
 
 /**
@@ -17,11 +17,9 @@ value class PlaybackSelectionIntentToken internal constructor(
 class PlaybackSelectionIntentGate {
     private val generation = AtomicLong(0L)
 
-    fun beginRemoteSelection(): PlaybackSelectionIntentToken =
-        PlaybackSelectionIntentToken(generation.incrementAndGet())
+    fun beginRemoteSelection(): PlaybackSelectionIntentToken = PlaybackSelectionIntentToken(generation.incrementAndGet())
 
-    fun isCurrent(token: PlaybackSelectionIntentToken): Boolean =
-        generation.get() == token.generation
+    fun isCurrent(token: PlaybackSelectionIntentToken): Boolean = generation.get() == token.generation
 
     fun invalidate() {
         generation.incrementAndGet()

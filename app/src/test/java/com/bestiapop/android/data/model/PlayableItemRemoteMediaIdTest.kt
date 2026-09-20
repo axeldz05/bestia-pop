@@ -7,14 +7,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayableItemRemoteMediaIdTest {
-
     @Test
     fun mediaId_usesStableQueryHash() {
-        val remote = PlayableItem.remoteFrom(
-            artist = "Artist",
-            title = "Song",
-            youtubeQueryOrId = "Artist Song"
-        )
+        val remote =
+            PlayableItem.remoteFrom(
+                artist = "Artist",
+                title = "Song",
+                youtubeQueryOrId = "Artist Song",
+            )
         assertTrue(remote.mediaId.startsWith("remote:"))
         assertFalse(remote.mediaId.startsWith("remote:dQw4w9wgXcQ"))
         val expected =
@@ -24,19 +24,22 @@ class PlayableItemRemoteMediaIdTest {
 
     @Test
     fun mediaId_afterResolve_staysStable_andVideoIdRemainsResolvedData() {
-        val unresolved = PlayableItem.remoteFrom(
-            artist = "Artist",
-            title = "Song",
-            youtubeQueryOrId = "Artist Song"
-        )
-        val resolved = unresolved.copy(
-            resolved = ResolvedStream(
-                audioUrl = "https://cdn.example/a.m4a",
-                userAgent = "ua",
-                videoId = "dQw4w9wgXcQ",
-                resolvedAtEpochMs = 1L
+        val unresolved =
+            PlayableItem.remoteFrom(
+                artist = "Artist",
+                title = "Song",
+                youtubeQueryOrId = "Artist Song",
             )
-        )
+        val resolved =
+            unresolved.copy(
+                resolved =
+                    ResolvedStream(
+                        audioUrl = "https://cdn.example/a.m4a",
+                        userAgent = "ua",
+                        videoId = "dQw4w9wgXcQ",
+                        resolvedAtEpochMs = 1L,
+                    ),
+            )
         assertEquals(unresolved.mediaId, resolved.mediaId)
         assertNotEquals("remote:dQw4w9wgXcQ", resolved.mediaId)
         assertEquals("dQw4w9wgXcQ", resolved.resolved?.videoId)
@@ -44,24 +47,28 @@ class PlayableItemRemoteMediaIdTest {
 
     @Test
     fun indexOfRemoteSlot_matchesQueueEntryBeforeOrAfterResolve() {
-        val original = PlayableItem.remoteFrom(
-            artist = "A",
-            title = "T",
-            youtubeQueryOrId = "A T"
-        )
-        val other = PlayableItem.remoteFrom(
-            artist = "B",
-            title = "U",
-            youtubeQueryOrId = "B U"
-        )
-        val resolved = original.copy(
-            resolved = ResolvedStream(
-                audioUrl = "https://cdn.example/a.m4a",
-                userAgent = "ua",
-                videoId = "abc123XYZ01",
-                resolvedAtEpochMs = 1L
+        val original =
+            PlayableItem.remoteFrom(
+                artist = "A",
+                title = "T",
+                youtubeQueryOrId = "A T",
             )
-        )
+        val other =
+            PlayableItem.remoteFrom(
+                artist = "B",
+                title = "U",
+                youtubeQueryOrId = "B U",
+            )
+        val resolved =
+            original.copy(
+                resolved =
+                    ResolvedStream(
+                        audioUrl = "https://cdn.example/a.m4a",
+                        userAgent = "ua",
+                        videoId = "abc123XYZ01",
+                        resolvedAtEpochMs = 1L,
+                    ),
+            )
         val queue: List<PlayableItem> = listOf(other, original)
 
         assertEquals(1, queue.indexOfRemoteSlot(original))
@@ -73,27 +80,31 @@ class PlayableItemRemoteMediaIdTest {
 
     @Test
     fun indexOfRemoteSlot_duplicateQuery_matchesTheResolvedQueueEntry() {
-        val first = PlayableItem.remoteFrom(
-            artist = "Same",
-            title = "Song",
-            youtubeQueryOrId = "Same Song"
-        )
-        val second = PlayableItem.remoteFrom(
-            artist = "Same",
-            title = "Song",
-            youtubeQueryOrId = "Same Song"
-        )
+        val first =
+            PlayableItem.remoteFrom(
+                artist = "Same",
+                title = "Song",
+                youtubeQueryOrId = "Same Song",
+            )
+        val second =
+            PlayableItem.remoteFrom(
+                artist = "Same",
+                title = "Song",
+                youtubeQueryOrId = "Same Song",
+            )
         assertEquals(first.mediaId, second.mediaId)
         assertNotEquals(first.queueEntryId, second.queueEntryId)
 
-        val resolvedSecond = second.copy(
-            resolved = ResolvedStream(
-                audioUrl = "https://cdn.example/second.m4a",
-                userAgent = "ua",
-                videoId = "second12345",
-                resolvedAtEpochMs = 1L
+        val resolvedSecond =
+            second.copy(
+                resolved =
+                    ResolvedStream(
+                        audioUrl = "https://cdn.example/second.m4a",
+                        userAgent = "ua",
+                        videoId = "second12345",
+                        resolvedAtEpochMs = 1L,
+                    ),
             )
-        )
 
         assertEquals(1, listOf(first, second).indexOfRemoteSlot(second))
         assertEquals(second.queueEntryId, resolvedSecond.queueEntryId)
@@ -101,16 +112,18 @@ class PlayableItemRemoteMediaIdTest {
 
     @Test
     fun freshQueueEntries_distinguishRepeatedLocalAndRemoteInstances() {
-        val local = Song(
-            id = 1L,
-            uriString = "content://song/1",
-            title = "Local"
-        ).toPlayable()
-        val remote = PlayableItem.remoteFrom(
-            artist = "Same",
-            title = "Song",
-            youtubeQueryOrId = "Same Song"
-        )
+        val local =
+            Song(
+                id = 1L,
+                uriString = "content://song/1",
+                title = "Local",
+            ).toPlayable()
+        val remote =
+            PlayableItem.remoteFrom(
+                artist = "Same",
+                title = "Song",
+                youtubeQueryOrId = "Same Song",
+            )
 
         val queue = listOf(local, local, remote, remote).withFreshQueueEntryIds()
         val firstLocal = queue[0] as PlayableItem.Local
@@ -127,39 +140,44 @@ class PlayableItemRemoteMediaIdTest {
 
     @Test
     fun queueEntryId_survivesCopyAndReorder_forLocalAndRemote() {
-        val local = Song(
-            id = 1L,
-            uriString = "content://song/1",
-            title = "Local"
-        ).toPlayable()
-        val remote = PlayableItem.remoteFrom(
-            artist = "Artist",
-            title = "Remote"
-        )
-        val updatedLocal = local.copy(song = local.song.copy(title = "Updated"))
-        val resolvedRemote = remote.copy(
-            resolved = ResolvedStream(
-                audioUrl = "https://cdn.example/audio",
-                userAgent = "ua",
-                videoId = "video-id",
-                resolvedAtEpochMs = 2L
+        val local =
+            Song(
+                id = 1L,
+                uriString = "content://song/1",
+                title = "Local",
+            ).toPlayable()
+        val remote =
+            PlayableItem.remoteFrom(
+                artist = "Artist",
+                title = "Remote",
             )
-        )
+        val updatedLocal = local.copy(song = local.song.copy(title = "Updated"))
+        val resolvedRemote =
+            remote.copy(
+                resolved =
+                    ResolvedStream(
+                        audioUrl = "https://cdn.example/audio",
+                        userAgent = "ua",
+                        videoId = "video-id",
+                        resolvedAtEpochMs = 2L,
+                    ),
+            )
 
         assertEquals(local.queueEntryId, updatedLocal.queueEntryId)
         assertEquals(remote.queueEntryId, resolvedRemote.queueEntryId)
         assertEquals(
             listOf(remote.queueEntryId, local.queueEntryId),
-            listOf(resolvedRemote, updatedLocal).map { it.queueEntryId }
+            listOf(resolvedRemote, updatedLocal).map { it.queueEntryId },
         )
     }
 
     @Test
     fun remoteOnlyFreshIdAlias_refreshesAllQueueOccurrences() {
-        val local = Song(
-            uriString = "content://song/local",
-            title = "Local"
-        ).toPlayable()
+        val local =
+            Song(
+                uriString = "content://song/local",
+                title = "Local",
+            ).toPlayable()
         val remote = PlayableItem.remoteFrom(artist = "Artist", title = "Remote")
 
         val refreshed = listOf(local, remote).withFreshRemoteQueueEntryIds()

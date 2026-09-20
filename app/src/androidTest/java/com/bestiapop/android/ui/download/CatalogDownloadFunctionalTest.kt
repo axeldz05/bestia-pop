@@ -7,10 +7,10 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -35,9 +35,10 @@ class CatalogDownloadFunctionalTest {
     private val ui = ComposeE2EProbe(composeRule, UI_TIMEOUT_MS, fixture::diagnostic)
 
     @get:Rule
-    val rules: RuleChain = RuleChain
-        .outerRule(DeviceAwakeRule())
-        .around(composeRule)
+    val rules: RuleChain =
+        RuleChain
+            .outerRule(DeviceAwakeRule())
+            .around(composeRule)
 
     @Before
     fun setUp() {
@@ -55,7 +56,7 @@ class CatalogDownloadFunctionalTest {
         fixture.configureGatedSuccess()
         openCatalogSearch(
             query = CatalogDownloadTestContract.SEARCH_QUERY,
-            expectedTitles = listOf(CatalogDownloadTestContract.TITLE)
+            expectedTitles = listOf(CatalogDownloadTestContract.TITLE),
         )
         composeRule.onAllNodesWithContentDescription("Agregar").onFirst().performClick()
         openDownloadsFromCatalog()
@@ -82,7 +83,7 @@ class CatalogDownloadFunctionalTest {
         }
         composeRule.onNodeWithContentDescription("Buscar").performClick()
         composeRule.onNode(hasSetTextAction()).performTextInput(
-            CatalogDownloadTestContract.TITLE
+            CatalogDownloadTestContract.TITLE,
         )
 
         val downloadedSongTitle =
@@ -272,12 +273,15 @@ class CatalogDownloadFunctionalTest {
     private fun openPrimaryCatalogAndStartDownload() {
         openCatalogSearch(
             query = CatalogDownloadTestContract.SEARCH_QUERY,
-            expectedTitles = listOf(CatalogDownloadTestContract.TITLE)
+            expectedTitles = listOf(CatalogDownloadTestContract.TITLE),
         )
         composeRule.onAllNodesWithContentDescription("Agregar").onFirst().performClick()
     }
 
-    private fun openCatalogSearch(query: String, expectedTitles: List<String>) {
+    private fun openCatalogSearch(
+        query: String,
+        expectedTitles: List<String>,
+    ) {
         ui.await("Biblioteca root with Agregar action") {
             ui.exists(hasText("Agregar"))
         }
@@ -290,16 +294,19 @@ class CatalogDownloadFunctionalTest {
 
         ui.await("catalog fixture results ${expectedTitles.joinToString()}") {
             expectedTitles.all { title ->
-                composeRule.onAllNodesWithText(title, useUnmergedTree = true)
+                composeRule
+                    .onAllNodesWithText(title, useUnmergedTree = true)
                     .fetchSemanticsNodes(atLeastOneRootRequired = false)
                     .isNotEmpty()
             } &&
-                composeRule.onAllNodesWithContentDescription("Agregar", useUnmergedTree = true)
+                composeRule
+                    .onAllNodesWithContentDescription("Agregar", useUnmergedTree = true)
                     .fetchSemanticsNodes(atLeastOneRootRequired = false)
                     .size >= expectedTitles.size
         }
         expectedTitles.forEach { title ->
-            composeRule.onAllNodesWithText(title, useUnmergedTree = true)
+            composeRule
+                .onAllNodesWithText(title, useUnmergedTree = true)
                 .onFirst()
                 .assertIsDisplayed()
         }
@@ -345,7 +352,8 @@ class CatalogDownloadFunctionalTest {
                 ui.exists(hasText("Descargada", substring = true)) &&
                 ui.exists(hasContentDescription("Reproducir"))
         }
-        composeRule.onAllNodesWithText("Descargada", substring = true)
+        composeRule
+            .onAllNodesWithText("Descargada", substring = true)
             .onFirst()
             .assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Reproducir").assertIsDisplayed()

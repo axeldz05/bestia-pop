@@ -24,7 +24,6 @@ import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.PcmWavFixture
 import com.bestiapop.android.testutil.PlaybackDeviceProbe
 import com.bestiapop.android.testutil.SideloadPlaybackAppOps
-import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -32,6 +31,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /**
  * Device-level smoke for the real MediaLibraryService and ExoPlayer pipeline.
@@ -42,7 +42,6 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class LocalPlaybackServiceFunctionalTest {
-
     @get:Rule
     val deviceAwakeRule = DeviceAwakeRule()
 
@@ -56,19 +55,20 @@ class LocalPlaybackServiceFunctionalTest {
 
     @Before
     fun grantStartupPermissions() {
-        val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            listOf(
-                Manifest.permission.READ_MEDIA_AUDIO,
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-        } else {
-            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+        val requiredPermissions =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                listOf(
+                    Manifest.permission.READ_MEDIA_AUDIO,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                )
+            } else {
+                listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
         requiredPermissions.forEach { permission ->
             if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_DENIED) {
                 instrumentation.uiAutomation.grantRuntimePermission(
                     context.packageName,
-                    permission
+                    permission,
                 )
             }
         }
@@ -108,10 +108,11 @@ class LocalPlaybackServiceFunctionalTest {
 
             val firstController = connectController()
             controller = firstController
-            val items = listOf(
-                localPlayable(1L, "Instrumented first", firstFile),
-                localPlayable(2L, "Instrumented second", secondFile)
-            )
+            val items =
+                listOf(
+                    localPlayable(1L, "Instrumented first", firstFile),
+                    localPlayable(2L, "Instrumented second", secondFile),
+                )
             onMain {
                 firstController.volume = 0f
                 (context.applicationContext as BestiaPopApplication)
@@ -130,13 +131,14 @@ class LocalPlaybackServiceFunctionalTest {
                 onMain { firstController.currentPosition >= readyPosition + MIN_POSITION_ADVANCE_MS }
             }
 
-            val playingNotification = awaitValue("visible playback notification") {
-                playbackNotification()
-            }
+            val playingNotification =
+                awaitValue("visible playback notification") {
+                    playbackNotification()
+                }
             assertEquals(3, NotificationCompat.getActionCount(playingNotification))
             assertEquals(
                 "Instrumented first",
-                playingNotification.extras.getCharSequence(Notification.EXTRA_TITLE)
+                playingNotification.extras.getCharSequence(Notification.EXTRA_TITLE),
             )
             await("MusicService foreground while playing") {
                 musicServiceInfo()?.foreground == true
@@ -164,11 +166,12 @@ class LocalPlaybackServiceFunctionalTest {
             await("service remains foreground after UI destruction") {
                 musicServiceInfo()?.foreground == true
             }
-            val notificationWithoutUi = awaitValue(
-                "playback notification remains after UI destruction"
-            ) {
-                playbackNotification()
-            }
+            val notificationWithoutUi =
+                awaitValue(
+                    "playback notification remains after UI destruction",
+                ) {
+                    playbackNotification()
+                }
             check(NotificationCompat.getActionCount(notificationWithoutUi) in 1..5) {
                 "Playback notification action count unexpected: ${NotificationCompat.getActionCount(notificationWithoutUi)}"
             }
@@ -181,10 +184,11 @@ class LocalPlaybackServiceFunctionalTest {
                 musicServiceInfo()?.foreground == true
             }
 
-            val pausedNotification = awaitValue(
-                "paused notification exposes Play",
-                ::playbackNotification
-            )
+            val pausedNotification =
+                awaitValue(
+                    "paused notification exposes Play",
+                    ::playbackNotification,
+                )
             sendNotificationAction(pausedNotification, PLAY_PAUSE_ACTION_INDEX)
             await("notification play reaches ExoPlayer") {
                 onMain { reconnectedController.playWhenReady }
@@ -225,7 +229,8 @@ class LocalPlaybackServiceFunctionalTest {
             runCatching { activityScenario?.close() }
             activityScenario = null
             context.stopService(Intent(context, MusicService::class.java))
-            context.getSystemService(NotificationManager::class.java)
+            context
+                .getSystemService(NotificationManager::class.java)
                 .cancel(MusicService.PLAYBACK_NOTIFICATION_ID)
             fixtureDir.deleteRecursively()
         }
@@ -233,27 +238,32 @@ class LocalPlaybackServiceFunctionalTest {
 
     private fun connectController(): MediaController = deviceProbe.connectController()
 
-    private fun localPlayable(id: Long, title: String, file: File): PlayableItem.Local =
+    private fun localPlayable(
+        id: Long,
+        title: String,
+        file: File,
+    ): PlayableItem.Local =
         PlayableItem.Local(
             Song(
                 id = id,
                 uriString = file.absolutePath,
                 title = title,
                 artist = "BestiaPop instrumentation",
-                durationMs = PLAYBACK_DURATION_MS.toLong()
-            )
+                durationMs = PLAYBACK_DURATION_MS.toLong(),
+            ),
         )
 
     private fun playbackNotification(): Notification? = deviceProbe.playbackNotification()
 
-    private fun sendNotificationAction(notification: Notification, index: Int) {
+    private fun sendNotificationAction(
+        notification: Notification,
+        index: Int,
+    ) {
         val action = requireNotNull(NotificationCompat.getAction(notification, index))
         requireNotNull(action.actionIntent).send()
     }
 
-    private fun mainActivityIsForeground(
-        scenario: ActivityScenario<MainActivity>
-    ): Boolean {
+    private fun mainActivityIsForeground(scenario: ActivityScenario<MainActivity>): Boolean {
         var foreground = false
         scenario.onActivity { activity ->
             foreground =
@@ -265,21 +275,26 @@ class LocalPlaybackServiceFunctionalTest {
         return foreground
     }
 
-    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? =
-        deviceProbe.musicServiceInfo()
+    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? = deviceProbe.musicServiceInfo()
 
-    private fun await(description: String, condition: () -> Boolean) {
+    private fun await(
+        description: String,
+        condition: () -> Boolean,
+    ) {
         val deadline = SystemClock.elapsedRealtime() + ASYNC_TIMEOUT_MS
         while (SystemClock.elapsedRealtime() < deadline) {
             if (condition()) return
             SystemClock.sleep(POLL_INTERVAL_MS)
         }
         throw AssertionError(
-            "Timed out waiting for $description; ${playbackDiagnostics()}"
+            "Timed out waiting for $description; ${playbackDiagnostics()}",
         )
     }
 
-    private fun <T : Any> awaitValue(description: String, value: () -> T?): T {
+    private fun <T : Any> awaitValue(
+        description: String,
+        value: () -> T?,
+    ): T {
         var result: T? = null
         await(description) {
             value()?.also { result = it } != null
@@ -289,25 +304,29 @@ class LocalPlaybackServiceFunctionalTest {
 
     private fun playbackDiagnostics(): String {
         val notificationManager = context.getSystemService(NotificationManager::class.java)
-        val activeNotifications = runCatching {
-            notificationManager.activeNotifications.joinToString(
-                prefix = "[",
-                postfix = "]"
-            ) { "${it.id}:flags=${it.notification.flags}" }
-        }.getOrElse { "[error=${it.javaClass.simpleName}]" }
+        val activeNotifications =
+            runCatching {
+                notificationManager.activeNotifications.joinToString(
+                    prefix = "[",
+                    postfix = "]",
+                ) { "${it.id}:flags=${it.notification.flags}" }
+            }.getOrElse { "[error=${it.javaClass.simpleName}]" }
         val service = runCatching { musicServiceInfo() }.getOrNull()
-        val channel = notificationManager.getNotificationChannel(
-            MusicService.PLAYBACK_CHANNEL_ID
-        )
-        val permission = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            "pre-33"
-        } else {
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS).toString()
-        }
+        val channel =
+            notificationManager.getNotificationChannel(
+                MusicService.PLAYBACK_CHANNEL_ID,
+            )
+        val permission =
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                "pre-33"
+            } else {
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS).toString()
+            }
         val scenario = activityScenario
-        val activityForeground = scenario?.let {
-            runCatching { mainActivityIsForeground(it) }.getOrNull()
-        }
+        val activityForeground =
+            scenario?.let {
+                runCatching { mainActivityIsForeground(it) }.getOrNull()
+            }
         val runtime = (context.applicationContext as? BestiaPopApplication)?.playbackRuntime
         return "permission=$permission, " +
             "notificationsEnabled=${notificationManager.areNotificationsEnabled()}, " +

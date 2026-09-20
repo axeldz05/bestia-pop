@@ -6,7 +6,6 @@ import org.junit.Test
 import kotlin.math.roundToInt
 
 class VolumeBoostSteppingTest {
-
     @Test
     fun volumeBoostStepping_increasesByTenPercentPerStepUntilMax() {
         var currentBoost = 0f

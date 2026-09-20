@@ -10,7 +10,6 @@ import org.junit.Test
 
 @UnstableApi
 class PlaybackNotificationContractTest {
-
     @Test
     fun media3ForegroundRequest_isAlwaysHonored() {
         assertTrue(
@@ -18,8 +17,8 @@ class PlaybackNotificationContractTest {
                 startInForegroundRequired = true,
                 playWhenReady = false,
                 mediaItemCount = 0,
-                playbackState = Player.STATE_IDLE
-            )
+                playbackState = Player.STATE_IDLE,
+            ),
         )
     }
 
@@ -30,8 +29,8 @@ class PlaybackNotificationContractTest {
                 startInForegroundRequired = false,
                 playWhenReady = true,
                 mediaItemCount = 1,
-                playbackState = Player.STATE_IDLE
-            )
+                playbackState = Player.STATE_IDLE,
+            ),
         )
     }
 
@@ -42,8 +41,8 @@ class PlaybackNotificationContractTest {
                 startInForegroundRequired = false,
                 playWhenReady = false,
                 mediaItemCount = 1,
-                playbackState = Player.STATE_READY
-            )
+                playbackState = Player.STATE_READY,
+            ),
         )
     }
 
@@ -55,8 +54,8 @@ class PlaybackNotificationContractTest {
                 playWhenReady = false,
                 mediaItemCount = 1,
                 playbackState = Player.STATE_READY,
-                isWithinPauseGracePeriod = true
-            )
+                isWithinPauseGracePeriod = true,
+            ),
         )
     }
 
@@ -67,8 +66,8 @@ class PlaybackNotificationContractTest {
                 startInForegroundRequired = false,
                 playWhenReady = false,
                 mediaItemCount = 0,
-                playbackState = Player.STATE_READY
-            )
+                playbackState = Player.STATE_READY,
+            ),
         )
     }
 
@@ -79,8 +78,8 @@ class PlaybackNotificationContractTest {
                 startInForegroundRequired = false,
                 playWhenReady = true,
                 mediaItemCount = 1,
-                playbackState = Player.STATE_ENDED
-            )
+                playbackState = Player.STATE_ENDED,
+            ),
         )
     }
 

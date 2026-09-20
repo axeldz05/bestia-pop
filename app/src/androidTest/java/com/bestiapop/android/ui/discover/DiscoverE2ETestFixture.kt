@@ -32,10 +32,6 @@ import com.bestiapop.android.data.util.StorageUtils
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.testutil.PcmWavFixture
-import java.io.File
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -46,6 +42,10 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okio.Buffer
 import org.json.JSONObject
+import java.io.File
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Full production graph fixture for Discover. Only the three public HTTP boundaries are redirected
@@ -63,7 +63,12 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
     private val audioStore = MusicFileStore(context)
     private val notificationHelper = DownloadNotificationHelper(context)
     private val server = MockWebServer()
-    private val token = UUID.randomUUID().toString().replace("-", "").take(10)
+    private val token =
+        UUID
+            .randomUUID()
+            .toString()
+            .replace("-", "")
+            .take(10)
     private val playlistMbid = UUID.randomUUID().toString()
     private val localRecordingMbid = UUID.randomUUID().toString()
     private val remoteRecordingMbid = UUID.randomUUID().toString()
@@ -115,17 +120,19 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
     }
 
     fun launchMainActivity() {
-        scenario = ActivityScenario.launch(MainActivity::class.java).also {
-            it.moveToState(Lifecycle.State.RESUMED)
-        }
+        scenario =
+            ActivityScenario.launch(MainActivity::class.java).also {
+                it.moveToState(Lifecycle.State.RESUMED)
+            }
     }
 
     fun remoteDownloadSucceeded(): Boolean {
-        val download = application.processDownloads.findByTrack(
-            downloadId = downloadId,
-            artist = remoteArtist,
-            title = remoteTitle
-        )
+        val download =
+            application.processDownloads.findByTrack(
+                downloadId = downloadId,
+                artist = remoteArtist,
+                title = remoteTitle,
+            )
         return download?.state == CandidateDownloadState.SUCCESS &&
             download.source == ActiveDownloadSource.DISCOVER &&
             fixtureRemoteSongs().size == 1
@@ -150,17 +157,20 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
             }
         }
 
-        val persistentNames = audioStore.listManagedNames()
-            .filter { it.contains(token, ignoreCase = true) }
+        val persistentNames =
+            audioStore
+                .listManagedNames()
+                .filter { it.contains(token, ignoreCase = true) }
         check(persistentNames.size == 1) {
             "Expected exactly one persistent fixture file, found $persistentNames"
         }
 
-        val descriptor = checkNotNull(
-            audioStore.openRead(audioStore.canonicalize(song.uriString, song.folderPath))
-        ) {
-            "Persisted remote audio cannot be opened: ${song.uriString}"
-        }
+        val descriptor =
+            checkNotNull(
+                audioStore.openRead(audioStore.canonicalize(song.uriString, song.folderPath)),
+            ) {
+                "Persisted remote audio cannot be opened: ${song.uriString}"
+            }
         val stored = ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { it.readBytes() }
         check(stored.contentEquals(audioBytes)) {
             "Persisted remote bytes differ: expected=${audioBytes.size}, actual=${stored.size}"
@@ -172,9 +182,10 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
     }
 
     fun diagnostic(): String {
-        val songs = runCatching { fixtureRemoteSongs() }
-            .getOrDefault(emptyList())
-            .joinToString { "${it.id}:${it.uriString}" }
+        val songs =
+            runCatching { fixtureRemoteSongs() }
+                .getOrDefault(emptyList())
+                .joinToString { "${it.id}:${it.uriString}" }
         val download = application.processDownloads.findByTrack(downloadId, remoteArtist, remoteTitle)
         return "remoteSongs=[$songs], download=${download?.state}:${download?.source}:" +
             "${download?.progressPercent}:${download?.errorMessage}, " +
@@ -186,10 +197,14 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
 
     override fun close() {
         var firstFailure: Throwable? = null
+
         fun cleanup(block: () -> Unit) {
             runCatching(block).exceptionOrNull()?.let { failure ->
-                if (firstFailure == null) firstFailure = failure
-                else firstFailure?.addSuppressed(failure)
+                if (firstFailure == null) {
+                    firstFailure = failure
+                } else {
+                    firstFailure?.addSuppressed(failure)
+                }
             }
         }
 
@@ -209,7 +224,8 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
         }
         cleanup { notificationHelper.cancel() }
         cleanup {
-            context.getSystemService(NotificationManager::class.java)
+            context
+                .getSystemService(NotificationManager::class.java)
                 .cancel(DownloadNotificationHelper.NOTIFICATION_ID)
         }
         cleanup { ListenBrainzClient.resetTestOverrides() }
@@ -221,31 +237,36 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
 
     private fun configureNetworkOverrides() {
         val baseUrl = server.url("/").toString()
-        val client = OkHttpClient.Builder()
-            .connectTimeout(2, TimeUnit.SECONDS)
-            .readTimeout(5, TimeUnit.SECONDS)
-            .callTimeout(7, TimeUnit.SECONDS)
-            .build()
+        val client =
+            OkHttpClient
+                .Builder()
+                .connectTimeout(2, TimeUnit.SECONDS)
+                .readTimeout(5, TimeUnit.SECONDS)
+                .callTimeout(7, TimeUnit.SECONDS)
+                .build()
         ListenBrainzClient.configureForTest(
             http = client,
-            endpoints = ListenBrainzEndpoints(
-                apiBaseUrl = server.url("/1").toString().trimEnd('/')
-            )
+            endpoints =
+                ListenBrainzEndpoints(
+                    apiBaseUrl = server.url("/1").toString().trimEnd('/'),
+                ),
         )
         MetadataFetcher.configureForTest(
             http = client,
-            endpoints = MetadataFetcherEndpoints(
-                deezerBaseUrl = baseUrl,
-                itunesBaseUrl = baseUrl,
-                lyricsBaseUrl = baseUrl
-            )
+            endpoints =
+                MetadataFetcherEndpoints(
+                    deezerBaseUrl = baseUrl,
+                    itunesBaseUrl = baseUrl,
+                    lyricsBaseUrl = baseUrl,
+                ),
         )
         YouTubeExtractor.configureForTest(
             http = client,
-            endpoints = YouTubeEndpoints(
-                webBaseUrl = baseUrl,
-                googleApiBaseUrl = baseUrl
-            )
+            endpoints =
+                YouTubeEndpoints(
+                    webBaseUrl = baseUrl,
+                    googleApiBaseUrl = baseUrl,
+                ),
         )
     }
 
@@ -276,54 +297,60 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
 
     private suspend fun seedLocalSong() {
         localFile.writeBytes(audioBytes)
-        val id = dao.insertSong(
-            Song(
-                uriString = localFile.absolutePath,
-                title = localTitle,
-                artist = localArtist,
-                album = "Local Discover Album $token",
-                genre = "Fixture",
-                durationMs = WAV_DURATION_MS.toLong(),
-                folderPath = localFile.parent.orEmpty(),
-                dateAdded = System.currentTimeMillis()
+        val id =
+            dao.insertSong(
+                Song(
+                    uriString = localFile.absolutePath,
+                    title = localTitle,
+                    artist = localArtist,
+                    album = "Local Discover Album $token",
+                    genre = "Fixture",
+                    durationMs = WAV_DURATION_MS.toLong(),
+                    folderPath = localFile.parent.orEmpty(),
+                    dateAdded = System.currentTimeMillis(),
+                ),
             )
-        )
         check(id > 0L) { "Could not seed local Discover Song" }
     }
 
-    private fun fixtureRemoteSongs(): List<Song> = runBlocking {
-        repository.getAllSongsSync().filter {
-            it.artist == remoteArtist && it.title == remoteTitle
+    private fun fixtureRemoteSongs(): List<Song> =
+        runBlocking {
+            repository.getAllSongsSync().filter {
+                it.artist == remoteArtist && it.title == remoteTitle
+            }
         }
-    }
 
     private suspend fun deleteFixtureArtifacts() {
         instrumentation.runOnMainSync {
             application.playbackRuntime.stopRadio()
             application.playbackRuntime.queue.value.indices
                 .filter { index ->
-                    val item = application.playbackRuntime.queue.value.getOrNull(index)
+                    val item =
+                        application.playbackRuntime.queue.value
+                            .getOrNull(index)
                     item?.title?.contains(token) == true || item?.artist?.contains(token) == true
-                }
-                .sortedDescending()
+                }.sortedDescending()
                 .forEach(application.playbackRuntime::removeFromQueue)
         }
 
-        val downloadIds = application.processDownloads.downloads.value
-            .filter { it.title.contains(token) || it.artist.contains(token) }
-            .map { it.id }
-            .toSet() + downloadId
+        val downloadIds =
+            application.processDownloads.downloads.value
+                .filter { it.title.contains(token) || it.artist.contains(token) }
+                .map { it.id }
+                .toSet() + downloadId
         downloadIds.forEach { id ->
             application.processDownloads.cancelAndJoin(id)
             application.processDownloads.dismiss(id)
         }
 
-        val songs = repository.getAllSongsSync().filter {
-            it.title.contains(token) || it.artist.contains(token)
-        }
+        val songs =
+            repository.getAllSongsSync().filter {
+                it.title.contains(token) || it.artist.contains(token)
+            }
         if (songs.isNotEmpty()) repository.deleteSongsFromDevice(songs)
 
-        StorageUtils.publicBestiaPopDir()
+        StorageUtils
+            .publicBestiaPopDir()
             .listFiles()
             .orEmpty()
             .filter { it.name.contains(token, ignoreCase = true) }
@@ -332,7 +359,8 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                     "Could not delete Discover fixture file ${file.absolutePath}"
                 }
             }
-        context.cacheDir.listFiles()
+        context.cacheDir
+            .listFiles()
             .orEmpty()
             .filter { it.name.contains(token, ignoreCase = true) }
             .forEach { file ->
@@ -344,11 +372,12 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
     }
 
     private fun grantStartupPermissions() {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            listOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+        val permissions =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                listOf(Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
         permissions.forEach { permission ->
             if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_DENIED) {
                 instrumentation.uiAutomation.grantRuntimePermission(context.packageName, permission)
@@ -364,11 +393,21 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                     lbRequests.incrementAndGet()
                     listenBrainzResponse(path)
                 }
-                path == "/youtubei/v1/search" -> youtubeSearchResponse(request)
-                path == "/youtubei/v1/player" -> youtubePlayerResponse(request)
-                path == "/watch" -> MockResponse()
-                    .setResponseCode(200)
-                    .setBody("""<html>"visitorData":"discover-fixture-visitor"</html>""")
+
+                path == "/youtubei/v1/search" -> {
+                    youtubeSearchResponse(request)
+                }
+
+                path == "/youtubei/v1/player" -> {
+                    youtubePlayerResponse(request)
+                }
+
+                path == "/watch" -> {
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setBody("""<html>"visitorData":"discover-fixture-visitor"</html>""")
+                }
+
                 path == "/audio/discover.wav" -> {
                     audioRequests.incrementAndGet()
                     MockResponse()
@@ -376,10 +415,17 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                         .setHeader("Content-Type", "audio/wav")
                         .setBody(Buffer().write(audioBytes))
                 }
-                path == "/api/get" -> jsonResponse(
-                    """{"plainLyrics":"Hermetic Discover fixture lyric"}"""
-                )
-                path == "/api/search" -> jsonResponse("[]")
+
+                path == "/api/get" -> {
+                    jsonResponse(
+                        """{"plainLyrics":"Hermetic Discover fixture lyric"}""",
+                    )
+                }
+
+                path == "/api/search" -> {
+                    jsonResponse("[]")
+                }
+
                 path == "/search" -> {
                     if (request.requestUrl?.queryParameter("term") != null) {
                         jsonResponse("""{"results":[]}""")
@@ -387,48 +433,83 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                         jsonResponse("""{"data":[]}""")
                     }
                 }
+
                 path.startsWith("/artist/") ||
-                    path in setOf(
+                    path in
+                    setOf(
                         "/search/track",
                         "/search/album",
                         "/search/playlist",
-                        "/search/artist"
-                    ) -> jsonResponse("""{"data":[]}""")
-                path == "/results" -> MockResponse().setResponseCode(404)
-                else -> MockResponse().setResponseCode(404)
+                        "/search/artist",
+                    )
+                -> {
+                    jsonResponse("""{"data":[]}""")
+                }
+
+                path == "/results" -> {
+                    MockResponse().setResponseCode(404)
+                }
+
+                else -> {
+                    MockResponse().setResponseCode(404)
+                }
             }
         }
 
-        private fun listenBrainzResponse(path: String): MockResponse = when {
-            path == "/1/user/$username/playlists/createdfor" -> jsonResponse(createdForJson())
-            path == "/1/playlist/$playlistMbid" -> jsonResponse(playlistDetailJson())
-            path == "/1/cf/recommendation/user/$username/recording" ->
-                jsonResponse(cfRecommendationsJson())
-            path == "/1/metadata/recording/" -> jsonResponse(recordingMetadataJson())
-            path == "/1/metadata/lookup/" -> jsonResponse(
-                """{"artist_mbids":["$artistMbid"],"recording_mbid":"$localRecordingMbid"}"""
-            )
-            path == "/1/lb-radio/artist/$artistMbid" -> jsonResponse(
-                """
-                {
-                  "$artistMbid": [{
-                    "recording_mbid": "$remoteRecordingMbid",
-                    "similar_artist_mbid": "$artistMbid",
-                    "similar_artist_name": "$remoteArtist",
-                    "total_listen_count": 42
-                  }]
+        private fun listenBrainzResponse(path: String): MockResponse =
+            when {
+                path == "/1/user/$username/playlists/createdfor" -> {
+                    jsonResponse(createdForJson())
                 }
-                """.trimIndent()
-            )
-            path == "/1/submit-listens" -> jsonResponse("""{"status":"ok"}""")
-            else -> MockResponse().setResponseCode(404)
-        }
+
+                path == "/1/playlist/$playlistMbid" -> {
+                    jsonResponse(playlistDetailJson())
+                }
+
+                path == "/1/cf/recommendation/user/$username/recording" -> {
+                    jsonResponse(cfRecommendationsJson())
+                }
+
+                path == "/1/metadata/recording/" -> {
+                    jsonResponse(recordingMetadataJson())
+                }
+
+                path == "/1/metadata/lookup/" -> {
+                    jsonResponse(
+                        """{"artist_mbids":["$artistMbid"],"recording_mbid":"$localRecordingMbid"}""",
+                    )
+                }
+
+                path == "/1/lb-radio/artist/$artistMbid" -> {
+                    jsonResponse(
+                        """
+                        {
+                          "$artistMbid": [{
+                            "recording_mbid": "$remoteRecordingMbid",
+                            "similar_artist_mbid": "$artistMbid",
+                            "similar_artist_name": "$remoteArtist",
+                            "total_listen_count": 42
+                          }]
+                        }
+                        """.trimIndent(),
+                    )
+                }
+
+                path == "/1/submit-listens" -> {
+                    jsonResponse("""{"status":"ok"}""")
+                }
+
+                else -> {
+                    MockResponse().setResponseCode(404)
+                }
+            }
 
         private fun youtubeSearchResponse(request: RecordedRequest): MockResponse {
             youtubeSearchRequests.incrementAndGet()
-            val query = runCatching {
-                JSONObject(request.body.readUtf8()).optString("query")
-            }.getOrDefault("")
+            val query =
+                runCatching {
+                    JSONObject(request.body.readUtf8()).optString("query")
+                }.getOrDefault("")
             return if (query == "$remoteArtist $remoteTitle") {
                 jsonResponse(youtubeSearchJson())
             } else {
@@ -438,9 +519,10 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
 
         private fun youtubePlayerResponse(request: RecordedRequest): MockResponse {
             youtubePlayerRequests.incrementAndGet()
-            val requestedId = runCatching {
-                JSONObject(request.body.readUtf8()).optString("videoId")
-            }.getOrDefault("")
+            val requestedId =
+                runCatching {
+                    JSONObject(request.body.readUtf8()).optString("videoId")
+                }.getOrDefault("")
             return if (requestedId == videoId) {
                 jsonResponse(youtubePlayerJson())
             } else {
@@ -448,7 +530,8 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
             }
         }
 
-        private fun createdForJson(): String = """
+        private fun createdForJson(): String =
+            """
             {
               "playlists": [{
                 "playlist": {
@@ -459,9 +542,10 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                 }
               }]
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        private fun playlistDetailJson(): String = """
+        private fun playlistDetailJson(): String =
+            """
             {
               "playlist": {
                 "identifier": "https://listenbrainz.org/playlist/$playlistMbid",
@@ -483,9 +567,10 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                 ]
               }
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        private fun cfRecommendationsJson(): String = """
+        private fun cfRecommendationsJson(): String =
+            """
             {
               "payload": {
                 "user_name": "$username",
@@ -498,9 +583,10 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                 ]
               }
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        private fun recordingMetadataJson(): String = """
+        private fun recordingMetadataJson(): String =
+            """
             {
               "$localRecordingMbid": {
                 "recording": {"name": "$localTitle"},
@@ -513,9 +599,10 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                 "release": {"name": "$remoteAlbum"}
               }
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        private fun youtubeSearchJson(): String = """
+        private fun youtubeSearchJson(): String =
+            """
             {
               "contents": {
                 "sectionListRenderer": {
@@ -534,9 +621,10 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                 }
               }
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        private fun youtubePlayerJson(): String = """
+        private fun youtubePlayerJson(): String =
+            """
             {
               "playabilityStatus": {"status": "OK"},
               "videoDetails": {
@@ -552,12 +640,13 @@ internal class DiscoverE2ETestFixture : AutoCloseable {
                 }]
               }
             }
-        """.trimIndent()
+            """.trimIndent()
 
-        private fun jsonResponse(body: String): MockResponse = MockResponse()
-            .setResponseCode(200)
-            .setHeader("Content-Type", "application/json")
-            .setBody(body)
+        private fun jsonResponse(body: String): MockResponse =
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(body)
     }
 
     private companion object {

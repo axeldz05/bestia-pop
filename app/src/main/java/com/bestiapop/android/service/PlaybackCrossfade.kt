@@ -11,7 +11,7 @@ package com.bestiapop.android.service
 fun calculateCrossfadeVolume(
     positionMs: Long,
     durationMs: Long,
-    crossfadeDurationSeconds: Int
+    crossfadeDurationSeconds: Int,
 ): Float {
     if (durationMs < 1500L || positionMs < 0L) return 1f
     val fadeMs = (crossfadeDurationSeconds * 1000L).coerceIn(500L, 10000L)
@@ -21,9 +21,13 @@ fun calculateCrossfadeVolume(
         positionMs < effectiveFadeMs -> {
             (positionMs.toFloat() / effectiveFadeMs).coerceIn(0f, 1f)
         }
+
         positionMs > durationMs - effectiveFadeMs -> {
             ((durationMs - positionMs).toFloat() / effectiveFadeMs).coerceIn(0f, 1f)
         }
-        else -> 1f
+
+        else -> {
+            1f
+        }
     }
 }

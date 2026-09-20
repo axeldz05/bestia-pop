@@ -43,31 +43,33 @@ fun DiscoverTopSearchBar(
     onRefreshFeed: () -> Unit,
     isLoading: Boolean,
     modifier: Modifier = Modifier,
-    onOpenHistory: (() -> Unit)? = null
+    onOpenHistory: (() -> Unit)? = null,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
-            modifier = Modifier
-                .weight(1f)
-                .height(52.dp),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .height(52.dp),
             placeholder = {
                 Text(
                     text = "Buscar canciones, álbumes, artistas…",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = "Buscar",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
                 )
             },
             trailingIcon = {
@@ -75,7 +77,7 @@ fun DiscoverTopSearchBar(
                     if (isLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
+                            strokeWidth = 2.dp,
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                     }
@@ -83,14 +85,14 @@ fun DiscoverTopSearchBar(
                         IconButton(onClick = onClear) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "Limpiar"
+                                contentDescription = "Limpiar",
                             )
                         }
                     } else if (onOpenHistory != null) {
                         IconButton(onClick = onOpenHistory) {
                             Icon(
                                 imageVector = Icons.Default.History,
-                                contentDescription = "Historial de búsqueda"
+                                contentDescription = "Historial de búsqueda",
                             )
                         }
                     }
@@ -98,35 +100,37 @@ fun DiscoverTopSearchBar(
             },
             singleLine = true,
             shape = RoundedCornerShape(26.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-            )
+            colors =
+                OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                ),
         )
 
         Spacer(modifier = Modifier.width(8.dp))
 
         IconButton(
             onClick = onToggleFilters,
-            modifier = Modifier.background(
-                color = if (hasActiveFilters) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                shape = CircleShape
-            )
+            modifier =
+                Modifier.background(
+                    color = if (hasActiveFilters) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = CircleShape,
+                ),
         ) {
             Icon(
                 imageVector = Icons.Default.Tune,
                 contentDescription = "Filtros",
-                tint = if (hasActiveFilters) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (hasActiveFilters) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         IconButton(
-            onClick = onRefreshFeed
+            onClick = onRefreshFeed,
         ) {
             Icon(
                 imageVector = Icons.Default.Refresh,
                 contentDescription = "Refrescar recomendaciones",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -139,7 +143,7 @@ fun DiscoverRecentSearchesView(
     onRemoveQuery: (String) -> Unit,
     onClearAll: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenFullHistory: (() -> Unit)? = null
+    onOpenFullHistory: (() -> Unit)? = null,
 ) {
     SearchRecentChipsRow(
         recentSearches = recentSearches,
@@ -147,7 +151,7 @@ fun DiscoverRecentSearchesView(
         onRemoveQuery = onRemoveQuery,
         onClearAll = onClearAll,
         onOpenFullHistory = onOpenFullHistory,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -158,14 +162,14 @@ fun DiscoverAdvancedFiltersPanel(
     onFiltersChange: (IdentifySearchFilters) -> Unit,
     onApply: () -> Unit,
     onClear: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     CatalogAdvancedFiltersPanel(
         filters = filters,
         onFiltersChange = onFiltersChange,
         onApply = onApply,
         onClear = onClear,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -180,7 +184,7 @@ fun DiscoverAdvancedFiltersPanel(
     onYearChange: (String) -> Unit,
     onApply: () -> Unit,
     onClear: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     CatalogAdvancedFiltersPanel(
         artist = artist,
@@ -191,6 +195,6 @@ fun DiscoverAdvancedFiltersPanel(
         onYearChange = onYearChange,
         onApply = onApply,
         onClear = onClear,
-        modifier = modifier
+        modifier = modifier,
     )
 }

@@ -9,6 +9,7 @@ import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.matchKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -131,13 +132,41 @@ class CatalogSearchCoordinator(
                 _state.update { it.copy(isSearching = true, canLoadMore = true, isLoadingMore = false) }
                 when (category) {
                     CatalogCategory.SONGS -> {
-                        val results =
-                            if (effectiveQuery.isEmpty() && !normalizedFilters.hasAny) {
-                                MetadataFetcher.getFeaturedDemoCatalog()
-                            } else {
-                                MetadataFetcher.searchOnlineCatalog(effectiveQuery)
+                        val tracksDeferred =
+                            scope.async {
+                                if (effectiveQuery.isEmpty() && !normalizedFilters.hasAny) {
+                                    MetadataFetcher.getFeaturedDemoCatalog()
+                                } else {
+                                    MetadataFetcher.searchOnlineCatalog(effectiveQuery)
+                                }
                             }
-                        updateIfCurrent(generation) { it.copy(tracks = results, canLoadMore = results.isNotEmpty()) }
+                        val albumsDeferred =
+                            scope.async {
+                                if (effectiveQuery.isNotEmpty()) {
+                                    MetadataFetcher.searchAlbums(effectiveQuery)
+                                } else {
+                                    emptyList()
+                                }
+                            }
+                        val artistsDeferred =
+                            scope.async {
+                                if (effectiveQuery.isNotEmpty()) {
+                                    MetadataFetcher.searchArtists(effectiveQuery)
+                                } else {
+                                    emptyList()
+                                }
+                            }
+                        val tracks = tracksDeferred.await()
+                        val albums = albumsDeferred.await()
+                        val artists = artistsDeferred.await()
+                        updateIfCurrent(generation) {
+                            it.copy(
+                                tracks = tracks,
+                                albums = albums,
+                                artists = artists,
+                                canLoadMore = tracks.isNotEmpty(),
+                            )
+                        }
                     }
 
                     CatalogCategory.ALBUMS -> {

@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,11 +49,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.preferences.DiscoverSourcePreference
+import com.bestiapop.android.domain.util.MetadataSplitter
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SearchHistorySheet
 import com.bestiapop.android.ui.components.SongItemActions
@@ -75,6 +80,17 @@ fun HomeScreen(
     val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
     val navigation by viewModel.navigation.collectAsStateWithLifecycle()
     val catalogCollection by viewModel.catalogCollection.collectAsStateWithLifecycle()
+    val catalogSearch by viewModel.catalogSearch.collectAsStateWithLifecycle()
+
+    var searchQuery by rememberSaveable { mutableStateOf(catalogSearch.searchQueryDraft) }
+    val searchListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    var isLibraryBrowseOpen by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(catalogSearch.searchQueryDraft) {
+        if (catalogSearch.searchQueryDraft != searchQuery) {
+            searchQuery = catalogSearch.searchQueryDraft
+        }
+    }
 
     // Inspecting a local album/artist/genre or local playlist -> delegate directly to LibraryScreen
     val hasLocalDetail =
@@ -88,8 +104,6 @@ fun HomeScreen(
         catalogCollection.title != null ||
             navigation.playlistDetail is PlaylistDetailNav.ListenBrainz ||
             navigation.playlistDetail is PlaylistDetailNav.CfRecommendations
-
-    var isLibraryBrowseOpen by rememberSaveable { mutableStateOf(false) }
 
     if (hasLocalDetail || isLibraryBrowseOpen) {
         LibraryScreen(
@@ -131,11 +145,7 @@ fun HomeScreen(
     val cfRecommendations = cfRecommendationsState.data
     val lbSettings by viewModel.listenBrainzSettings.collectAsStateWithLifecycle()
 
-    // Catalog search
-    val catalogSearch by viewModel.catalogSearch.collectAsStateWithLifecycle()
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
-
-    var searchQuery by rememberSaveable { mutableStateOf("") }
     var showSearchHistorySheet by rememberSaveable { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
@@ -177,6 +187,22 @@ fun HomeScreen(
                         it.artist.lowercase().contains(q)
                 }
             }
+        }
+
+    // Filter local artists matching query
+    val matchingLocalArtists =
+        remember(searchQuery, artists) {
+            if (searchQuery.isBlank()) {
+                emptyList()
+            } else {
+                val q = searchQuery.trim().lowercase()
+                artists.filter { it.name.lowercase().contains(q) }
+            }
+        }
+
+    val unifiedArtists =
+        remember(matchingLocalArtists, catalogSearch.artists) {
+            MetadataSplitter.deduplicateArtists(matchingLocalArtists + catalogSearch.artists)
         }
 
     // Prepare Speed Dial items
@@ -331,6 +357,7 @@ fun HomeScreen(
         if (isSearchActive) {
             UnifiedSearchSection(
                 searchQuery = searchQuery,
+                lazyListState = searchListState,
                 localSongs = matchingLocalSongs,
                 localAlbums = matchingLocalAlbums,
                 catalogTracks = catalogSearch.tracks,
@@ -359,6 +386,13 @@ fun HomeScreen(
                 activeDownloads = activeDownloads,
                 canLoadMoreOnline = catalogSearch.canLoadMore,
                 isLoadingMoreOnline = catalogSearch.isLoadingMore,
+                artists = unifiedArtists,
+                onSelectArtist = { artist ->
+                    viewModel.selectArtistForInspection(artist.name)
+                },
+                onEnqueueCatalogTrack = { track ->
+                    viewModel.enqueueCatalogOrLocalTrack(track)
+                },
                 modifier = Modifier.weight(1f),
             )
         } else {

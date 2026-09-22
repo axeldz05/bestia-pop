@@ -347,6 +347,22 @@ class PlaybackExecutionCoordinator(
         }
     }
 
+    /** Enqueues local version if available in library; otherwise falls back to online stream. */
+    fun enqueueCatalogOrLocalTrack(track: OnlineCatalogTrack) {
+        val local = findLocalSongFor(track.identity)
+        if (local != null) {
+            addToQueue(local)
+        } else {
+            val queryOrId = YouTubeExtractor.resolveYouTubeQueryOrId(track)
+            val remote =
+                PlayableItem.remoteFrom(
+                    identity = track.identity,
+                    youtubeQueryOrId = queryOrId,
+                )
+            addPlayableBatch(listOf(remote))
+        }
+    }
+
     /** Plays collection of candidates, resolving any available local tracks to avoid streaming. */
     fun playCatalogCandidates(
         candidates: List<CatalogTrackCandidate>,

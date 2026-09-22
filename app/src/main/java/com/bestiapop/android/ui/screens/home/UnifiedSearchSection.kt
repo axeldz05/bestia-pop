@@ -14,13 +14,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.Card
@@ -41,10 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
@@ -75,7 +80,11 @@ fun UnifiedSearchSection(
     isLoadingMoreOnline: Boolean,
     modifier: Modifier = Modifier,
     localAlbums: List<Album> = emptyList(),
+    artists: List<Artist> = emptyList(),
     onSelectLocalAlbum: (Album) -> Unit = {},
+    onSelectArtist: (Artist) -> Unit = {},
+    onEnqueueCatalogTrack: (OnlineCatalogTrack) -> Unit = {},
+    lazyListState: LazyListState = rememberLazyListState(),
 ) {
     val deduplicatedCatalogTracks =
         remember(catalogTracks, localSongs) {
@@ -87,14 +96,51 @@ fun UnifiedSearchSection(
             catalogAlbums.filterNotMatchingAlbums(localAlbums)
         }
 
+    var isArtistsExpanded by rememberSaveable { mutableStateOf(true) }
     var isLocalExpanded by rememberSaveable { mutableStateOf(true) }
     var isStreamingExpanded by rememberSaveable { mutableStateOf(true) }
 
     LazyColumn(
+        state = lazyListState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 80.dp),
     ) {
-        // --- 1. LOCAL RESULTS FIRST ---
+        // --- 1. ARTISTAS (ENTIDAD GLOBAL MÁS ALLÁ DE LOCAL O STREAMING) ---
+        if (artists.isNotEmpty()) {
+            item {
+                SearchSectionHeader(
+                    title = "Artistas",
+                    icon = Icons.Default.Person,
+                    count = artists.size,
+                    isExpanded = isArtistsExpanded,
+                    onToggleExpand = { isArtistsExpanded = !isArtistsExpanded },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+
+            if (isArtistsExpanded) {
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    ) {
+                        items(artists, key = { "search-artist-${it.name}" }) { artist ->
+                            SearchArtistMiniCard(
+                                artist = artist,
+                                onClick = { onSelectArtist(artist) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(if (isArtistsExpanded) 12.dp else 4.dp))
+            }
+        }
+
+        // --- 2. LOCAL RESULTS ---
         val localCount = localSongs.size + localAlbums.size
         item {
             SearchSectionHeader(
@@ -219,20 +265,6 @@ fun UnifiedSearchSection(
                     )
                 }
             } else {
-                items(
-                    items = deduplicatedCatalogTracks,
-                    key = { "stream-search-${it.id}" },
-                ) { track ->
-                    val activeDownload = activeDownloads.findUiDownloadByTrack(track.artist, track.title)
-                    DiscoverTrackListItem(
-                        track = track,
-                        onPlay = { onPlayCatalogTrack(track) },
-                        onDownload = { onDownloadCatalogTrack(track) },
-                        activeDownload = activeDownload,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                    )
-                }
-
                 if (deduplicatedCatalogAlbums.isNotEmpty()) {
                     item {
                         Text(
@@ -253,6 +285,21 @@ fun UnifiedSearchSection(
                             }
                         }
                     }
+                }
+
+                items(
+                    items = deduplicatedCatalogTracks,
+                    key = { "stream-search-${it.id}" },
+                ) { track ->
+                    val activeDownload = activeDownloads.findUiDownloadByTrack(track.artist, track.title)
+                    DiscoverTrackListItem(
+                        track = track,
+                        onPlay = { onPlayCatalogTrack(track) },
+                        onEnqueue = { onEnqueueCatalogTrack(track) },
+                        onDownload = { onDownloadCatalogTrack(track) },
+                        activeDownload = activeDownload,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    )
                 }
             }
 
@@ -401,6 +448,59 @@ private fun SearchAlbumMiniCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchArtistMiniCard(
+    artist: Artist,
+    onClick: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        modifier =
+            Modifier
+                .width(100.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick),
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+        ) {
+            ArtworkThumbnail(
+                artworkUri = artist.photoUri,
+                size = 72.dp,
+                cornerRadius = 36.dp,
+                fallbackIcon = Icons.Default.Person,
+                contentDescription = artist.name,
+                modifier = Modifier.size(72.dp),
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = artist.name,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            val subtitle =
+                when {
+                    artist.albumCount > 0 && artist.songCount > 0 -> "${artist.albumCount} alb. • ${artist.songCount} can."
+                    artist.albumCount > 0 -> "${artist.albumCount} alb."
+                    artist.songCount > 0 -> "${artist.songCount} can."
+                    else -> "Artista"
+                }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
         }
     }

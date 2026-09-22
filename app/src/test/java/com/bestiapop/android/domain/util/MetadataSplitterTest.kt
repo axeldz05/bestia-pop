@@ -325,4 +325,65 @@ class MetadataSplitterTest {
             result.toSet(),
         )
     }
+
+    @Test
+    fun deduplicateArtists_collapsesCaseVariantsAndDiscardsComposites() {
+        val input =
+            listOf(
+                com.bestiapop.android.data.model.Artist(
+                    name = "ASIAN KUNG-FU GENERATION",
+                    albumCount = 28,
+                    songCount = 10,
+                    photoUri = "https://example.com/photo.jpg",
+                ),
+                com.bestiapop.android.data.model.Artist(
+                    name = "Asian Kung-Fu Generation",
+                    albumCount = 0,
+                    songCount = 0,
+                    photoUri = null,
+                ),
+                com.bestiapop.android.data.model.Artist(
+                    name = "ASIAN KUNG-FU GENERATION, ROTH BART BARON",
+                    albumCount = 1,
+                    songCount = 0,
+                ),
+                com.bestiapop.android.data.model.Artist(
+                    name = "Asian Kung-fu Generation & Eriko Hashimoto",
+                    albumCount = 1,
+                    songCount = 0,
+                ),
+                com.bestiapop.android.data.model.Artist(
+                    name = "ASIAN KUNG-FU GENERATION feat. Rachel & OMSB",
+                    albumCount = 1,
+                    songCount = 0,
+                ),
+            )
+
+        val deduplicated = MetadataSplitter.deduplicateArtists(input)
+
+        assertEquals(1, deduplicated.size)
+        val single = deduplicated.first()
+        assertEquals("Asian Kung-Fu Generation", single.name)
+        assertEquals(28, single.albumCount)
+        assertEquals(10, single.songCount)
+        assertEquals("https://example.com/photo.jpg", single.photoUri)
+    }
+
+    @Test
+    fun deduplicateArtists_preservesDistinctArtists() {
+        val input =
+            listOf(
+                com.bestiapop.android.data.model
+                    .Artist(name = "Queen", albumCount = 15, songCount = 20),
+                com.bestiapop.android.data.model
+                    .Artist(name = "David Bowie", albumCount = 20, songCount = 30),
+                com.bestiapop.android.data.model
+                    .Artist(name = "Queen & David Bowie", albumCount = 1, songCount = 1),
+            )
+
+        val deduplicated = MetadataSplitter.deduplicateArtists(input)
+
+        assertEquals(2, deduplicated.size)
+        assertEquals(setOf("Queen", "David Bowie"), deduplicated.map { it.name }.toSet())
+    }
 }

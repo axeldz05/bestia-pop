@@ -1419,6 +1419,12 @@ class MusicPlayerViewModel(
         openNowPlaying: Boolean = true,
     ) = playbackExecutionCoordinator.playCatalogOrLocalTrack(track, openNowPlaying)
 
+    /** Enqueues local version if available in library; otherwise enqueues online stream. */
+    fun enqueueCatalogOrLocalTrack(track: OnlineCatalogTrack) {
+        playbackExecutionCoordinator.enqueueCatalogOrLocalTrack(track)
+        toast("Canción añadida a la cola")
+    }
+
     /** Plays collection of candidates, resolving any available local tracks to avoid streaming. */
     fun playCatalogCandidates(
         candidates: List<CatalogTrackCandidate>,

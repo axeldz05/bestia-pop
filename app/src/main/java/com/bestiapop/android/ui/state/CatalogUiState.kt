@@ -1,6 +1,7 @@
 package com.bestiapop.android.ui.state
 
 import androidx.compose.runtime.Immutable
+import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.CatalogCategory
 import com.bestiapop.android.data.model.CatalogGenre
@@ -14,6 +15,7 @@ data class CatalogSearchUiState(
     val category: CatalogCategory = CatalogCategory.SONGS,
     val tracks: List<OnlineCatalogTrack> = emptyList(),
     val albums: List<CatalogAlbum> = emptyList(),
+    val artists: List<Artist> = emptyList(),
     val playlists: List<CatalogPlaylist> = emptyList(),
     val genres: List<CatalogGenre> = emptyList(),
     val isSearching: Boolean = false,

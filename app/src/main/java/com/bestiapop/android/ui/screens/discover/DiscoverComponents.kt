@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkAdded
 import androidx.compose.material.icons.filled.CheckCircle
@@ -581,6 +582,7 @@ fun DiscoverTrackListItem(
     track: TrackMeta,
     onPlay: () -> Unit,
     onDownload: () -> Unit = {},
+    onEnqueue: (() -> Unit)? = null,
     activeDownload: ActiveDownload? = null,
     status: ItemLibraryStatus = LocalDiscoverContext.current.getTrackStatus(track),
     highlighted: Boolean = false,
@@ -616,6 +618,16 @@ fun DiscoverTrackListItem(
             trailing =
                 trailing ?: {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (onEnqueue != null) {
+                            DiscoverActionIcon(
+                                onClick = onEnqueue,
+                                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = "Agregar a la cola",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                iconSize = 20.dp,
+                                boxSize = 36.dp,
+                            )
+                        }
                         TrackStorageIcon(isStreaming = !status.isDownloaded, size = 16.dp)
                         Spacer(modifier = Modifier.width(4.dp))
                         TrackLibraryActionButtons(

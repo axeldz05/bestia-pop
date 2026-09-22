@@ -1,5 +1,6 @@
 package com.bestiapop.android.domain.util
 
+import com.bestiapop.android.data.model.Artist
 import java.text.Normalizer
 
 /**
@@ -19,7 +20,10 @@ object MetadataSplitter {
     private val TAG_DELIM_REGEX = Regex("""\s*;\s*|\s*\\\\\s*|\u0000+""")
     private val SPACED_SLASH_REGEX = Regex("""\s+/\s+""")
     private val GUEST_DELIM_REGEX = Regex("""\s*,\s*|\s+&\s+""")
-    private val CANDIDATE_SPLIT_REGEX = Regex("""\s*,\s*|\s+&\s+""")
+    private val COMPOSITE_ARTIST_SPLIT_REGEX =
+        Regex(
+            """(?i)\s+(?:feat\.?|ft\.?|featuring|with|con|pres\.?|presents|vs\.?)\s+|(?<=\S)\s+x\s+(?=\S)|\s*,\s*|\s+&\s+|\s*\+\s*|\s+/\s+""",
+        )
     private val GENRE_DELIM_REGEX = Regex("""\s*[,;/|]\s*|\s*\\\\\s*|\u0000+""")
 
     // --- Identity-key internals -----------------------------------------------
@@ -201,6 +205,86 @@ object MetadataSplitter {
         val caseInsensitive = a.compareTo(b, ignoreCase = true)
         if (caseInsensitive != 0) return caseInsensitive
         return b.compareTo(a)
+    }
+
+    /**
+     * Deduplicates a collection of [Artist] instances:
+     * 1. Groups variants sharing the same [artistIdentityKey], selecting the preferred display name
+     *    via [preferredArtistDisplayName], keeping the highest album/song counts and non-empty photo.
+     * 2. Removes redundant composite/collaboration artist entries when one or more of their
+     *    constituent artists already exist independently in the collection.
+     */
+    fun deduplicateArtists(artists: Iterable<Artist>): List<Artist> {
+        val candidates = mutableListOf<Artist>()
+        val seenKeys = mutableMapOf<String, Int>()
+        val variantsMap = mutableMapOf<String, MutableList<String>>()
+
+        for (artist in artists) {
+            val key = artistIdentityKey(artist.name)
+            if (key.isBlank()) continue
+            val existingIdx = seenKeys[key]
+            if (existingIdx != null) {
+                val existing = candidates[existingIdx]
+                val variants = variantsMap.getOrPut(key) { mutableListOf(existing.name) }
+                variants.add(artist.name)
+                val bestName = preferredArtistDisplayName(variants)
+                val bestPhoto = existing.photoUri?.takeIf { it.isNotBlank() } ?: artist.photoUri
+                val bestAlbumCount = maxOf(existing.albumCount, artist.albumCount)
+                val bestSongCount = maxOf(existing.songCount, artist.songCount)
+                candidates[existingIdx] =
+                    existing.copy(
+                        name = bestName,
+                        photoUri = bestPhoto,
+                        albumCount = bestAlbumCount,
+                        songCount = bestSongCount,
+                    )
+            } else {
+                seenKeys[key] = candidates.size
+                candidates.add(artist)
+                variantsMap[key] = mutableListOf(artist.name)
+            }
+        }
+
+        val identityMap = candidates.associateBy { artistIdentityKey(it.name) }
+        val filtered = mutableListOf<Artist>()
+        for (artist in candidates) {
+            val rawName = artist.name
+            val rawKey = artistIdentityKey(rawName)
+            val hasCollabKeyword = COLLAB_REGEX.containsMatchIn(rawName)
+            val hasDelim =
+                hasCollabKeyword ||
+                    rawName.contains(',') ||
+                    rawName.contains('&') ||
+                    rawName.contains('+') ||
+                    rawName.contains('/')
+            if (hasDelim) {
+                val subParts =
+                    rawName
+                        .split(COMPOSITE_ARTIST_SPLIT_REGEX)
+                        .map { it.trim().trim('(', ')', '[', ']', '"', '\'') }
+                        .filter { it.isNotEmpty() }
+                if (subParts.size > 1) {
+                    val subPartKeys = subParts.map { artistIdentityKey(it) }
+                    val allPartsKnown = subPartKeys.all { it != rawKey && identityMap.containsKey(it) }
+                    if (allPartsKnown) {
+                        continue
+                    }
+                    if (hasCollabKeyword && subPartKeys.any { it != rawKey && identityMap.containsKey(it) }) {
+                        continue
+                    }
+                    val firstKey = subPartKeys.first()
+                    val primaryArtist = if (firstKey != rawKey) identityMap[firstKey] else null
+                    if (primaryArtist != null) {
+                        val isMinorRelease = artist.albumCount <= 2 || artist.albumCount < primaryArtist.albumCount
+                        if (isMinorRelease) {
+                            continue
+                        }
+                    }
+                }
+            }
+            filtered.add(artist)
+        }
+        return filtered
     }
 
     /**
@@ -426,7 +510,7 @@ object MetadataSplitter {
 
         val parts =
             raw
-                .split(CANDIDATE_SPLIT_REGEX)
+                .split(GUEST_DELIM_REGEX)
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
         if (parts.size < 2) return null

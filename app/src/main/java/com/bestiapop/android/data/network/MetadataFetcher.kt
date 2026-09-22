@@ -1,5 +1,6 @@
 package com.bestiapop.android.data.network
 
+import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.CatalogGenre
 import com.bestiapop.android.data.model.CatalogPlaylist
@@ -897,6 +898,46 @@ object MetadataFetcher {
                 albumSearchCache[cacheKey] = list
             }
             return@withContext list
+        }
+
+    suspend fun searchArtists(
+        query: String,
+        limit: Int = 10,
+    ): List<Artist> =
+        withContext(Dispatchers.IO) {
+            val cleanQ = cleanArtist(query)
+            if (cleanQ.isEmpty()) return@withContext emptyList()
+            val list = mutableListOf<Artist>()
+            try {
+                val url =
+                    endpoint(
+                        endpoints.deezerBaseUrl,
+                        "search/artist?q=${encodeQuery(cleanQ)}&limit=$limit",
+                    )
+                val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val item = data.getJSONObject(i)
+                        val name = item.optString("name").trim()
+                        if (name.isNotEmpty()) {
+                            val picture = pickCoverUrl(item.optString("picture_xl"), item.optString("picture_big"))
+                            val albumCount = item.optInt("nb_album", 0)
+                            list.add(
+                                Artist(
+                                    name = name,
+                                    albumCount = albumCount,
+                                    songCount = 0,
+                                    photoUri = picture,
+                                ),
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            return@withContext com.bestiapop.android.domain.util.MetadataSplitter
+                .deduplicateArtists(list)
         }
 
     /**

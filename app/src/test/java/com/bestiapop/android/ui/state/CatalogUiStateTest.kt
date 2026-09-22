@@ -29,6 +29,25 @@ class CatalogUiStateTest {
     }
 
     @Test
+    fun catalogSearchUiState_artistsDefaultsToEmpty() {
+        val state = CatalogSearchUiState()
+        assertTrue(state.artists.isEmpty())
+        val withArtists =
+            state.copy(
+                artists =
+                    listOf(
+                        com.bestiapop.android.data.model.Artist(
+                            name = "Queen",
+                            songCount = 0,
+                            albumCount = 15,
+                        ),
+                    ),
+            )
+        assertEquals(1, withArtists.artists.size)
+        assertEquals("Queen", withArtists.artists.first().name)
+    }
+
+    @Test
     fun catalogSearchUiState_defaultsHaveFiltersClosedAndEmpty() {
         val state = CatalogSearchUiState()
         assertFalse(state.showSearchFilters)

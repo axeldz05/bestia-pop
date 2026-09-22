@@ -2,6 +2,9 @@ package com.bestiapop.android.domain.util
 
 import com.bestiapop.android.data.listenbrainz.MatchedRemoteTrack
 import com.bestiapop.android.data.listenbrainz.rematchLocals
+import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.CatalogAlbum
+import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import org.junit.Assert.assertEquals
@@ -203,5 +206,49 @@ class TrackMatchKeysTest {
         val query = TrackIdentity(title = "ソラニン", artist = "ASIAN KUNG-FU GENERATION")
         val found = TrackMatchKeys.lookupLocalSong(index, query)
         assertEquals(1549L, found?.id)
+    }
+
+    @Test
+    fun filterNotMatchingSongs_excludesExactMatchesInLocalSongs() {
+        val localSongs =
+            listOf(
+                song(1, "Bohemian Rhapsody", "Queen"),
+                song(2, "Canción Animal", "Soda Stereo"),
+            )
+        val catalogTracks =
+            listOf(
+                OnlineCatalogTrack(id = "cat-1", title = "Bohemian Rhapsody", artist = "Queen"),
+                OnlineCatalogTrack(id = "cat-2", title = "Don't Stop Me Now", artist = "Queen"),
+                OnlineCatalogTrack(id = "cat-3", title = "cancion animal", artist = "soda stereo"),
+                OnlineCatalogTrack(id = "cat-4", title = "De Música Ligera", artist = "Soda Stereo"),
+            )
+
+        val filtered = catalogTracks.filterNotMatchingSongs(localSongs)
+
+        assertEquals(2, filtered.size)
+        assertEquals("cat-2", filtered[0].id)
+        assertEquals("cat-4", filtered[1].id)
+    }
+
+    @Test
+    fun filterNotMatchingAlbums_excludesExactMatchesInLocalAlbums() {
+        val localAlbums =
+            listOf(
+                Album(name = "Abbey Road", artist = "The Beatles", songCount = 17),
+                Album(name = "Dynamo", artist = "Soda Stereo", songCount = 12),
+            )
+        val catalogAlbums =
+            listOf(
+                CatalogAlbum(id = "cat-alb-1", title = "Abbey Road (Super Deluxe Edition)", artist = "The Beatles", coverUrl = null),
+                CatalogAlbum(id = "cat-alb-2", title = "Let It Be", artist = "The Beatles", coverUrl = null),
+                CatalogAlbum(id = "cat-alb-3", title = "dynamo", artist = "soda stereo", coverUrl = null),
+                CatalogAlbum(id = "cat-alb-4", title = "Signos", artist = "Soda Stereo", coverUrl = null),
+            )
+
+        val filtered = catalogAlbums.filterNotMatchingAlbums(localAlbums)
+
+        assertEquals(2, filtered.size)
+        assertEquals("cat-alb-2", filtered[0].id)
+        assertEquals("cat-alb-4", filtered[1].id)
     }
 }

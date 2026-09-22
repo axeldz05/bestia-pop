@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Repeat
@@ -215,58 +216,85 @@ fun LibraryCollectionsRow(
     playlistCount: Int,
     onSelectFilter: (LibraryBrowseFilter) -> Unit,
     modifier: Modifier = Modifier,
+    filters: List<LibraryBrowseFilter> =
+        listOf(
+            LibraryBrowseFilter.SONGS,
+            LibraryBrowseFilter.ALBUMS,
+            LibraryBrowseFilter.ARTISTS,
+            LibraryBrowseFilter.PLAYLISTS,
+            LibraryBrowseFilter.GENRES,
+        ),
+    showTitle: Boolean = false,
 ) {
     Column(
         modifier =
             modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(vertical = if (showTitle) 8.dp else 2.dp),
     ) {
-        Text(
-            text = "Tu Biblioteca",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
+        if (showTitle) {
+            Text(
+                text = "Tu Biblioteca",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
 
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            item {
-                CollectionChip(
-                    label = if (songCount > 0) "Canciones ($songCount)" else "Canciones",
-                    icon = Icons.Default.LibraryMusic,
-                    onClick = { onSelectFilter(LibraryBrowseFilter.SONGS) },
-                )
-            }
-            item {
-                CollectionChip(
-                    label = if (albumCount > 0) "Álbumes ($albumCount)" else "Álbumes",
-                    icon = Icons.Default.LibraryMusic,
-                    onClick = { onSelectFilter(LibraryBrowseFilter.ALBUMS) },
-                )
-            }
-            item {
-                CollectionChip(
-                    label = if (artistCount > 0) "Artistas ($artistCount)" else "Artistas",
-                    icon = Icons.Default.Person,
-                    onClick = { onSelectFilter(LibraryBrowseFilter.ARTISTS) },
-                )
-            }
-            item {
-                CollectionChip(
-                    label = if (playlistCount > 0) "Playlists ($playlistCount)" else "Playlists",
-                    icon = Icons.AutoMirrored.Filled.PlaylistPlay,
-                    onClick = { onSelectFilter(LibraryBrowseFilter.PLAYLISTS) },
-                )
-            }
-            item {
-                CollectionChip(
-                    label = "Géneros",
-                    icon = Icons.Default.Folder,
-                    onClick = { onSelectFilter(LibraryBrowseFilter.GENRES) },
-                )
+            items(filters, key = { it.name }) { filter ->
+                when (filter) {
+                    LibraryBrowseFilter.SONGS -> {
+                        CollectionChip(
+                            label = if (songCount > 0) "Canciones ($songCount)" else "Canciones",
+                            icon = Icons.Default.LibraryMusic,
+                            onClick = { onSelectFilter(LibraryBrowseFilter.SONGS) },
+                        )
+                    }
+
+                    LibraryBrowseFilter.ALBUMS -> {
+                        CollectionChip(
+                            label = if (albumCount > 0) "Álbumes ($albumCount)" else "Álbumes",
+                            icon = Icons.Default.LibraryMusic,
+                            onClick = { onSelectFilter(LibraryBrowseFilter.ALBUMS) },
+                        )
+                    }
+
+                    LibraryBrowseFilter.ARTISTS -> {
+                        CollectionChip(
+                            label = if (artistCount > 0) "Artistas ($artistCount)" else "Artistas",
+                            icon = Icons.Default.Person,
+                            onClick = { onSelectFilter(LibraryBrowseFilter.ARTISTS) },
+                        )
+                    }
+
+                    LibraryBrowseFilter.PLAYLISTS -> {
+                        CollectionChip(
+                            label = if (playlistCount > 0) "Playlists ($playlistCount)" else "Playlists",
+                            icon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                            onClick = { onSelectFilter(LibraryBrowseFilter.PLAYLISTS) },
+                        )
+                    }
+
+                    LibraryBrowseFilter.GENRES -> {
+                        CollectionChip(
+                            label = "Géneros",
+                            icon = Icons.Default.Folder,
+                            onClick = { onSelectFilter(LibraryBrowseFilter.GENRES) },
+                        )
+                    }
+
+                    LibraryBrowseFilter.RECENT -> {
+                        CollectionChip(
+                            label = "Recientes",
+                            icon = Icons.Default.History,
+                            onClick = { onSelectFilter(LibraryBrowseFilter.RECENT) },
+                        )
+                    }
+                }
             }
         }
     }

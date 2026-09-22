@@ -24,8 +24,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -67,12 +65,6 @@ import com.bestiapop.android.ui.screens.discover.DiscoverTopRelatedActions
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.PlaylistDetailNav
-
-enum class HomeFilterMode {
-    ALL,
-    LOCAL,
-    STREAMING,
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +118,7 @@ fun HomeScreen(
     val recentSongs by viewModel.libraryProjection.recentSongs.collectAsStateWithLifecycle()
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
+    val libraryBlobsSettings by viewModel.libraryBlobsSettings.collectAsStateWithLifecycle()
 
     // Streaming discovery feeds
     val discoverFeed by viewModel.discoverFeed.collectAsStateWithLifecycle()
@@ -143,10 +136,7 @@ fun HomeScreen(
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
 
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var filterMode by rememberSaveable { mutableStateOf(HomeFilterMode.ALL) }
     var showSearchHistorySheet by rememberSaveable { mutableStateOf(false) }
-
-    val effectiveFilterMode = if (isOfflineMode) HomeFilterMode.LOCAL else filterMode
 
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -175,9 +165,23 @@ fun HomeScreen(
             }
         }
 
+    // Filter local albums matching query
+    val matchingLocalAlbums =
+        remember(searchQuery, albums) {
+            if (searchQuery.isBlank()) {
+                emptyList()
+            } else {
+                val q = searchQuery.trim().lowercase()
+                albums.filter {
+                    it.name.lowercase().contains(q) ||
+                        it.artist.lowercase().contains(q)
+                }
+            }
+        }
+
     // Prepare Speed Dial items
     val speedDialItems =
-        remember(playlists, albums, lbDiscover, effectiveFilterMode) {
+        remember(playlists, albums, lbDiscover, isOfflineMode) {
             buildList {
                 // 1. Playlists
                 playlists.take(4).forEach { pl ->
@@ -211,8 +215,8 @@ fun HomeScreen(
                         ),
                     )
                 }
-                // 3. Online playlists if not offline / local
-                if (effectiveFilterMode != HomeFilterMode.LOCAL) {
+                // 3. Online playlists if not offline
+                if (!isOfflineMode) {
                     lbDiscover.data?.take(2)?.forEach { lbPl ->
                         add(
                             HomeSpeedDialItem(
@@ -268,7 +272,7 @@ fun HomeScreen(
                         viewModel.searchCatalogDebounced(query = query)
                     }
                 },
-                placeholder = { Text("Buscar canciones, artistas o streaming…") },
+                placeholder = { Text("Buscar…") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -306,37 +310,21 @@ fun HomeScreen(
             )
         }
 
-        // --- FILTER PILLS ROW [Todo | Local | Streaming] ---
+        // --- TU BIBLIOTECA SHORTCUTS ROW ---
         if (!isSearchActive) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 2.dp),
-            ) {
-                FilterChip(
-                    selected = effectiveFilterMode == HomeFilterMode.ALL,
-                    onClick = { filterMode = HomeFilterMode.ALL },
-                    label = { Text("Todo") },
-                    shape = RoundedCornerShape(16.dp),
-                    enabled = !isOfflineMode,
-                )
-                FilterChip(
-                    selected = effectiveFilterMode == HomeFilterMode.LOCAL,
-                    onClick = { filterMode = HomeFilterMode.LOCAL },
-                    label = { Text("Música Local") },
-                    shape = RoundedCornerShape(16.dp),
-                )
-                if (!isOfflineMode) {
-                    FilterChip(
-                        selected = effectiveFilterMode == HomeFilterMode.STREAMING,
-                        onClick = { filterMode = HomeFilterMode.STREAMING },
-                        label = { Text("Streaming") },
-                        shape = RoundedCornerShape(16.dp),
-                    )
-                }
-            }
+            LibraryCollectionsRow(
+                songCount = allSongs.size,
+                albumCount = albums.size,
+                artistCount = artists.size,
+                playlistCount = playlists.size,
+                onSelectFilter = { filter ->
+                    viewModel.setLibraryBrowseFilter(filter)
+                    isLibraryBrowseOpen = true
+                },
+                filters = libraryBlobsSettings.enabledFilters,
+                showTitle = false,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
         }
 
         // --- CONTENT: UNIFIED SEARCH OR HOME FEED ---
@@ -344,6 +332,7 @@ fun HomeScreen(
             UnifiedSearchSection(
                 searchQuery = searchQuery,
                 localSongs = matchingLocalSongs,
+                localAlbums = matchingLocalAlbums,
                 catalogTracks = catalogSearch.tracks,
                 catalogAlbums = catalogSearch.albums,
                 isSearchingOnline = catalogSearch.isSearching,
@@ -351,6 +340,9 @@ fun HomeScreen(
                 songItemActions = songItemActions,
                 onPlayLocalSong = { song ->
                     viewModel.playSong(song)
+                },
+                onSelectLocalAlbum = { album ->
+                    viewModel.openLibraryAlbum(album.name)
                 },
                 onPlayCatalogTrack = { track ->
                     viewModel.playCatalogOrLocalTrack(track)
@@ -381,44 +373,26 @@ fun HomeScreen(
                 // 1. Speed Dial Section
                 HomeSpeedDialSection(items = speedDialItems)
 
-                // 2. "Vuelve a escuchar" Section (Frequent songs)
-                if (effectiveFilterMode != HomeFilterMode.STREAMING) {
-                    FrequentSongsCarousel(
-                        songs = frequentSongs,
-                        onPlaySong = { song ->
-                            val index = frequentSongs.indexOf(song).coerceAtLeast(0)
-                            viewModel.playCollection(frequentSongs, index)
-                        },
-                    )
-                }
+                // 2. "Escuchado recientemente" Section
+                RecentSongsCarousel(
+                    songs = recentSongs,
+                    onPlaySong = { song ->
+                        val index = recentSongs.indexOf(song).coerceAtLeast(0)
+                        viewModel.playCollection(recentSongs, index)
+                    },
+                )
 
-                // 3. "Tu Biblioteca" Shortcuts
-                if (effectiveFilterMode != HomeFilterMode.STREAMING) {
-                    LibraryCollectionsRow(
-                        songCount = allSongs.size,
-                        albumCount = albums.size,
-                        artistCount = artists.size,
-                        playlistCount = playlists.size,
-                        onSelectFilter = { filter ->
-                            viewModel.setLibraryBrowseFilter(filter)
-                            isLibraryBrowseOpen = true
-                        },
-                    )
-                }
+                // 3. "Vuelve a escuchar" Section (Frequent songs)
+                FrequentSongsCarousel(
+                    songs = frequentSongs,
+                    onPlaySong = { song ->
+                        val index = frequentSongs.indexOf(song).coerceAtLeast(0)
+                        viewModel.playCollection(frequentSongs, index)
+                    },
+                )
 
-                // 4. "Escuchado recientemente" Section
-                if (effectiveFilterMode != HomeFilterMode.STREAMING) {
-                    RecentSongsCarousel(
-                        songs = recentSongs,
-                        onPlaySong = { song ->
-                            val index = recentSongs.indexOf(song).coerceAtLeast(0)
-                            viewModel.playCollection(recentSongs, index)
-                        },
-                    )
-                }
-
-                // 5. Streaming Discovery Feeds (ListenBrainz, Deezer, Top Related)
-                if (effectiveFilterMode != HomeFilterMode.LOCAL && !isOfflineMode) {
+                // 4. Streaming Discovery Feeds (ListenBrainz, Deezer, Top Related)
+                if (!isOfflineMode) {
                     val catalogActions =
                         remember(viewModel, catalogSearch.isLoadingMore, catalogSearch.canLoadMore) {
                             DiscoverCatalogActions(

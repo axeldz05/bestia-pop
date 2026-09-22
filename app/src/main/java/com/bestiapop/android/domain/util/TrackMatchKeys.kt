@@ -1,6 +1,8 @@
 package com.bestiapop.android.domain.util
 
+import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.CatalogAlbum
+import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.isRemote
@@ -355,3 +357,28 @@ fun CatalogAlbum.matchKey(): String = TrackMatchKeys.matchKey(artist, title)
 @JvmName("distinctCatalogAlbumsModel")
 fun List<CatalogAlbum>.distinctCatalogAlbums(limit: Int = size): List<CatalogAlbum> =
     distinctCatalogAlbums(limit, artistOf = { it.artist }, titleOf = { it.title })
+
+/** Level 2: Filter out catalog tracks whose exact match exists in [localSongs]. */
+fun List<OnlineCatalogTrack>.filterNotMatchingSongs(localSongs: Collection<Song>): List<OnlineCatalogTrack> {
+    if (isEmpty() || localSongs.isEmpty()) return this
+    val localIndex = TrackMatchKeys.buildLibraryIndex(localSongs.toList())
+    return filter { track ->
+        TrackMatchKeys.lookupLocalSong(localIndex, track) == null
+    }
+}
+
+/** Level 2: Filter out catalog albums whose exact match exists in [localAlbums]. */
+fun List<CatalogAlbum>.filterNotMatchingAlbums(localAlbums: Collection<Album>): List<CatalogAlbum> {
+    if (isEmpty() || localAlbums.isEmpty()) return this
+    val keys = HashSet<String>(localAlbums.size * 4)
+    for (alb in localAlbums) {
+        keys.addAll(TrackMatchKeys.candidateMatchKeys(alb.artist, alb.name))
+        if (alb.displayName.isNotBlank() && alb.displayName != alb.name) {
+            keys.addAll(TrackMatchKeys.candidateMatchKeys(alb.artist, alb.displayName))
+        }
+    }
+    return filter { catAlb ->
+        val candidates = TrackMatchKeys.candidateMatchKeys(catAlb.artist, catAlb.title)
+        candidates.none { it in keys }
+    }
+}

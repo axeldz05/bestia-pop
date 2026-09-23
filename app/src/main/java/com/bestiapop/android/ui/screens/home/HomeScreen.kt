@@ -445,18 +445,10 @@ fun HomeScreen(
                     val topRelatedActions =
                         remember(viewModel) {
                             DiscoverTopRelatedActions(
-                                onSelectArtist = { artistName ->
-                                    viewModel.selectArtistForInspection(artistName)
-                                },
-                                onStartRadioForArtist = { artistName ->
-                                    val artistSongs = viewModel.songsForArtist(allSongs, artistName)
-                                    if (artistSongs.isNotEmpty()) {
-                                        viewModel.startRadio(seedSong = artistSongs.random())
-                                    } else {
-                                        viewModel.selectArtistForInspection(artistName)
-                                    }
-                                },
+                                onSelectArtist = viewModel::selectArtistForInspection,
+                                onStartRadioForArtist = viewModel::startRadioForArtist,
                                 onSelectAlbum = viewModel::selectAlbumForInspection,
+                                onStartRadioForAlbum = viewModel::startRadioForAlbum,
                                 onPlayTrack = { item ->
                                     if (item.localSong != null) {
                                         viewModel.playSong(item.localSong)
@@ -466,6 +458,7 @@ fun HomeScreen(
                                         viewModel.submitCatalogSearch(item.title)
                                     }
                                 },
+                                onStartRadioForTrack = viewModel::startRadioForTrack,
                                 onRefresh = { viewModel.refreshTopRelatedFeed(forceRefresh = true) },
                             )
                         }

@@ -86,12 +86,13 @@ internal class PlaybackRadioCoordinator(
 
     fun startRadio(
         seedSong: Song? = null,
+        seedPlayable: PlayableItem? = null,
         mode: RadioMode? = null,
         auto: Boolean = false,
         announceMode: Boolean = false,
     ) {
         val seed =
-            seedSong?.toPlayable() ?: getCurrentItem() ?: run {
+            seedSong?.toPlayable() ?: seedPlayable ?: getCurrentItem() ?: run {
                 if (!auto) onEmitEvent("Elegí una canción para iniciar la radio")
                 return
             }

@@ -71,7 +71,6 @@ import com.bestiapop.android.ui.components.BottomPlayerBar
 import com.bestiapop.android.ui.components.VolumeBoostHud
 import com.bestiapop.android.ui.components.rememberProgressiveSheetState
 import com.bestiapop.android.ui.components.sheetDragUpTrigger
-import com.bestiapop.android.ui.screens.discover.DiscoverScreen
 import com.bestiapop.android.ui.screens.home.HomeScreen
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.update.AppUpdateDialogs

@@ -1488,11 +1488,12 @@ class PlaybackRuntime internal constructor(
 
     fun startRadio(
         seedSong: Song? = null,
+        seedPlayable: PlayableItem? = null,
         mode: RadioMode? = null,
         auto: Boolean = false,
         announceMode: Boolean = false,
     ) {
-        radioCoordinator.startRadio(seedSong, mode, auto, announceMode)
+        radioCoordinator.startRadio(seedSong, seedPlayable, mode, auto, announceMode)
     }
 
     internal suspend fun suggestRadioWithRetry(request: PlaybackRuntimeRadioRequest): RadioSuggestResult =

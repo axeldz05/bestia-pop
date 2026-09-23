@@ -113,6 +113,7 @@ import com.bestiapop.android.domain.usecase.GetTopRelatedItemsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.domain.usecase.RelatedAlbumItem
+import com.bestiapop.android.domain.usecase.RelatedTrackItem
 import com.bestiapop.android.domain.usecase.TopRelatedFeed
 import com.bestiapop.android.domain.util.IdentifyAlbumGroup
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
@@ -1767,16 +1768,70 @@ class MusicPlayerViewModel(
 
     fun startRadio(
         seedSong: Song? = null,
+        seedPlayable: PlayableItem? = null,
         mode: RadioMode? = null,
         auto: Boolean = false,
         announceMode: Boolean = false,
     ) {
         playbackRuntime.startRadio(
             seedSong = seedSong,
+            seedPlayable = seedPlayable,
             mode = mode,
             auto = auto,
             announceMode = announceMode,
         )
+    }
+
+    fun startRadioForArtist(artistName: String) {
+        val artistSongs = songsForArtist(libraryProjection.songs.value, artistName)
+        if (artistSongs.isNotEmpty()) {
+            startRadio(seedSong = artistSongs.random())
+        } else {
+            val feedTrack =
+                topRelatedFeed.value.topTracks.firstOrNull {
+                    it.artist.equals(artistName, ignoreCase = true)
+                }
+            if (feedTrack != null) {
+                startRadioForTrack(feedTrack)
+            } else {
+                selectArtistForInspection(artistName)
+            }
+        }
+    }
+
+    fun startRadioForAlbum(album: RelatedAlbumItem) {
+        val allAlbumSongs = songsForAlbum(libraryProjection.songs.value, album.title)
+        val albumSongs =
+            allAlbumSongs.filter { it.artist.equals(album.artist, ignoreCase = true) }.ifEmpty { allAlbumSongs }
+        if (albumSongs.isNotEmpty()) {
+            startRadio(seedSong = albumSongs.random())
+        } else {
+            val feedTrack =
+                topRelatedFeed.value.topTracks.firstOrNull {
+                    it.album.equals(album.title, ignoreCase = true) ||
+                        it.artist.equals(album.artist, ignoreCase = true)
+                }
+            if (feedTrack != null) {
+                startRadioForTrack(feedTrack)
+            } else {
+                selectAlbumForInspection(album)
+            }
+        }
+    }
+
+    fun startRadioForTrack(track: RelatedTrackItem) {
+        if (track.localSong != null) {
+            startRadio(seedSong = track.localSong)
+        } else {
+            val local = TrackMatchKeys.lookupLocalSong(libraryLookupIndex.value.allSongsByMatchKey, track)
+            if (local != null) {
+                startRadio(seedSong = local)
+            } else {
+                val remote = PlayableItem.remoteFrom(identity = track.identity)
+                playPlayableCollection(listOf(remote), 0)
+                startRadio(seedPlayable = remote)
+            }
+        }
     }
 
     fun playNextInQueue(song: Song) = playbackExecutionCoordinator.playNextInQueue(song)

@@ -3,6 +3,7 @@ package com.bestiapop.android.ui.screens.discover
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
@@ -62,7 +65,6 @@ import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.ItemSwipeBox
 import com.bestiapop.android.ui.components.MediaCardDownloadSpinner
-import com.bestiapop.android.ui.components.PlayIconButton
 import com.bestiapop.android.ui.components.artistAlbumLabel
 import com.bestiapop.android.ui.components.isAlbumDownloading
 import com.bestiapop.android.ui.theme.ListDensity
@@ -75,7 +77,9 @@ data class DiscoverTopRelatedActions(
     val onSelectArtist: (String) -> Unit = {},
     val onStartRadioForArtist: (String) -> Unit = {},
     val onSelectAlbum: (RelatedAlbumItem) -> Unit = {},
+    val onStartRadioForAlbum: (RelatedAlbumItem) -> Unit = {},
     val onPlayTrack: (RelatedTrackItem) -> Unit = {},
+    val onStartRadioForTrack: (RelatedTrackItem) -> Unit = {},
     val onRefresh: () -> Unit = {},
 )
 
@@ -351,7 +355,9 @@ fun DiscoverTopRelatedSection(
         onSelectArtist = actions.onSelectArtist,
         onStartRadioForArtist = actions.onStartRadioForArtist,
         onSelectAlbum = actions.onSelectAlbum,
+        onStartRadioForAlbum = actions.onStartRadioForAlbum,
         onPlayTrack = actions.onPlayTrack,
+        onStartRadioForTrack = actions.onStartRadioForTrack,
         modifier = modifier,
     )
 }
@@ -365,7 +371,9 @@ fun DiscoverTopRelatedSection(
     onSelectArtist: (String) -> Unit,
     onStartRadioForArtist: (String) -> Unit,
     onSelectAlbum: (RelatedAlbumItem) -> Unit,
+    onStartRadioForAlbum: (RelatedAlbumItem) -> Unit = {},
     onPlayTrack: (RelatedTrackItem) -> Unit,
+    onStartRadioForTrack: (RelatedTrackItem) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -434,7 +442,10 @@ fun DiscoverTopRelatedSection(
 
             // Tabs
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilterChip(
@@ -500,6 +511,7 @@ fun DiscoverTopRelatedSection(
                                 RelatedAlbumCard(
                                     album = album,
                                     onSelect = { onSelectAlbum(album) },
+                                    onRadio = { onStartRadioForAlbum(album) },
                                 )
                             }
                         }
@@ -518,6 +530,7 @@ fun DiscoverTopRelatedSection(
                                 RelatedTrackRow(
                                     track = track,
                                     onPlay = { onPlayTrack(track) },
+                                    onRadio = { onStartRadioForTrack(track) },
                                 )
                             }
                         }
@@ -563,6 +576,31 @@ internal fun SourceBadge(
     }
 }
 
+/** Level 1: Unified radio creation button for top related candidates. */
+@Composable
+internal fun CandidateRadioButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier.height(30.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Default.Radio,
+            contentDescription = null,
+            modifier = Modifier.size(15.dp),
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = "Radio",
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+        )
+    }
+}
+
 /** Level 2: Related artist card for discovery sections. */
 @Composable
 internal fun RelatedArtistCard(
@@ -589,7 +627,7 @@ internal fun RelatedArtistCard(
                 Box(
                     modifier =
                         Modifier
-                            .size(56.dp)
+                            .size(64.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center,
@@ -598,8 +636,8 @@ internal fun RelatedArtistCard(
                         ArtworkThumbnail(
                             artworkUri = artist.artworkUri,
                             contentDescription = artist.name,
-                            size = 56.dp,
-                            cornerRadius = 28.dp,
+                            size = 64.dp,
+                            cornerRadius = 32.dp,
                             modifier = Modifier.clip(CircleShape),
                         )
                     } else {
@@ -620,30 +658,15 @@ internal fun RelatedArtistCard(
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 SourceBadge(source = artist.source)
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    FilledTonalButton(
-                        onClick = onSelect,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(26.dp),
-                    ) {
-                        Text("Buscar", style = MaterialTheme.typography.labelSmall)
-                    }
-                    DiscoverActionIcon(
-                        onClick = onRadio,
-                        icon = Icons.Default.Radio,
-                        contentDescription = "Radio",
-                        tint = MaterialTheme.colorScheme.primary,
-                        iconSize = 16.dp,
-                        boxSize = 26.dp,
-                    )
-                }
+                CandidateRadioButton(
+                    onClick = onRadio,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
@@ -666,11 +689,12 @@ internal fun RelatedArtistCard(
     }
 }
 
-/** Level 2: Related album card composing Level 1 [DiscoverAlbumCard]. */
+/** Level 2: Related album card with cover, metadata, and radio creation button. */
 @Composable
 internal fun RelatedAlbumCard(
     album: RelatedAlbumItem,
     onSelect: () -> Unit,
+    onRadio: () -> Unit,
     activeDownloads: List<ActiveDownload>? = LocalDiscoverContext.current.activeDownloads,
     isDownloading: Boolean = activeDownloads?.isAlbumDownloading(album) ?: false,
     onSwipeAction: (() -> Unit)? = null,
@@ -689,31 +713,85 @@ internal fun RelatedAlbumCard(
                 )
             }
         }
-    DiscoverAlbumCard(
-        title = album.title,
-        artist = album.artist,
-        coverUrl = album.artworkUri,
-        cardWidth = 136.dp,
-        imageSize = 116.dp,
-        onClick = onSelect,
-        onSwipeAction = resolvedSwipeAction,
-        modifier = modifier,
-        topEndBadge = {
-            SourceBadge(
-                source = album.source,
-                modifier =
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp),
-            )
-        },
-        bottomEndAction =
-            if (isDownloading) {
-                { MediaCardDownloadSpinner(size = 28.dp, indicatorSize = 14.dp) }
-            } else {
-                null
-            },
-    )
+    val cardContent = @Composable {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            modifier =
+                Modifier
+                    .width(136.dp)
+                    .clickable(onClick = onSelect),
+        ) {
+            Column(
+                modifier = Modifier.padding(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier.size(116.dp),
+                ) {
+                    ArtworkThumbnail(
+                        artworkUri = album.artworkUri,
+                        size = 116.dp,
+                        cornerRadius = 8.dp,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    SourceBadge(
+                        source = album.source,
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp),
+                    )
+                    if (isDownloading) {
+                        MediaCardDownloadSpinner(
+                            size = 28.dp,
+                            indicatorSize = 14.dp,
+                            modifier =
+                                Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(4.dp),
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = album.title,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = album.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                CandidateRadioButton(
+                    onClick = onRadio,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+
+    if (resolvedSwipeAction != null) {
+        ItemSwipeBox(
+            onSwipeAction = resolvedSwipeAction,
+            shape = RoundedCornerShape(12.dp),
+            modifier = modifier.width(136.dp),
+        ) {
+            cardContent()
+        }
+    } else {
+        Box(modifier = modifier.width(136.dp)) {
+            cardContent()
+        }
+    }
 }
 
 /** Level 2: Related track row composing [DiscoverTrackListItem]. */
@@ -721,6 +799,7 @@ internal fun RelatedAlbumCard(
 internal fun RelatedTrackRow(
     track: RelatedTrackItem,
     onPlay: () -> Unit,
+    onRadio: () -> Unit,
     onSwipeAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -732,13 +811,11 @@ internal fun RelatedTrackRow(
         trailing = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 SourceBadge(source = track.source)
-                PlayIconButton(
-                    onClick = onPlay,
-                    contentDescription = "Reproducir",
-                    modifier = Modifier.size(32.dp),
+                CandidateRadioButton(
+                    onClick = onRadio,
                 )
             }
         },

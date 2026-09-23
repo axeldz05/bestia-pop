@@ -208,6 +208,8 @@ fun DiscoverScreen(
                             coverUrl = catalogCollection.coverUrl,
                             candidates = activeCandidates,
                             albums = catalogCollection.albums,
+                            singlesAndEps = catalogCollection.singlesAndEps,
+                            appearedOn = catalogCollection.appearedOn,
                             isLoading = isLoadingCollection,
                             currentItem = currentItem,
                         )

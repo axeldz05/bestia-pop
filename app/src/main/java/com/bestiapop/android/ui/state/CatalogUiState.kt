@@ -69,6 +69,8 @@ data class CatalogCollectionUiState(
     val coverUrl: String? = null,
     val candidates: List<CatalogTrackCandidate> = emptyList(),
     val albums: List<CatalogAlbum> = emptyList(),
+    val singlesAndEps: List<CatalogAlbum> = emptyList(),
+    val appearedOn: List<CatalogAlbum> = emptyList(),
     val parent: CatalogCollectionUiState? = null,
     val isLoading: Boolean = false,
 ) {

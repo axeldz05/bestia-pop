@@ -37,6 +37,8 @@ internal fun DiscoverArtistDetailSection(
     coverUrl: String?,
     candidates: List<CatalogTrackCandidate>,
     albums: List<CatalogAlbum>,
+    singlesAndEps: List<CatalogAlbum> = emptyList(),
+    appearedOn: List<CatalogAlbum> = emptyList(),
     isLoading: Boolean,
     currentItem: PlayableItem?,
     modifier: Modifier = Modifier,
@@ -48,6 +50,8 @@ internal fun DiscoverArtistDetailSection(
         modifier = modifier,
         initialCoverUrl = coverUrl,
         initialAlbums = albums,
+        initialSinglesAndEps = singlesAndEps,
+        initialAppearedOn = appearedOn,
         initialTopTracks = candidates,
         isLoading = isLoading,
     )

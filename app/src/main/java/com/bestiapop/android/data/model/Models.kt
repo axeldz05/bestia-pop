@@ -354,6 +354,7 @@ data class CatalogAlbum(
     val coverUrl: String?,
     val trackCount: Int = 0,
     val releaseYear: String = "",
+    val recordType: String = "",
 )
 
 data class CatalogPlaylist(

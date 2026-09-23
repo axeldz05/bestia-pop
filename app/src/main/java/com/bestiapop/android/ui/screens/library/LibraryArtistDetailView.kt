@@ -76,6 +76,8 @@ fun LibraryArtistDetailView(
     modifier: Modifier = Modifier,
     initialCoverUrl: String? = null,
     initialAlbums: List<CatalogAlbum> = emptyList(),
+    initialSinglesAndEps: List<CatalogAlbum> = emptyList(),
+    initialAppearedOn: List<CatalogAlbum> = emptyList(),
     initialTopTracks: List<CatalogTrackCandidate> = emptyList(),
     isLoading: Boolean = false,
 ) {
@@ -90,10 +92,16 @@ fun LibraryArtistDetailView(
             viewModel.songsForArtist(allSongs, artistName)
         }
     val localAlbums =
+        remember(allAlbums, artistName) {
+            allAlbums.filter { album ->
+                album.artist.equals(artistName, ignoreCase = true)
+            }
+        }
+    val localAppearedOn =
         remember(allAlbums, localSongs, artistName) {
             val albumTitles = localSongs.map { it.album.lowercase().trim() }.toSet()
             allAlbums.filter { album ->
-                album.artist.equals(artistName, ignoreCase = true) ||
+                !album.artist.equals(artistName, ignoreCase = true) &&
                     albumTitles.contains(album.name.lowercase().trim())
             }
         }
@@ -103,51 +111,67 @@ fun LibraryArtistDetailView(
     // Online catalog data
     var onlineCoverUrl by remember { mutableStateOf<String?>(initialCoverUrl) }
     var onlineAlbums by remember { mutableStateOf<List<CatalogAlbum>>(initialAlbums) }
+    var onlineSinglesAndEps by remember { mutableStateOf<List<CatalogAlbum>>(initialSinglesAndEps) }
+    var onlineAppearedOn by remember { mutableStateOf<List<CatalogAlbum>>(initialAppearedOn) }
     var onlineTopTracks by remember { mutableStateOf<List<CatalogTrackCandidate>>(initialTopTracks) }
 
-    LaunchedEffect(artistName, isOfflineMode, initialAlbums, initialTopTracks) {
-        if (initialAlbums.isNotEmpty() || initialTopTracks.isNotEmpty()) {
+    LaunchedEffect(artistName, isOfflineMode, initialAlbums, initialSinglesAndEps, initialAppearedOn, initialTopTracks) {
+        if (initialAlbums.isNotEmpty() || initialSinglesAndEps.isNotEmpty() || initialAppearedOn.isNotEmpty() ||
+            initialTopTracks.isNotEmpty()
+        ) {
             onlineAlbums = initialAlbums
+            onlineSinglesAndEps = initialSinglesAndEps
+            onlineAppearedOn = initialAppearedOn
             onlineTopTracks = initialTopTracks
-            onlineCoverUrl = initialCoverUrl ?: initialAlbums.firstOrNull()?.coverUrl
+            onlineCoverUrl =
+                initialCoverUrl
+                    ?: initialAlbums.firstOrNull()?.coverUrl
+                    ?: initialSinglesAndEps.firstOrNull()?.coverUrl
+                    ?: initialAppearedOn.firstOrNull()?.coverUrl
             return@LaunchedEffect
         }
         if (!isOfflineMode && artistName.isNotBlank()) {
             try {
-                val deezerHit =
+                val discography =
                     withContext(Dispatchers.IO) {
-                        MetadataFetcher.searchDeezerArtist(artistName)
+                        MetadataFetcher.fetchArtistDiscography(artistName)
                     }
-                val albums =
-                    withContext(Dispatchers.IO) {
-                        MetadataFetcher.fetchArtistAlbums(artistName, deezerHit?.id)
-                    }
-                val topTracks =
-                    withContext(Dispatchers.IO) {
-                        MetadataFetcher.fetchArtistTopTracks(artistName, deezerHit?.id)
-                    }
-                onlineCoverUrl = deezerHit?.pictureUrl ?: albums.firstOrNull()?.coverUrl
-                onlineAlbums = albums
-                onlineTopTracks = topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
+                onlineCoverUrl =
+                    discography.artistHit?.pictureUrl
+                        ?: discography.albums.firstOrNull()?.coverUrl
+                        ?: discography.singlesAndEps.firstOrNull()?.coverUrl
+                        ?: discography.appearedOn.firstOrNull()?.coverUrl
+                onlineAlbums = discography.albums
+                onlineSinglesAndEps = discography.singlesAndEps
+                onlineAppearedOn = discography.appearedOn
+                onlineTopTracks = discography.topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
             } catch (_: Exception) {
                 // Ignore network errors gracefully
             }
         } else {
             onlineCoverUrl = null
             onlineAlbums = emptyList()
+            onlineSinglesAndEps = emptyList()
+            onlineAppearedOn = emptyList()
             onlineTopTracks = emptyList()
         }
     }
 
     val displayCoverUrl =
-        onlineCoverUrl ?: localAlbums.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
+        onlineCoverUrl
+            ?: localAlbums.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
             ?: localSongs.firstArtworkUri()
 
     val summaryText =
         buildString {
             if (localSongs.isNotEmpty()) append("${localSongs.size} en biblioteca • ")
-            val totalAlbums = if (onlineAlbums.isNotEmpty()) onlineAlbums.size else localAlbums.size
-            append("$totalAlbums álbumes")
+            val totalReleases =
+                if (onlineAlbums.isNotEmpty() || onlineSinglesAndEps.isNotEmpty()) {
+                    onlineAlbums.size + onlineSinglesAndEps.size
+                } else {
+                    localAlbums.size
+                }
+            append("$totalReleases lanzamientos")
         }
 
     val onStartRadio: () -> Unit = {
@@ -164,7 +188,10 @@ fun LibraryArtistDetailView(
         summary = summaryText,
         displayCoverUrl = displayCoverUrl,
         localAlbums = localAlbums,
+        localAppearedOn = localAppearedOn,
         onlineAlbums = onlineAlbums,
+        onlineSinglesAndEps = onlineSinglesAndEps,
+        onlineAppearedOn = onlineAppearedOn,
         onlineTopTracks = onlineTopTracks,
         currentItem = currentItem,
         activeDownloads = activeDownloads,
@@ -268,6 +295,9 @@ fun ArtistDetailContent(
     getAlbumStatus: (CatalogAlbum) -> ItemLibraryStatus,
     getTrackStatus: (CatalogTrackCandidate) -> ItemLibraryStatus,
     modifier: Modifier = Modifier,
+    localAppearedOn: List<Album> = emptyList(),
+    onlineSinglesAndEps: List<CatalogAlbum> = emptyList(),
+    onlineAppearedOn: List<CatalogAlbum> = emptyList(),
     isLoading: Boolean = false,
     headerTrailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
@@ -281,7 +311,9 @@ fun ArtistDetailContent(
             trailing = { headerTrailing?.invoke(this) },
         )
 
-        if (isLoading && localAlbums.isEmpty() && onlineAlbums.isEmpty() && onlineTopTracks.isEmpty()) {
+        if (isLoading && localAlbums.isEmpty() && onlineAlbums.isEmpty() && onlineSinglesAndEps.isEmpty() && onlineAppearedOn.isEmpty() &&
+            onlineTopTracks.isEmpty()
+        ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
@@ -312,25 +344,15 @@ fun ArtistDetailContent(
             }
 
             // Section 1: En tu biblioteca
-            item(key = "local-section-header") {
-                Text(
-                    text = "En tu biblioteca",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-
-            if (localAlbums.isEmpty()) {
-                item(key = "local-empty-hint") {
-                    EmptyListHint(
-                        text = "No tienes álbumes guardados de este artista todavía",
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+            if (localAlbums.isNotEmpty()) {
+                item(key = "local-section-header") {
+                    Text(
+                        text = "En tu biblioteca",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
-            } else {
+
                 item(key = "local-albums-carousel") {
                     DiscoverCarouselRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -400,7 +422,102 @@ fun ArtistDetailContent(
                 }
             }
 
-            // Section 3: Canciones populares (Top tracks online)
+            // Section 3: Sencillos y EPs
+            if (onlineSinglesAndEps.isNotEmpty()) {
+                item(key = "online-singles-eps-header") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Sencillos y EPs (${onlineSinglesAndEps.size})",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+
+                item(key = "online-singles-eps-carousel") {
+                    DiscoverCarouselRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        itemsIndexed(
+                            items = onlineSinglesAndEps,
+                            key = { index, it -> "online-single-${it.id.ifEmpty { it.title }}-$index" },
+                        ) { _, album ->
+                            DiscoverAlbumCard(
+                                album = album,
+                                onClick = { onSelectOnlineAlbum(album) },
+                                onSave = { onSaveOnlineAlbum(album) },
+                                status = getAlbumStatus(album),
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Section 4: Apareció en (Colaboraciones y participaciones)
+            val totalAppearedOn = localAppearedOn.size + onlineAppearedOn.size
+            if (totalAppearedOn > 0) {
+                item(key = "appeared-on-header") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Apareció en ($totalAppearedOn)",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+
+                item(key = "appeared-on-carousel") {
+                    DiscoverCarouselRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        // Local appeared on first
+                        items(
+                            items = localAppearedOn,
+                            key = { "local-app-${it.name}-${it.artist}" },
+                        ) { album ->
+                            DiscoverMediaCard(
+                                title = album.displayName,
+                                subtitle = album.artist,
+                                artworkUri = album.artworkUri,
+                                cardWidth = 150.dp,
+                                imageSize = 134.dp,
+                                onClick = { onSelectLocalAlbum(album) },
+                                topEndBadge = {
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .padding(6.dp)
+                                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
+                                                .padding(4.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                },
+                            )
+                        }
+
+                        // Online appeared on
+                        itemsIndexed(
+                            items = onlineAppearedOn,
+                            key = { index, it -> "online-app-${it.id.ifEmpty { it.title }}-$index" },
+                        ) { _, album ->
+                            DiscoverAlbumCard(
+                                album = album,
+                                onClick = { onSelectOnlineAlbum(album) },
+                                onSave = { onSaveOnlineAlbum(album) },
+                                status = getAlbumStatus(album),
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Section 5: Canciones populares (Top tracks online)
             if (onlineTopTracks.isNotEmpty()) {
                 item(key = "online-top-tracks-header") {
                     Spacer(modifier = Modifier.height(16.dp))

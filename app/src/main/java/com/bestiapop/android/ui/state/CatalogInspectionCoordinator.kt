@@ -112,16 +112,16 @@ class CatalogInspectionCoordinator(
             )
         catalogCollectionJob =
             scope.launch {
-                val deezerHit = MetadataFetcher.searchDeezerArtist(cleanArtist)
-                val albums = MetadataFetcher.fetchArtistAlbums(cleanArtist, deezerHit?.id)
-                val topTracks = MetadataFetcher.fetchArtistTopTracks(cleanArtist, deezerHit?.id)
-                val candidates = topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
-                val coverUrl = deezerHit?.pictureUrl ?: albums.firstOrNull()?.coverUrl
+                val discography = MetadataFetcher.fetchArtistDiscography(cleanArtist)
+                val candidates = discography.topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
+                val coverUrl = discography.artistHit?.pictureUrl ?: discography.albums.firstOrNull()?.coverUrl
                 updateCatalogCollection(requestKey) { state ->
                     state.copy(
                         coverUrl = coverUrl,
                         candidates = candidates,
-                        albums = albums,
+                        albums = discography.albums,
+                        singlesAndEps = discography.singlesAndEps,
+                        appearedOn = discography.appearedOn,
                         isLoading = false,
                     )
                 }

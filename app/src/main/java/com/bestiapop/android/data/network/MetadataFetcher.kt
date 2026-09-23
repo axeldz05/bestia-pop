@@ -1,6 +1,7 @@
 package com.bestiapop.android.data.network
 
 import com.bestiapop.android.data.model.Artist
+import com.bestiapop.android.data.model.ArtistDiscography
 import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.CatalogGenre
 import com.bestiapop.android.data.model.CatalogPlaylist
@@ -279,10 +280,11 @@ object MetadataFetcher {
             val obj = data.getJSONObject(i)
             val title = obj.optString("title", "").trim().ifEmpty { obj.optString("name", "Álbum") }
             val artistObj = obj.optJSONObject("artist")
-            val artist =
-                defaultArtist?.ifBlank { null }
-                    ?: artistObj?.optString("name", "Artista")
-                    ?: "Artista"
+            val artistFromJson = artistObj?.optString("name", "")?.trim()?.takeIf { it.isNotEmpty() }
+            val artist = artistFromJson ?: defaultArtist?.ifBlank { null } ?: "Artista"
+            val recordType = obj.optString("record_type", "").lowercase().trim()
+            val releaseDate = obj.optString("release_date", "")
+            val year = releaseDate.take(4).takeIf { it.length == 4 } ?: ""
             albums.add(
                 CatalogAlbum(
                     id = obj.optLong("id").toString(),
@@ -290,6 +292,8 @@ object MetadataFetcher {
                     artist = artist,
                     coverUrl = pickCoverUrl(obj.optString("cover_xl"), obj.optString("cover_big")),
                     trackCount = obj.optInt("nb_tracks", 0),
+                    releaseYear = year,
+                    recordType = recordType,
                 ),
             )
         }
@@ -305,6 +309,8 @@ object MetadataFetcher {
         for (i in 0 until results.length()) {
             if (albums.size >= limit) break
             val obj = results.getJSONObject(i)
+            val releaseDate = obj.optString("releaseDate", "")
+            val year = releaseDate.take(4).takeIf { it.length == 4 } ?: ""
             albums.add(
                 CatalogAlbum(
                     id = obj.optLong("collectionId").toString(),
@@ -312,6 +318,8 @@ object MetadataFetcher {
                     artist = obj.optString("artistName", "Artista"),
                     coverUrl = normalizeItunesArtwork(obj.optString("artworkUrl100")),
                     trackCount = obj.optInt("trackCount", 0),
+                    releaseYear = year,
+                    recordType = "album",
                 ),
             )
         }
@@ -332,21 +340,59 @@ object MetadataFetcher {
         val url =
             endpoint(
                 endpoints.deezerBaseUrl,
-                "search/artist?q=${encodeQuery(cleanArtistName)}&limit=1",
+                "search/artist?q=${encodeQuery(cleanArtistName)}&limit=10",
             )
         val json = getJson(url) ?: return null
         val data = json.optJSONArray("data") ?: return null
         if (data.length() == 0) return null
-        val item = data.getJSONObject(0)
-        val id = item.optLong("id", 0L)
-        if (id <= 0L) return null
-        val hit =
-            DeezerArtistHit(
-                id = id,
-                pictureUrl = pickCoverUrl(item.optString("picture_xl"), item.optString("picture_big")),
-            )
+        val hit = selectBestArtistHit(data, cleanArtistName) ?: return null
         deezerArtistCache[cacheKey] = hit
         return hit
+    }
+
+    internal fun selectBestArtistHit(
+        data: JSONArray,
+        queryName: String,
+    ): DeezerArtistHit? {
+        val cleanQuery = cleanArtist(queryName).trim()
+        var bestHit: DeezerArtistHit? = null
+        var bestScore = Double.NEGATIVE_INFINITY
+
+        for (i in 0 until data.length()) {
+            val item = data.optJSONObject(i) ?: continue
+            val id = item.optLong("id", 0L)
+            if (id <= 0L) continue
+            val candidateName = item.optString("name", "").trim()
+            if (candidateName.isEmpty()) continue
+
+            val cleanCand = cleanArtist(candidateName).trim()
+            val nbFan = item.optInt("nb_fan", 0)
+            val nbAlbum = item.optInt("nb_album", 0)
+
+            val isExact = cleanCand.equals(cleanQuery, ignoreCase = true)
+            val isExactCase = candidateName == queryName.trim()
+
+            var score = 0.0
+            if (isExact) {
+                score += 1000.0
+                if (isExactCase) score += 50.0
+            } else if (cleanCand.startsWith(cleanQuery, ignoreCase = true) || cleanQuery.startsWith(cleanCand, ignoreCase = true)) {
+                score += 200.0
+            }
+
+            score += kotlin.math.ln((nbFan + 1).toDouble()) * 20.0
+            score += minOf(nbAlbum, 100) * 2.0
+
+            if (score > bestScore) {
+                bestScore = score
+                bestHit =
+                    DeezerArtistHit(
+                        id = id,
+                        pictureUrl = pickCoverUrl(item.optString("picture_xl"), item.optString("picture_big")),
+                    )
+            }
+        }
+        return bestHit
     }
 
     private fun searchDeezerTrack(queryText: String): TrackIdentity? {
@@ -941,17 +987,26 @@ object MetadataFetcher {
         }
 
     /**
-     * Fetch discography / online albums of an artist via Deezer artist endpoint or search fallback.
+     * Unified artist discography fetcher.
+     * Partitions releases into primary studio albums, singles & EPs, and appearances/collaborations ("Apareció en"),
+     * along with verified popular tracks.
      */
-    suspend fun fetchArtistAlbums(
+    suspend fun fetchArtistDiscography(
         artistName: String,
         deezerArtistId: Long? = null,
-    ): List<CatalogAlbum> =
+    ): ArtistDiscography =
         withContext(Dispatchers.IO) {
             val cleanArtist = cleanArtist(artistName)
-            if (cleanArtist.isEmpty()) return@withContext emptyList()
-            val artistId = deezerArtistId?.takeIf { it > 0L } ?: searchDeezerArtist(cleanArtist)?.id
-            val list = mutableListOf<CatalogAlbum>()
+            if (cleanArtist.isEmpty()) return@withContext ArtistDiscography()
+            val artistHit =
+                if (deezerArtistId != null && deezerArtistId > 0L) {
+                    DeezerArtistHit(id = deezerArtistId, pictureUrl = null)
+                } else {
+                    searchDeezerArtist(cleanArtist)
+                }
+            val artistId = artistHit?.id
+
+            val rawAlbums = mutableListOf<CatalogAlbum>()
             if (artistId != null && artistId > 0L) {
                 try {
                     val url =
@@ -960,32 +1015,19 @@ object MetadataFetcher {
                             "artist/$artistId/albums?limit=50",
                         )
                     val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
-                    list.addAll(parseDeezerAlbums(data, defaultArtist = cleanArtist))
+                    rawAlbums.addAll(parseDeezerAlbums(data, defaultArtist = cleanArtist))
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
-            if (list.isEmpty()) {
-                list.addAll(searchAlbums("artist:\"$cleanArtist\"", limit = 30))
-                if (list.isEmpty()) {
-                    list.addAll(searchAlbums(cleanArtist, limit = 20))
+            if (rawAlbums.isEmpty()) {
+                rawAlbums.addAll(searchAlbums("artist:\"$cleanArtist\"", limit = 30))
+                if (rawAlbums.isEmpty()) {
+                    rawAlbums.addAll(searchAlbums(cleanArtist, limit = 20))
                 }
             }
-            return@withContext list
-        }
 
-    /**
-     * Fetch top tracks of an artist via Deezer top endpoint or search fallback.
-     */
-    suspend fun fetchArtistTopTracks(
-        artistName: String,
-        deezerArtistId: Long? = null,
-    ): List<OnlineCatalogTrack> =
-        withContext(Dispatchers.IO) {
-            val cleanArtist = cleanArtist(artistName)
-            if (cleanArtist.isEmpty()) return@withContext emptyList()
-            val artistId = deezerArtistId?.takeIf { it > 0L } ?: searchDeezerArtist(cleanArtist)?.id
-            val list = mutableListOf<OnlineCatalogTrack>()
+            val topTracks = mutableListOf<OnlineCatalogTrack>()
             if (artistId != null && artistId > 0L) {
                 try {
                     val url =
@@ -994,16 +1036,141 @@ object MetadataFetcher {
                             "artist/$artistId/top?limit=30",
                         )
                     val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
-                    list.addAll(parseDeezerSearchTracks(data))
+                    topTracks.addAll(parseDeezerSearchTracks(data))
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
-            if (list.isEmpty()) {
-                list.addAll(searchOnlineCatalog(cleanArtist, limit = 25))
+            if (topTracks.isEmpty()) {
+                val searchResults = searchOnlineCatalog(cleanArtist, limit = 25)
+                topTracks.addAll(filterTracksForArtist(searchResults, cleanArtist))
             }
-            return@withContext list
+
+            val (albums, singlesAndEps, appearedOn) = partitionDiscography(rawAlbums, topTracks, cleanArtist)
+
+            return@withContext ArtistDiscography(
+                artistHit = artistHit,
+                albums = albums,
+                singlesAndEps = singlesAndEps,
+                appearedOn = appearedOn,
+                topTracks = topTracks,
+            )
         }
+
+    internal fun filterTracksForArtist(
+        tracks: List<OnlineCatalogTrack>,
+        artistName: String,
+    ): List<OnlineCatalogTrack> {
+        val cleanTarget = cleanArtist(artistName).trim()
+        if (cleanTarget.isEmpty()) return tracks
+        return tracks.filter { track ->
+            val trackArtist = cleanArtist(track.identity.artist).trim()
+            val title = track.identity.title.lowercase()
+            trackArtist.equals(cleanTarget, ignoreCase = true) ||
+                trackArtist.contains(cleanTarget, ignoreCase = true) ||
+                cleanTarget.contains(trackArtist, ignoreCase = true) ||
+                title.contains("feat. $cleanTarget", ignoreCase = true) ||
+                title.contains("ft. $cleanTarget", ignoreCase = true) ||
+                title.contains("with $cleanTarget", ignoreCase = true) ||
+                title.contains("($cleanTarget", ignoreCase = true)
+        }
+    }
+
+    internal fun partitionDiscography(
+        rawAlbums: List<CatalogAlbum>,
+        topTracks: List<OnlineCatalogTrack>,
+        artistName: String,
+    ): Triple<List<CatalogAlbum>, List<CatalogAlbum>, List<CatalogAlbum>> {
+        val cleanArtist = cleanArtist(artistName).trim()
+        val albums = mutableListOf<CatalogAlbum>()
+        val singlesAndEps = mutableListOf<CatalogAlbum>()
+        val appearedOn = mutableListOf<CatalogAlbum>()
+        val seenAlbumKeys = mutableSetOf<String>()
+
+        fun normalizeKey(
+            title: String,
+            artist: String,
+        ) = "${title.lowercase().trim()}|${artist.lowercase().trim()}"
+
+        for (album in rawAlbums) {
+            val key = normalizeKey(album.title, album.artist)
+            if (!seenAlbumKeys.add(key)) continue
+
+            val isCompile = album.recordType.equals("compile", ignoreCase = true)
+            val cleanAlbumArtist = cleanArtist(album.artist).trim()
+            val hasExplicitOtherArtist =
+                cleanAlbumArtist.isNotBlank() &&
+                    !cleanAlbumArtist.equals("artista", ignoreCase = true) &&
+                    !cleanAlbumArtist.equals(cleanArtist, ignoreCase = true) &&
+                    !cleanAlbumArtist.contains(cleanArtist, ignoreCase = true)
+
+            val titleLower = album.title.lowercase()
+            val hasFeatTitle =
+                titleLower.contains("feat.") || titleLower.contains("ft.") || titleLower.contains("with ")
+
+            val isAppearedOn =
+                isCompile || hasExplicitOtherArtist || (hasFeatTitle && !cleanAlbumArtist.equals(cleanArtist, ignoreCase = true))
+
+            if (isAppearedOn) {
+                appearedOn.add(album)
+            } else if (album.recordType.equals("album", ignoreCase = true) || (album.recordType.isEmpty() && album.trackCount >= 6)) {
+                albums.add(album)
+            } else {
+                singlesAndEps.add(album)
+            }
+        }
+
+        // Also harvest collaborative albums from top tracks if not yet included
+        for (track in topTracks) {
+            val trackAlbum = track.identity.album.trim()
+            val trackArtist = track.identity.artist.trim()
+            val cleanTrackArtist = cleanArtist(trackArtist).trim()
+            if (trackAlbum.isBlank()) continue
+
+            if (cleanTrackArtist.isNotBlank() &&
+                !cleanTrackArtist.equals("artista", ignoreCase = true) &&
+                !cleanTrackArtist.equals(cleanArtist, ignoreCase = true) &&
+                !cleanTrackArtist.contains(cleanArtist, ignoreCase = true)
+            ) {
+                val key = normalizeKey(trackAlbum, trackArtist)
+                if (seenAlbumKeys.add(key)) {
+                    appearedOn.add(
+                        CatalogAlbum(
+                            id = "",
+                            title = trackAlbum,
+                            artist = trackArtist,
+                            coverUrl = track.identity.artworkUri,
+                            trackCount = 0,
+                            releaseYear =
+                                track.year
+                                    .takeIf { it > 0 }
+                                    ?.toString()
+                                    .orEmpty(),
+                            recordType = "single",
+                        ),
+                    )
+                }
+            }
+        }
+
+        return Triple(albums, singlesAndEps, appearedOn)
+    }
+
+    /**
+     * Fetch discography / online albums of an artist via Deezer artist endpoint or search fallback.
+     */
+    suspend fun fetchArtistAlbums(
+        artistName: String,
+        deezerArtistId: Long? = null,
+    ): List<CatalogAlbum> = fetchArtistDiscography(artistName, deezerArtistId).let { it.albums + it.singlesAndEps }
+
+    /**
+     * Fetch top tracks of an artist via Deezer top endpoint or search fallback.
+     */
+    suspend fun fetchArtistTopTracks(
+        artistName: String,
+        deezerArtistId: Long? = null,
+    ): List<OnlineCatalogTrack> = fetchArtistDiscography(artistName, deezerArtistId).topTracks
 
     suspend fun searchPlaylists(query: String): List<CatalogPlaylist> =
         withContext(Dispatchers.IO) {

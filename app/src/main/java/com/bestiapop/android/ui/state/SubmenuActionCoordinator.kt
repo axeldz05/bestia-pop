@@ -242,8 +242,7 @@ class SubmenuActionCoordinator(
         }
 
         scope.launch {
-            val deezerHit = MetadataFetcher.searchDeezerArtist(cleanArtist)
-            val topTracks = MetadataFetcher.fetchArtistTopTracks(cleanArtist, deezerHit?.id)
+            val topTracks = MetadataFetcher.fetchArtistTopTracks(cleanArtist)
             val candidates = topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
             if (candidates.isNotEmpty()) {
                 executeForCandidates(action, candidates)

@@ -121,6 +121,7 @@ fun DiscoverHomeFeedView(
         lbActions = lbActions,
         showLbSections = showLbSections,
         onPlayTrack = actions.onPlayTrack,
+        onPlayTrackInCollection = actions.onPlayTrackInCollection,
         onDownloadTrack = actions.onDownloadTrack,
         onSelectAlbum = actions.onSelectAlbum,
         onSaveAlbum = actions.onSaveAlbum,
@@ -145,6 +146,7 @@ fun DiscoverHomeFeedView(
     lbActions: DiscoverListenBrainzActions = DiscoverListenBrainzActions(),
     showLbSections: Boolean = false,
     onPlayTrack: (OnlineCatalogTrack) -> Unit,
+    onPlayTrackInCollection: (OnlineCatalogTrack, List<OnlineCatalogTrack>) -> Unit = { track, _ -> onPlayTrack(track) },
     onDownloadTrack: (OnlineCatalogTrack) -> Unit,
     onSelectAlbum: (CatalogAlbum) -> Unit,
     onSaveAlbum: (CatalogAlbum) -> Unit,
@@ -263,7 +265,7 @@ fun DiscoverHomeFeedView(
                 ) { track ->
                     DiscoverTrackCard(
                         track = track,
-                        onPlay = { onPlayTrack(track) },
+                        onPlay = { onPlayTrackInCollection(track, feed.recommendedTracks) },
                         onDownload = { onDownloadTrack(track) },
                     )
                 }
@@ -302,7 +304,7 @@ fun DiscoverHomeFeedView(
                     Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
                         DiscoverTrackListItem(
                             track = track,
-                            onPlay = { onPlayTrack(track) },
+                            onPlay = { onPlayTrackInCollection(track, feed.chartTracks) },
                             onDownload = { onDownloadTrack(track) },
                         )
                     }

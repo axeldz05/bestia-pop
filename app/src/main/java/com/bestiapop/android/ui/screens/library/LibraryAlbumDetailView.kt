@@ -286,7 +286,12 @@ fun LibraryAlbumDetailView(
                     Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
                         DiscoverTrackListItem(
                             track = candidate,
-                            onPlay = { viewModel.playCatalogCandidate(candidate) },
+                            onPlay = {
+                                viewModel.playCatalogCandidate(
+                                    candidate = candidate,
+                                    collection = catalogCandidates.ifEmpty { missingCandidates },
+                                )
+                            },
                             onDownload = { viewModel.downloadCatalogCandidate(candidate) },
                             activeDownload = activeDownload,
                             status = trackStatus,

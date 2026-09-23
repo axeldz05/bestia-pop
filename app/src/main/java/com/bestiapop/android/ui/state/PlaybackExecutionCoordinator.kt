@@ -13,6 +13,7 @@ import com.bestiapop.android.data.model.catalogPreviewKeyFor
 import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.toPlayableItems
 import com.bestiapop.android.data.model.toPlayableItemsWithFreshIds
+import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase
@@ -334,11 +335,24 @@ class PlaybackExecutionCoordinator(
         return if (song != null && !song.isRemote) song else null
     }
 
-    /** Plays local version if available in library; otherwise falls back to online stream. */
+    /** Plays local version if available in library; otherwise falls back to online stream. If [collection] is provided, enqueues rest of collection. */
     fun playCatalogOrLocalTrack(
         track: OnlineCatalogTrack,
+        collection: List<OnlineCatalogTrack> = emptyList(),
+        startShuffled: Boolean = false,
         openNowPlaying: Boolean = true,
     ) {
+        if (collection.isNotEmpty()) {
+            val candidates = collection.map { MetadataFetcher.toCatalogCandidate(it) }
+            val candidate = MetadataFetcher.toCatalogCandidate(track)
+            playCatalogCandidate(
+                candidate = candidate,
+                collection = candidates,
+                startShuffled = startShuffled,
+                openNowPlaying = openNowPlaying,
+            )
+            return
+        }
         val local = findLocalSongFor(track.identity)
         if (local != null) {
             playSong(local, openNowPlaying = openNowPlaying)
@@ -380,12 +394,48 @@ class PlaybackExecutionCoordinator(
         )
     }
 
-    /** Plays a single catalog candidate using local file if present, or streaming. */
-    fun playCatalogCandidate(
-        candidate: CatalogTrackCandidate,
+    /** Plays collection of candidates starting at [startCandidate]. */
+    fun playCatalogCandidates(
+        candidates: List<CatalogTrackCandidate>,
+        startCandidate: CatalogTrackCandidate,
+        startShuffled: Boolean = false,
         openNowPlaying: Boolean = true,
     ) {
-        playCatalogOrLocalTrack(candidate.effectiveTrack, openNowPlaying = openNowPlaying)
+        playCatalogCandidate(
+            candidate = startCandidate,
+            collection = candidates,
+            startShuffled = startShuffled,
+            openNowPlaying = openNowPlaying,
+        )
+    }
+
+    /**
+     * Plays candidate within collection (queueing rest starting at candidate index),
+     * or single track if collection is empty or candidate is not found.
+     */
+    fun playCatalogCandidate(
+        candidate: CatalogTrackCandidate,
+        collection: List<CatalogTrackCandidate> = emptyList(),
+        startShuffled: Boolean = false,
+        openNowPlaying: Boolean = true,
+    ) {
+        val index =
+            if (collection.isNotEmpty()) {
+                val exact = collection.indexOf(candidate)
+                if (exact != -1) exact else collection.indexOfFirst { it.identity == candidate.identity }
+            } else {
+                -1
+            }
+        if (index >= 0) {
+            playCatalogCandidates(
+                candidates = collection,
+                startIndex = index,
+                startShuffled = startShuffled,
+                openNowPlaying = openNowPlaying,
+            )
+        } else {
+            playCatalogOrLocalTrack(candidate.effectiveTrack, openNowPlaying = openNowPlaying)
+        }
     }
 
     /** Preview local file while reviewing identify candidates (toggle if already current). */

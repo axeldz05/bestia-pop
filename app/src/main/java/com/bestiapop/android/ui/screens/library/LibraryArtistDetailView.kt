@@ -222,7 +222,7 @@ fun LibraryArtistDetailView(
             viewModel.saveAlbumToLibrary(album)
         },
         onPlayTrack = { candidate ->
-            viewModel.playCatalogCandidate(candidate)
+            viewModel.playCatalogCandidate(candidate, onlineTopTracks)
         },
         onDownloadTrack = { candidate ->
             viewModel.downloadCatalogCandidate(candidate)

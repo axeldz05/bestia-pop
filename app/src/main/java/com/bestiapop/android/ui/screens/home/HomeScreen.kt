@@ -411,8 +411,7 @@ fun HomeScreen(
                 RecentSongsCarousel(
                     songs = recentSongs,
                     onPlaySong = { song ->
-                        val index = recentSongs.indexOf(song).coerceAtLeast(0)
-                        viewModel.playCollection(recentSongs, index)
+                        viewModel.playCollection(recentSongs, song)
                     },
                 )
 
@@ -420,8 +419,7 @@ fun HomeScreen(
                 FrequentSongsCarousel(
                     songs = frequentSongs,
                     onPlaySong = { song ->
-                        val index = frequentSongs.indexOf(song).coerceAtLeast(0)
-                        viewModel.playCollection(frequentSongs, index)
+                        viewModel.playCollection(frequentSongs, song)
                     },
                 )
 
@@ -440,6 +438,7 @@ fun HomeScreen(
                                 onSelectArtist = viewModel::selectArtistForInspection,
                                 isLoadingMore = catalogSearch.isLoadingMore,
                                 canLoadMore = catalogSearch.canLoadMore,
+                                onPlayTrackInCollection = viewModel::playCatalogOrLocalTrack,
                             )
                         }
 

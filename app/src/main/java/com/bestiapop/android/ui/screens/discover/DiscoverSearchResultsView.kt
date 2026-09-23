@@ -57,6 +57,7 @@ data class DiscoverCatalogActions(
     val onSelectArtist: (String) -> Unit = {},
     val isLoadingMore: Boolean = false,
     val canLoadMore: Boolean = true,
+    val onPlayTrackInCollection: (OnlineCatalogTrack, List<OnlineCatalogTrack>) -> Unit = { track, _ -> onPlayTrack(track) },
 )
 
 /** Level 2: Search results view using bundled [DiscoverCatalogActions]. */

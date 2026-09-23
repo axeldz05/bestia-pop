@@ -113,4 +113,59 @@ class CatalogUiStateTest {
         assertNotEquals(first.selectionKey, homonym.selectionKey)
         assertNotEquals(first.selectionKey, reopened.selectionKey)
     }
+
+    @Test
+    fun toPlayableItems_resolvesLocalAndRemoteProperly() {
+        val identityLocal =
+            com.bestiapop.android.data.model.TrackIdentity(
+                title = "Around the World",
+                artist = "Daft Punk",
+                album = "Homework",
+                durationMs = 239000L,
+            )
+        val identityRemote =
+            com.bestiapop.android.data.model.TrackIdentity(
+                title = "Harder, Better, Faster, Stronger",
+                artist = "Daft Punk",
+                album = "Discovery",
+                durationMs = 224000L,
+            )
+        val candidateLocal =
+            com.bestiapop.android.data.model.CatalogTrackCandidate(
+                identity = identityLocal,
+                candidates = emptyList(),
+            )
+        val candidateRemote =
+            com.bestiapop.android.data.model.CatalogTrackCandidate(
+                identity = identityRemote,
+                candidates = emptyList(),
+            )
+
+        val localSong =
+            com.bestiapop.android.data.model.Song(
+                id = 101L,
+                title = "Around the World",
+                artist = "Daft Punk",
+                album = "Homework",
+                durationMs = 239000L,
+                trackNumber = 7,
+                year = 1997,
+                genre = "Electronic",
+                dateAdded = 1000L,
+                uriString = "content://music/101",
+            )
+        val localIndex =
+            com.bestiapop.android.domain.util.TrackMatchKeys
+                .buildLibraryIndex(listOf(localSong))
+
+        val playables = listOf(candidateLocal, candidateRemote).toPlayableItems(localIndex)
+        assertEquals(2, playables.size)
+        assertTrue(playables[0] is com.bestiapop.android.data.model.PlayableItem.Local)
+        assertEquals(101L, (playables[0] as com.bestiapop.android.data.model.PlayableItem.Local).song.id)
+        assertTrue(playables[1] is com.bestiapop.android.data.model.PlayableItem.Remote)
+        assertEquals(
+            "Harder, Better, Faster, Stronger",
+            (playables[1] as com.bestiapop.android.data.model.PlayableItem.Remote).identity.title,
+        )
+    }
 }

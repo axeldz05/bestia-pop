@@ -247,12 +247,7 @@ fun DiscoverScreen(
                                         viewModel.downloadSelectedCandidatesBatch()
                                     },
                                     onPlayCandidate = { candidate ->
-                                        val index = activeCandidates.indexOf(candidate)
-                                        if (index >= 0) {
-                                            viewModel.playCatalogCandidates(activeCandidates, startIndex = index, startShuffled = false)
-                                        } else {
-                                            viewModel.playCatalogCandidate(candidate)
-                                        }
+                                        viewModel.playCatalogCandidate(candidate, activeCandidates)
                                     },
                                     onDownloadCandidate = { candidate ->
                                         viewModel.downloadCatalogCandidate(candidate)
@@ -407,6 +402,7 @@ fun DiscoverScreen(
                                     onSelectArtist = viewModel::selectArtistForInspection,
                                     isLoadingMore = catalogSearch.isLoadingMore,
                                     canLoadMore = catalogSearch.canLoadMore,
+                                    onPlayTrackInCollection = viewModel::playCatalogOrLocalTrack,
                                 )
                             }
 

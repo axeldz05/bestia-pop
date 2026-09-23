@@ -1413,11 +1413,13 @@ class MusicPlayerViewModel(
     /** Returns matched local (non-remote) Song from library index in O(1) time. */
     fun findLocalSongFor(meta: TrackMeta): Song? = playbackExecutionCoordinator.findLocalSongFor(meta)
 
-    /** Plays local version if available in library; otherwise falls back to online stream. */
+    /** Plays local version if available in library; otherwise falls back to online stream. If [collection] is provided, enqueues rest of collection. */
     fun playCatalogOrLocalTrack(
         track: OnlineCatalogTrack,
+        collection: List<OnlineCatalogTrack> = emptyList(),
+        startShuffled: Boolean = false,
         openNowPlaying: Boolean = true,
-    ) = playbackExecutionCoordinator.playCatalogOrLocalTrack(track, openNowPlaying)
+    ) = playbackExecutionCoordinator.playCatalogOrLocalTrack(track, collection, startShuffled, openNowPlaying)
 
     /** Enqueues local version if available in library; otherwise enqueues online stream. */
     fun enqueueCatalogOrLocalTrack(track: OnlineCatalogTrack) {
@@ -1433,11 +1435,21 @@ class MusicPlayerViewModel(
         openNowPlaying: Boolean = true,
     ) = playbackExecutionCoordinator.playCatalogCandidates(candidates, startIndex, startShuffled, openNowPlaying)
 
-    /** Plays a single catalog candidate using local file if present, or streaming. */
+    /** Plays collection of candidates starting at [startCandidate]. */
+    fun playCatalogCandidates(
+        candidates: List<CatalogTrackCandidate>,
+        startCandidate: CatalogTrackCandidate,
+        startShuffled: Boolean = false,
+        openNowPlaying: Boolean = true,
+    ) = playbackExecutionCoordinator.playCatalogCandidates(candidates, startCandidate, startShuffled, openNowPlaying)
+
+    /** Plays a single catalog candidate using local file if present, or streaming, enqueuing the rest of [collection] if provided. */
     fun playCatalogCandidate(
         candidate: CatalogTrackCandidate,
+        collection: List<CatalogTrackCandidate> = emptyList(),
+        startShuffled: Boolean = false,
         openNowPlaying: Boolean = true,
-    ) = playbackExecutionCoordinator.playCatalogCandidate(candidate, openNowPlaying)
+    ) = playbackExecutionCoordinator.playCatalogCandidate(candidate, collection, startShuffled, openNowPlaying)
 
     /** Level 2: Downloads a single catalog candidate preserving all candidate matches and identity. */
     fun downloadCatalogCandidate(

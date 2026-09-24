@@ -38,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -54,9 +55,12 @@ import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.DismissibleQueueItemRow
 import com.bestiapop.android.ui.components.EmptyListHint
+import com.bestiapop.android.ui.components.LocalReorderListState
 import com.bestiapop.android.ui.components.ProgressiveSheetState
 import com.bestiapop.android.ui.components.focusedQueueIndex
 import com.bestiapop.android.ui.components.formatDuration
+import com.bestiapop.android.ui.components.rememberReorderListState
+import com.bestiapop.android.ui.components.reorderListContainer
 import com.bestiapop.android.ui.components.sheetDragDownDismiss
 import com.bestiapop.android.ui.components.sheetNestedScrollConnection
 
@@ -78,6 +82,7 @@ fun QueueScreen(
     val isLoadingSuggestions by viewModel.isLoadingQueueSuggestions.collectAsStateWithLifecycle()
 
     val listState = rememberLazyListState()
+    val reorderListState = rememberReorderListState(listState)
     val currentQueueIndex = focusedQueueIndex(queue, currentItem?.queueEntryId)
 
     LaunchedEffect(currentItem?.queueEntryId, queueFocusEpoch) {
@@ -184,313 +189,316 @@ fun QueueScreen(
                 }
             }
 
-            LazyColumn(
-                state = listState,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                contentPadding = PaddingValues(bottom = 64.dp),
-            ) {
-                // Radio Indicator Card
-                item(key = "radio_card") {
-                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        if (radioState.active) {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Row(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+            CompositionLocalProvider(LocalReorderListState provides reorderListState) {
+                LazyColumn(
+                    state = listState,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .reorderListContainer(reorderListState),
+                    contentPadding = PaddingValues(bottom = 64.dp),
+                ) {
+                    // Radio Indicator Card
+                    item(key = "radio_card") {
+                        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            if (radioState.active) {
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                                    modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Row(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(14.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(36.dp),
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f),
                                         ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Radio,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                                    modifier = Modifier.size(20.dp),
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(36.dp),
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Radio,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                                        modifier = Modifier.size(20.dp),
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column {
+                                                Text(
+                                                    text = "Radio activa",
+                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                )
+                                                val label =
+                                                    radioState.statusLabel
+                                                        ?: "Modo ${radioState.mode.name.lowercase().replaceFirstChar { it.uppercase() }}"
+                                                Text(
+                                                    text = label,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                                                 )
                                             }
                                         }
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Column {
+                                        TextButton(onClick = viewModel::stopRadio) {
                                             Text(
-                                                text = "Radio activa",
-                                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            )
-                                            val label =
-                                                radioState.statusLabel
-                                                    ?: "Modo ${radioState.mode.name.lowercase().replaceFirstChar { it.uppercase() }}"
-                                            Text(
-                                                text = label,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                                text = "Detener",
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.primary,
                                             )
                                         }
-                                    }
-                                    TextButton(onClick = viewModel::stopRadio) {
-                                        Text(
-                                            text = "Detener",
-                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
                                     }
                                 }
-                            }
-                        } else {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Row(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
+                                    modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Row(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(14.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = MaterialTheme.colorScheme.surfaceVariant,
-                                            modifier = Modifier.size(36.dp),
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f),
                                         ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Radio,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.size(20.dp),
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                                modifier = Modifier.size(36.dp),
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Radio,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(20.dp),
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column {
+                                                Text(
+                                                    text = "Modo radio",
+                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                )
+                                                Text(
+                                                    text = "Canciones similares automáticas al terminar",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                                                 )
                                             }
                                         }
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Column {
+                                        TextButton(onClick = { viewModel.startRadio() }) {
                                             Text(
-                                                text = "Modo radio",
-                                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                            )
-                                            Text(
-                                                text = "Canciones similares automáticas al terminar",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                                text = "Iniciar",
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.primary,
                                             )
                                         }
-                                    }
-                                    TextButton(onClick = { viewModel.startRadio() }) {
-                                        Text(
-                                            text = "Iniciar",
-                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.primary,
-                                        )
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                // Queue Section Header (if queue not empty)
-                if (queue.isNotEmpty()) {
-                    item(key = "header_now_playing") {
-                        Text(
-                            text = "En cola",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
-                        )
-                    }
-                }
-
-                // Queue Items
-                if (queue.isEmpty()) {
-                    item(key = "empty_queue_hint") {
-                        EmptyListHint(
-                            text = "La cola está vacía",
-                            subtitle = "Reproducí una canción o seleccioná 'Añadir a la cola' desde la biblioteca.",
-                            icon = Icons.AutoMirrored.Filled.QueueMusic,
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 24.dp),
-                        )
-                    }
-                } else {
-                    itemsIndexed(
-                        items = queue,
-                        key = { _, item -> item.queueEntryId },
-                        contentType = { _, _ -> "queue_row" },
-                    ) { index, item ->
-                        val formattedDuration = remember(item.durationMs) { formatDuration(item.durationMs) }
-                        DismissibleQueueItemRow(
-                            item = item,
-                            isCurrentPlaying = (index == currentQueueIndex),
-                            index = index,
-                            queueSize = queue.size,
-                            onClick = { viewModel.skipToQueueIndex(index) },
-                            onRemove = { viewModel.removeFromQueue(item.queueEntryId) },
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                            trailingDuration = formattedDuration,
-                            compact = true,
-                            showIndex = true,
-                            onReorder = viewModel::moveDisplayQueueItem,
-                        )
-                    }
-                }
-
-                // Suggested Songs Section Header
-                item(key = "suggested_header") {
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(start = 20.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = "Canciones sugeridas",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        IconButton(
-                            onClick = viewModel::refreshQueueSuggestions,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Actualizar sugerencias",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
+                    // Queue Section Header (if queue not empty)
+                    if (queue.isNotEmpty()) {
+                        item(key = "header_now_playing") {
+                            Text(
+                                text = "En cola",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 4.dp),
                             )
                         }
                     }
-                }
 
-                if (isLoadingSuggestions) {
-                    item(key = "suggested_loading") {
+                    // Queue Items
+                    if (queue.isEmpty()) {
+                        item(key = "empty_queue_hint") {
+                            EmptyListHint(
+                                text = "La cola está vacía",
+                                subtitle = "Reproducí una canción o seleccioná 'Añadir a la cola' desde la biblioteca.",
+                                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 24.dp),
+                            )
+                        }
+                    } else {
+                        itemsIndexed(
+                            items = queue,
+                            key = { _, item -> item.queueEntryId },
+                            contentType = { _, _ -> "queue_row" },
+                        ) { index, item ->
+                            val formattedDuration = remember(item.durationMs) { formatDuration(item.durationMs) }
+                            DismissibleQueueItemRow(
+                                item = item,
+                                isCurrentPlaying = (index == currentQueueIndex),
+                                index = index,
+                                queueSize = queue.size,
+                                onClick = { viewModel.skipToQueueIndex(index) },
+                                onRemove = { viewModel.removeFromQueue(item.queueEntryId) },
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                                trailingDuration = formattedDuration,
+                                compact = true,
+                                showIndex = true,
+                                onReorder = viewModel::moveDisplayQueueItem,
+                            )
+                        }
+                    }
+
+                    // Suggested Songs Section Header
+                    item(key = "suggested_header") {
                         Row(
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 20.dp),
-                            horizontalArrangement = Arrangement.Center,
+                                    .padding(start = 20.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "Buscando sugerencias…",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = "Canciones sugeridas",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onBackground,
                             )
+                            IconButton(
+                                onClick = viewModel::refreshQueueSuggestions,
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Actualizar sugerencias",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
                         }
                     }
-                } else if (suggestedTracks.isEmpty()) {
-                    item(key = "suggested_empty") {
-                        Text(
-                            text = "No hay sugerencias disponibles",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                        )
-                    }
-                } else {
-                    items(
-                        items = suggestedTracks,
-                        key = { "suggested_${it.mediaId}" },
-                    ) { track ->
-                        val duration = remember(track.durationMs) { formatDuration(track.durationMs) }
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                        ) {
+
+                    if (isLoadingSuggestions) {
+                        item(key = "suggested_loading") {
                             Row(
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        .padding(vertical = 20.dp),
+                                horizontalArrangement = Arrangement.Center,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                ArtworkThumbnail(
-                                    artworkUri = track.artworkUri,
-                                    size = 42.dp,
-                                    cornerRadius = 8.dp,
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary,
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = track.title,
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = "${track.artist} • $duration",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        viewModel.playPlayableCollection(listOf(track), startIndex = 0, rotate = false)
-                                    },
-                                    modifier = Modifier.size(36.dp),
+                                Text(
+                                    text = "Buscando sugerencias…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    } else if (suggestedTracks.isEmpty()) {
+                        item(key = "suggested_empty") {
+                            Text(
+                                text = "No hay sugerencias disponibles",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                            )
+                        }
+                    } else {
+                        items(
+                            items = suggestedTracks,
+                            key = { "suggested_${it.mediaId}" },
+                        ) { track ->
+                            val duration = remember(track.durationMs) { formatDuration(track.durationMs) }
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                            ) {
+                                Row(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.PlayArrow,
-                                        contentDescription = "Reproducir",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(22.dp),
+                                    ArtworkThumbnail(
+                                        artworkUri = track.artworkUri,
+                                        size = 42.dp,
+                                        cornerRadius = 8.dp,
                                     )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        viewModel.addPlayableToQueue(track)
-                                    },
-                                    modifier = Modifier.size(36.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = "Añadir a la cola",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(22.dp),
-                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = track.title,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = "${track.artist} • $duration",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            viewModel.playPlayableCollection(listOf(track), startIndex = 0, rotate = false)
+                                        },
+                                        modifier = Modifier.size(36.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Reproducir",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(22.dp),
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            viewModel.addPlayableToQueue(track)
+                                        },
+                                        modifier = Modifier.size(36.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Añadir a la cola",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(22.dp),
+                                        )
+                                    }
                                 }
                             }
                         }

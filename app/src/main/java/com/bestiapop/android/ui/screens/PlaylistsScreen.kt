@@ -87,6 +87,7 @@ import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.CollectionDetailHero
 import com.bestiapop.android.ui.components.DownloadMissingTracksButton
 import com.bestiapop.android.ui.components.EmptyListHint
+import com.bestiapop.android.ui.components.LocalReorderListState
 import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.PlaylistFormDialog
@@ -100,7 +101,9 @@ import com.bestiapop.android.ui.components.SongQueueActions
 import com.bestiapop.android.ui.components.SubmenuSwipeBox
 import com.bestiapop.android.ui.components.findUiDownloadByTrack
 import com.bestiapop.android.ui.components.isCurrentPlaying
+import com.bestiapop.android.ui.components.rememberReorderListState
 import com.bestiapop.android.ui.components.rememberSongQueueActions
+import com.bestiapop.android.ui.components.reorderListContainer
 import com.bestiapop.android.ui.screens.library.SongActionDialogsController
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.state.PlaylistDetailNav
@@ -508,120 +511,123 @@ private fun PlaylistDetailScreen(
                         DownloadMessages.playlistCounts(localSongs.size, pendingTracks.size)
                     }
 
-                LazyColumn(
-                    state = detailListState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 96.dp),
-                ) {
-                    item(key = "playlist-hero-header") {
-                        CollectionDetailHero(
-                            title = playlist.name,
-                            subtitle = playlist.description,
-                            metadata = metadataLabel,
-                            artworkUri = playlist.coverUri,
-                            fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
-                            artworkCornerRadius = 14.dp,
-                            playEnabled = allPlayables.isNotEmpty(),
-                            shuffleEnabled = allPlayables.isNotEmpty(),
-                            onPlay = {
-                                if (allPlayables.isNotEmpty()) viewModel.playPlaylist(playlist.id, startShuffled = false)
-                            },
-                            onShuffle = {
-                                if (allPlayables.isNotEmpty()) viewModel.playPlaylist(playlist.id, startShuffled = true)
-                            },
-                            actionButtons = {
-                                FilledTonalButton(
-                                    onClick = { onAddSongsRequest(playlist) },
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                ) {
-                                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Añadir", maxLines = 1, softWrap = false)
-                                }
-                            },
-                            bannerContent =
-                                if (pendingTracks.isNotEmpty()) {
-                                    {
-                                        DownloadMissingTracksButton(
-                                            onClick = onDownloadPending,
-                                            count = pendingTracks.size,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                    }
-                                } else {
-                                    null
+                val reorderListState = rememberReorderListState(detailListState)
+                CompositionLocalProvider(LocalReorderListState provides reorderListState) {
+                    LazyColumn(
+                        state = detailListState,
+                        modifier = Modifier.fillMaxSize().reorderListContainer(reorderListState),
+                        contentPadding = PaddingValues(bottom = 96.dp),
+                    ) {
+                        item(key = "playlist-hero-header") {
+                            CollectionDetailHero(
+                                title = playlist.name,
+                                subtitle = playlist.description,
+                                metadata = metadataLabel,
+                                artworkUri = playlist.coverUri,
+                                fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
+                                artworkCornerRadius = 14.dp,
+                                playEnabled = allPlayables.isNotEmpty(),
+                                shuffleEnabled = allPlayables.isNotEmpty(),
+                                onPlay = {
+                                    if (allPlayables.isNotEmpty()) viewModel.playPlaylist(playlist.id, startShuffled = false)
                                 },
-                        )
-                    }
+                                onShuffle = {
+                                    if (allPlayables.isNotEmpty()) viewModel.playPlaylist(playlist.id, startShuffled = true)
+                                },
+                                actionButtons = {
+                                    FilledTonalButton(
+                                        onClick = { onAddSongsRequest(playlist) },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Añadir", maxLines = 1, softWrap = false)
+                                    }
+                                },
+                                bannerContent =
+                                    if (pendingTracks.isNotEmpty()) {
+                                        {
+                                            DownloadMissingTracksButton(
+                                                onClick = onDownloadPending,
+                                                count = pendingTracks.size,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                        }
+                                    } else {
+                                        null
+                                    },
+                            )
+                        }
 
-                    if (totalCount == 0) {
-                        item(key = "playlist-empty-state") {
-                            Box(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 48.dp, horizontal = 16.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = PlaylistMessages.emptyPlaylist,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    OutlinedButton(onClick = { onAddSongsRequest(playlist) }) {
-                                        Icon(imageVector = Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Añadir canciones ahora")
+                        if (totalCount == 0) {
+                            item(key = "playlist-empty-state") {
+                                Box(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 48.dp, horizontal = 16.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = PlaylistMessages.emptyPlaylist,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        OutlinedButton(onClick = { onAddSongsRequest(playlist) }) {
+                                            Icon(imageVector = Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Añadir canciones ahora")
+                                        }
                                     }
                                 }
                             }
-                        }
-                    } else {
-                        itemsIndexed(
-                            items = localSongs,
-                            key = { _, item -> item.entryId },
-                            contentType = { _, _ -> "song" },
-                        ) { index, item ->
-                            val song = item.song
-                            SongListItem(
-                                song = song,
-                                actions = playlistSongActions,
-                                artworkUri = viewModel.resolveAlbumArtwork(song),
-                                isCurrentPlaying = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), song),
-                                isReorderMode = isReorderMode,
-                                index = index,
-                                reorderCount = localSongs.size,
-                                onReorder = onReorder,
-                                onClick = { viewModel.playPlayableCollection(allPlayables, startIndex = index) },
-                            )
-                        }
-                        itemsIndexed(
-                            items = pendingTracks,
-                            key = { _, it -> "pending-${it.id}" },
-                            contentType = { _, _ -> "pending" },
-                        ) { pendingIndex, pending ->
-                            PlaylistPendingTrackItem(
-                                viewModel = viewModel,
-                                pending = pending,
-                                highlighted = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), pending.artist, pending.title),
-                                onClick = {
-                                    viewModel.playPlayableCollection(allPlayables, startIndex = localSongs.size + pendingIndex)
-                                },
-                                onDownload = {
-                                    val playable = pending.toPlayableItem()
-                                    if (playable is PlayableItem.Remote) {
-                                        viewModel.downloadRemoteItem(playable)
-                                    }
-                                },
-                                onSwipeAction = {
-                                    viewModel.executeSubmenuActionForPlayables(
-                                        gestureSettings.swipeLeftAction,
-                                        listOf(pending.toPlayableItem()),
-                                    )
-                                },
-                            )
+                        } else {
+                            itemsIndexed(
+                                items = localSongs,
+                                key = { _, item -> item.entryId },
+                                contentType = { _, _ -> "song" },
+                            ) { index, item ->
+                                val song = item.song
+                                SongListItem(
+                                    song = song,
+                                    actions = playlistSongActions,
+                                    artworkUri = viewModel.resolveAlbumArtwork(song),
+                                    isCurrentPlaying = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), song),
+                                    isReorderMode = isReorderMode,
+                                    index = index,
+                                    reorderCount = localSongs.size,
+                                    onReorder = onReorder,
+                                    onClick = { viewModel.playPlayableCollection(allPlayables, startIndex = index) },
+                                )
+                            }
+                            itemsIndexed(
+                                items = pendingTracks,
+                                key = { _, it -> "pending-${it.id}" },
+                                contentType = { _, _ -> "pending" },
+                            ) { pendingIndex, pending ->
+                                PlaylistPendingTrackItem(
+                                    viewModel = viewModel,
+                                    pending = pending,
+                                    highlighted = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), pending.artist, pending.title),
+                                    onClick = {
+                                        viewModel.playPlayableCollection(allPlayables, startIndex = localSongs.size + pendingIndex)
+                                    },
+                                    onDownload = {
+                                        val playable = pending.toPlayableItem()
+                                        if (playable is PlayableItem.Remote) {
+                                            viewModel.downloadRemoteItem(playable)
+                                        }
+                                    },
+                                    onSwipeAction = {
+                                        viewModel.executeSubmenuActionForPlayables(
+                                            gestureSettings.swipeLeftAction,
+                                            listOf(pending.toPlayableItem()),
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 }

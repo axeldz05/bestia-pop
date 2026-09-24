@@ -18,6 +18,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -152,42 +153,45 @@ fun QueueLazyList(
         )
         return
     }
-    LazyColumn(
-        state = listState,
-        modifier = modifier.fillMaxSize(),
-    ) {
-        itemsIndexed(
-            items = items,
-            key = { _, item -> queueRowKey(item) },
-            contentType = { _, _ -> "queue_row" },
-        ) { index, item ->
-            val currentItems by rememberUpdatedState(items)
-            val currentOnRemove by rememberUpdatedState(onRemove)
-            val currentOnRemoveEntry by rememberUpdatedState(onRemoveEntry)
-            DismissibleQueueItemRow(
-                item = item,
-                isCurrentPlaying = isCurrentPlaying(index, item),
-                index = index,
-                queueSize = items.size,
-                onClick = { onSkipTo(index) },
-                onRemove = {
-                    val removeById = currentOnRemoveEntry
-                    if (removeById != null) {
-                        removeById(item.queueEntryId)
-                    } else {
-                        val targetIndex = currentItems.indexOfFirst { it.queueEntryId == item.queueEntryId }
-                        if (targetIndex >= 0) {
-                            currentOnRemove(targetIndex)
+    val reorderListState = rememberReorderListState(listState)
+    CompositionLocalProvider(LocalReorderListState provides reorderListState) {
+        LazyColumn(
+            state = listState,
+            modifier = modifier.fillMaxSize().reorderListContainer(reorderListState),
+        ) {
+            itemsIndexed(
+                items = items,
+                key = { _, item -> queueRowKey(item) },
+                contentType = { _, _ -> "queue_row" },
+            ) { index, item ->
+                val currentItems by rememberUpdatedState(items)
+                val currentOnRemove by rememberUpdatedState(onRemove)
+                val currentOnRemoveEntry by rememberUpdatedState(onRemoveEntry)
+                DismissibleQueueItemRow(
+                    item = item,
+                    isCurrentPlaying = isCurrentPlaying(index, item),
+                    index = index,
+                    queueSize = items.size,
+                    onClick = { onSkipTo(index) },
+                    onRemove = {
+                        val removeById = currentOnRemoveEntry
+                        if (removeById != null) {
+                            removeById(item.queueEntryId)
+                        } else {
+                            val targetIndex = currentItems.indexOfFirst { it.queueEntryId == item.queueEntryId }
+                            if (targetIndex >= 0) {
+                                currentOnRemove(targetIndex)
+                            }
                         }
-                    }
-                },
-                compact = compact,
-                showIndex = showIndex,
-                removeIcon = removeIcon,
-                removeContentDescription = removeContentDescription,
-                trailingDuration = trailingDuration?.invoke(item),
-                onReorder = onReorder,
-            )
+                    },
+                    compact = compact,
+                    showIndex = showIndex,
+                    removeIcon = removeIcon,
+                    removeContentDescription = removeContentDescription,
+                    trailingDuration = trailingDuration?.invoke(item),
+                    onReorder = onReorder,
+                )
+            }
         }
     }
 }

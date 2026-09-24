@@ -369,24 +369,23 @@ fun NowPlayingScreen(
                     when (page) {
                         0 -> {
                             // Page 0: Reproductor principal limpio + Barra inferior interactiva para abrir la cola
-                            Column(
+                            BoxWithConstraints(
                                 modifier =
                                     Modifier
                                         .fillMaxSize()
                                         .then(dismissDraggableModifier)
                                         .padding(horizontal = 24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                // 1. Hero Artwork
-                                BoxWithConstraints(
-                                    modifier =
-                                        Modifier
-                                            .weight(1f)
-                                            .fillMaxWidth()
-                                            .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center,
+                                val artSize = minOf(maxWidth * 0.94f, maxHeight * 0.50f).coerceAtLeast(160.dp)
+
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
-                                    val artSize = minOf(maxWidth * 0.88f, maxHeight * 0.95f)
+                                    // 1. Espacio superior hacia el techo reducido (sube todo)
+                                    Spacer(modifier = Modifier.weight(0.24f))
+
+                                    // 2. Hero Artwork
                                     ArtworkHero(
                                         uri = item.artworkUri,
                                         contentDescription = item.title,
@@ -394,178 +393,184 @@ fun NowPlayingScreen(
                                         fallbackTint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(artSize),
                                     )
-                                }
 
-                                // 2. Metadatos de la canción y menú de acciones
-                                Box(modifier = Modifier.fillMaxWidth()) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    // 3. Espacio reducido entre portada y metadatos/botones
+                                    Spacer(modifier = Modifier.weight(0.12f))
+
+                                    // 4. Metadatos de la canción y menú de acciones
+                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 36.dp),
+                                        ) {
+                                            Text(
+                                                text = item.title,
+                                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onBackground,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.Center,
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                val artistModifier =
+                                                    if (effectiveArtistName != null) {
+                                                        Modifier.clickable { navigateToArtist(effectiveArtistName) }
+                                                    } else {
+                                                        Modifier
+                                                    }
+                                                Text(
+                                                    text = item.artist,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = artistModifier,
+                                                )
+                                                Text(
+                                                    text = " • ",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                                                )
+                                                val albumModifier =
+                                                    if (effectiveAlbumName != null) {
+                                                        Modifier.clickable { navigateToAlbum(effectiveAlbumName) }
+                                                    } else {
+                                                        Modifier
+                                                    }
+                                                Text(
+                                                    text = albumLabel,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = albumModifier,
+                                                )
+                                            }
+                                            if (resolvingRemote) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "Resolviendo stream…",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            } else if (radioState.loading) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = MusicPlayerViewModel.RADIO_LOADING_LABEL,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            } else if (radioState.statusLabel != null) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = radioState.statusLabel!!,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
+                                        }
+
+                                        Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                                            IconButton(onClick = { actionsMenuExpanded = true }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.MoreVert,
+                                                    contentDescription = "Acciones de la canción",
+                                                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                                                )
+                                            }
+                                            NowPlayingActionsMenu(
+                                                expanded = actionsMenuExpanded,
+                                                onDismiss = { actionsMenuExpanded = false },
+                                                matchedAlbumName = effectiveAlbumName,
+                                                matchedArtistName = effectiveArtistName,
+                                                containingPlaylists = containingPlaylists,
+                                                discoverOrigin = discoverOrigin,
+                                                isLocal = localSong != null,
+                                                canEditAlbum = localSong != null && matchedAlbum != null,
+                                                actions =
+                                                    remember(
+                                                        matchedAlbum,
+                                                        effectiveAlbumName,
+                                                        effectiveArtistName,
+                                                        localSong,
+                                                        songDialogs,
+                                                        viewModel,
+                                                        onDismiss,
+                                                    ) {
+                                                        NowPlayingMenuActions(
+                                                            navigation =
+                                                                NowPlayingNavigationActions(
+                                                                    onGoToAlbum = navigateToAlbum,
+                                                                    onGoToArtist = navigateToArtist,
+                                                                    onGoToLocalPlaylist = { id ->
+                                                                        goToPlaylists { viewModel.openLocalPlaylist(id) }
+                                                                    },
+                                                                    onGoToListenBrainz = { mbid ->
+                                                                        goToDiscover { viewModel.openListenBrainzPlaylistDetail(mbid) }
+                                                                    },
+                                                                    onGoToCfRecommendations = {
+                                                                        goToDiscover { viewModel.openCfRecommendationsDetail() }
+                                                                    },
+                                                                ),
+                                                            song =
+                                                                NowPlayingSongActions.from(
+                                                                    dialogs = songDialogs,
+                                                                    localSong = localSong,
+                                                                    onEditAlbum = { albumForEdit = matchedAlbum },
+                                                                    onStartRadio = { viewModel.startRadio() },
+                                                                ),
+                                                        )
+                                                    },
+                                            )
+                                        }
+                                    }
+
+                                    val remoteItem = item as? PlayableItem.Remote
+                                    if (remoteItem != null) {
+                                        NowPlayingRemoteDownloadButton(
+                                            viewModel = viewModel,
+                                            remoteItem = remoteItem,
+                                        )
+                                    }
+
+                                    // 3. Scrubber interactivo
+                                    Box(
                                         modifier =
                                             Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 36.dp),
+                                                .padding(vertical = 8.dp),
                                     ) {
-                                        Text(
-                                            text = item.title,
-                                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onBackground,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.Center,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            val artistModifier =
-                                                if (effectiveArtistName != null) {
-                                                    Modifier.clickable { navigateToArtist(effectiveArtistName) }
-                                                } else {
-                                                    Modifier
-                                                }
-                                            Text(
-                                                text = item.artist,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = artistModifier,
-                                            )
-                                            Text(
-                                                text = " • ",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                                            )
-                                            val albumModifier =
-                                                if (effectiveAlbumName != null) {
-                                                    Modifier.clickable { navigateToAlbum(effectiveAlbumName) }
-                                                } else {
-                                                    Modifier
-                                                }
-                                            Text(
-                                                text = albumLabel,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = albumModifier,
-                                            )
-                                        }
-                                        if (resolvingRemote) {
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = "Resolviendo stream…",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                        } else if (radioState.loading) {
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = MusicPlayerViewModel.RADIO_LOADING_LABEL,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                        } else if (radioState.statusLabel != null) {
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = radioState.statusLabel!!,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
-                                        }
-                                    }
-
-                                    Box(modifier = Modifier.align(Alignment.CenterEnd)) {
-                                        IconButton(onClick = { actionsMenuExpanded = true }) {
-                                            Icon(
-                                                imageVector = Icons.Default.MoreVert,
-                                                contentDescription = "Acciones de la canción",
-                                                tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
-                                            )
-                                        }
-                                        NowPlayingActionsMenu(
-                                            expanded = actionsMenuExpanded,
-                                            onDismiss = { actionsMenuExpanded = false },
-                                            matchedAlbumName = effectiveAlbumName,
-                                            matchedArtistName = effectiveArtistName,
-                                            containingPlaylists = containingPlaylists,
-                                            discoverOrigin = discoverOrigin,
-                                            isLocal = localSong != null,
-                                            canEditAlbum = localSong != null && matchedAlbum != null,
-                                            actions =
-                                                remember(
-                                                    matchedAlbum,
-                                                    effectiveAlbumName,
-                                                    effectiveArtistName,
-                                                    localSong,
-                                                    songDialogs,
-                                                    viewModel,
-                                                    onDismiss,
-                                                ) {
-                                                    NowPlayingMenuActions(
-                                                        navigation =
-                                                            NowPlayingNavigationActions(
-                                                                onGoToAlbum = navigateToAlbum,
-                                                                onGoToArtist = navigateToArtist,
-                                                                onGoToLocalPlaylist = { id ->
-                                                                    goToPlaylists { viewModel.openLocalPlaylist(id) }
-                                                                },
-                                                                onGoToListenBrainz = { mbid ->
-                                                                    goToDiscover { viewModel.openListenBrainzPlaylistDetail(mbid) }
-                                                                },
-                                                                onGoToCfRecommendations = {
-                                                                    goToDiscover { viewModel.openCfRecommendationsDetail() }
-                                                                },
-                                                            ),
-                                                        song =
-                                                            NowPlayingSongActions.from(
-                                                                dialogs = songDialogs,
-                                                                localSong = localSong,
-                                                                onEditAlbum = { albumForEdit = matchedAlbum },
-                                                                onStartRadio = { viewModel.startRadio() },
-                                                            ),
-                                                    )
-                                                },
+                                        PlaybackScrubber(
+                                            durationMs = item.durationMs,
+                                            positionMsFlow = viewModel.playbackPositionMs,
+                                            onSeek = { viewModel.seekTo(it) },
                                         )
                                     }
-                                }
 
-                                val remoteItem = item as? PlayableItem.Remote
-                                if (remoteItem != null) {
-                                    NowPlayingRemoteDownloadButton(
-                                        viewModel = viewModel,
-                                        remoteItem = remoteItem,
+                                    // 4. Fila de controles de reproducción
+                                    NowPlayingControlsRow(
+                                        isPlaying = isPlaying,
+                                        isShuffle = isShuffle,
+                                        repeatMode = repeatMode,
+                                        actions = transportActions,
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp),
                                     )
-                                }
 
-                                // 3. Scrubber interactivo
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 8.dp),
-                                ) {
-                                    PlaybackScrubber(
-                                        durationMs = item.durationMs,
-                                        positionMsFlow = viewModel.playbackPositionMs,
-                                        onSeek = { viewModel.seekTo(it) },
-                                    )
+                                    // 5. Espacio inferior que despega los botones de la barra de cola
+                                    Spacer(modifier = Modifier.weight(0.80f))
                                 }
-
-                                // 4. Fila de controles de reproducción
-                                NowPlayingControlsRow(
-                                    isPlaying = isPlaying,
-                                    isShuffle = isShuffle,
-                                    repeatMode = repeatMode,
-                                    actions = transportActions,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4.dp),
-                                )
                             }
                         }
 

@@ -1,25 +1,55 @@
 package com.bestiapop.android.service
 
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import com.bestiapop.android.data.listenbrainz.SaveWhileListeningEvent
-import com.bestiapop.android.data.listenbrainz.SaveWhileListeningPolicy
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.indexOfQueueEntry
 import com.bestiapop.android.data.model.indexOfRemoteSlot
 import com.bestiapop.android.data.model.toIdentity
+import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.playback.PlaybackChangeHint
 import com.bestiapop.android.data.playback.PlaybackFallbackPlanner
+import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.PlaybackDiagnostics
-import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.data.util.TrackKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
+
+private data class PlaybackFailure(
+    val error: PlaybackException?,
+    val item: PlayableItem?,
+    val isCovered: Boolean,
+)
+
+private sealed interface RecoveryAction {
+    data object Ignore : RecoveryAction
+
+    data object SilentSinkHandled : RecoveryAction
+
+    data class MissingLocal(
+        val local: PlayableItem.Local,
+    ) : RecoveryAction
+
+    data class ResolveRemotePending(
+        val index: Int,
+    ) : RecoveryAction
+
+    data class RetryRemoteStream(
+        val remote: PlayableItem.Remote,
+        val index: Int,
+        val deadlineMs: Long,
+    ) : RecoveryAction
+
+    data class FallbackUnplayable(
+        val message: String,
+    ) : RecoveryAction
+}
 
 internal class PlaybackStreamRecoveryCoordinator(
     private val scope: CoroutineScope,
@@ -37,7 +67,7 @@ internal class PlaybackStreamRecoveryCoordinator(
     private val setLastMediaItemIndex: (Int) -> Unit,
     private val onEmitEvent: (String) -> Unit,
     private val onCancelPendingPlayIntent: () -> Unit,
-    private val ensurePreparedForPlayback: () -> Unit,
+    ensurePreparedForPlayback: () -> Unit,
     private val getPlaybackGeneration: () -> Long,
 ) {
     private val _resolvingRemote = MutableStateFlow(false)
@@ -45,6 +75,7 @@ internal class PlaybackStreamRecoveryCoordinator(
     private val resolvingCount = AtomicInteger(0)
 
     val rejectedQueueEntries = linkedSetOf<String>()
+    private var activeFailure: PlaybackFailure? = null
 
     private var prefetchJob: Job? = null
     private var remoteRecoveryJob: Job? = null
@@ -54,9 +85,96 @@ internal class PlaybackStreamRecoveryCoordinator(
     private var resolvingTransitionJob: Job? = null
     private var resolvingTransitionQueueEntryId: String? = null
 
-    private val saveWhileListeningAttempted = mutableSetOf<String>()
-    private val saveWhileListeningFailures = mutableMapOf<String, Long>()
-    private val pendingSaveSettingsJobs = mutableMapOf<String, Job>()
+    private val ensurePrepared: () -> Unit = ensurePreparedForPlayback
+
+    internal fun isCoveredError(
+        error: PlaybackException?,
+        queued: PlayableItem?,
+    ): Boolean {
+        if (error == null) return false
+        val code = error.errorCode
+        if (code == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED ||
+            code == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED ||
+            code == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+        ) {
+            return true
+        }
+        if (queued is PlayableItem.Local) {
+            return !dependencies.hasPhysicalFile(queued.song)
+        }
+        if (queued is PlayableItem.Remote) {
+            return queued.resolved == null ||
+                queued.resolved.audioUrl.isBlank() ||
+                code == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
+                code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+                code == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+                code == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
+        }
+        return false
+    }
+
+    private fun classifyRecoveryAction(
+        error: PlaybackException?,
+        queued: PlayableItem?,
+        index: Int,
+        playWhenReady: Boolean,
+    ): RecoveryAction {
+        val errorCode = error?.errorCode
+        val isSinkOrHardwareError =
+            errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED ||
+                errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED ||
+                errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+
+        if (isSinkOrHardwareError) return RecoveryAction.SilentSinkHandled
+        if (!playWhenReady) return RecoveryAction.Ignore
+
+        return when (queued) {
+            is PlayableItem.Local -> {
+                if (!dependencies.hasPhysicalFile(queued.song)) {
+                    RecoveryAction.MissingLocal(queued)
+                } else {
+                    val title = queued.title.takeIf { it.isNotBlank() }
+                    RecoveryAction.FallbackUnplayable(
+                        if (title != null) "No se pudo reproducir «$title»" else "No se pudo reproducir",
+                    )
+                }
+            }
+
+            is PlayableItem.Remote -> {
+                if (queued.resolved == null || queued.resolved.audioUrl.isBlank()) {
+                    RecoveryAction.ResolveRemotePending(index)
+                } else {
+                    queued.resolved.clientName?.let { clientName ->
+                        YouTubeExtractor.reportClientHttpFailure(clientName, 403)
+                    }
+                    val graceMs =
+                        dependencies.playbackSettings.value.streamSkipGraceSeconds
+                            .coerceAtLeast(0)
+                            .times(1000L)
+                    if (graceMs <= 0L) {
+                        RecoveryAction.FallbackUnplayable(unplayableRemoteMessage(queued))
+                    } else {
+                        val deadline =
+                            if (remoteRecoveryQueueEntryId == queued.queueEntryId) {
+                                remoteRecoveryDeadlineMs
+                            } else {
+                                dependencies.clockMs() + graceMs
+                            }
+                        if (dependencies.clockMs() >= deadline) {
+                            RecoveryAction.FallbackUnplayable(unplayableRemoteMessage(queued))
+                        } else {
+                            RecoveryAction.RetryRemoteStream(queued, index, deadline)
+                        }
+                    }
+                }
+            }
+
+            null -> {
+                RecoveryAction.Ignore
+            }
+        }
+    }
 
     fun beginResolving() {
         resolvingCount.incrementAndGet()
@@ -72,6 +190,7 @@ internal class PlaybackStreamRecoveryCoordinator(
 
     fun clearRejectedQueueEntries() {
         rejectedQueueEntries.clear()
+        activeFailure = null
     }
 
     fun cancelRemoteRecoveryJob() {
@@ -88,6 +207,7 @@ internal class PlaybackStreamRecoveryCoordinator(
     fun clearRemoteRecoveryAfterProgress() {
         val currentQueueEntryId = getCurrentItem()?.queueEntryId ?: return
         if (remoteRecoveryQueueEntryId == currentQueueEntryId) clearRemoteRecovery()
+        activeFailure = null
     }
 
     fun invalidatePlaybackWork(clearRejectedEntries: Boolean = true) {
@@ -97,6 +217,7 @@ internal class PlaybackStreamRecoveryCoordinator(
         cancelRemoteRecoveryJob()
         prefetchJob?.cancel()
         prefetchJob = null
+        activeFailure = null
         if (clearRejectedEntries) rejectedQueueEntries.clear()
     }
 
@@ -152,106 +273,120 @@ internal class PlaybackStreamRecoveryCoordinator(
         return index
     }
 
-    fun handlePlayerError() {
+    fun handlePlayerError(error: PlaybackException? = null) {
         val player = getController() ?: return
         val index = player.currentMediaItemIndex
         val queued = getQueue().getOrNull(index)
-        val trackKind =
-            com.bestiapop.android.data.util.TrackKind
-                .from(queued)
+        val trackKind = TrackKind.from(queued)
+        val errorCode = error?.errorCode
+        val isSinkOrHardwareError =
+            errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED ||
+                errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED ||
+                errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+
+        val isCovered = isCoveredError(error, queued)
+        activeFailure = PlaybackFailure(error = error, item = queued, isCovered = isCovered)
+
+        if (!isCovered && error != null) {
+            CrashReporter.log(
+                "PlaybackRuntime.handlePlayerError: uncovered error detected errorCode=${error.errorCodeName} ($errorCode) track=${queued?.title}",
+            )
+        }
+
         PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.handlePlayerError: index=$index, trackType=$trackKind, isRemote=${trackKind == com.bestiapop.android.data.util.TrackKind.REMOTE}, playWhenReadyIntent=${isPlayWhenReadyIntent()}",
+            "PlaybackRuntime.handlePlayerError: index=$index, trackType=$trackKind, errorCode=${error?.errorCodeName} ($errorCode), isSinkOrHardwareError=$isSinkOrHardwareError, isCovered=$isCovered, playWhenReadyIntent=${isPlayWhenReadyIntent()}",
         )
-        if (!isPlayWhenReadyIntent()) {
-            onSetIsPlaying(false)
-            return
-        }
-        val remote = queued as? PlayableItem.Remote
-        if (remote == null) {
-            val local = queued as? PlayableItem.Local
-            val title = local?.title?.takeIf { it.isNotBlank() }
-            val missing = local != null && !dependencies.hasPhysicalFile(local.song)
-            if (missing) {
-                scope.launch {
-                    dependencies.deleteMissingLocalSong(local.song)
-                }
-                if (dependencies.isOnline()) {
-                    val msg =
-                        if (title != null) {
-                            "No se encontró «$title» en el dispositivo. Buscando en streaming…"
-                        } else {
-                            "No se encontró la canción en el dispositivo. Buscando en streaming…"
-                        }
-                    onEmitEvent(msg)
-                    val streamingRemote =
-                        PlayableItem
-                            .remoteFrom(
-                                identity = local.song.toIdentity(),
-                            ).copy(queueEntryId = local.queueEntryId)
-                    val liveQueue = getQueue().toMutableList()
-                    val targetIndex = liveQueue.indexOfFirst { it.queueEntryId == local.queueEntryId }
-                    if (targetIndex >= 0) {
-                        liveQueue[targetIndex] = streamingRemote
-                        onUpdateQueue(liveQueue)
-                        player.replaceMediaItem(targetIndex, streamingRemote)
-                        resolvePlayableWithFallback(
-                            startIndex = targetIndex,
-                            triggerQueueEntryId = streamingRemote.queueEntryId,
-                            firstFailureMessage =
-                                if (title != null) {
-                                    "No se pudo reproducir «$title» en streaming"
-                                } else {
-                                    "No se pudo reproducir en streaming"
-                                },
-                        )
-                        return
-                    }
-                }
-                recoverAfterUnplayable(
-                    if (title != null) {
-                        "No se encontró «$title» en el dispositivo"
-                    } else {
-                        "No se encontró la canción en el dispositivo"
-                    },
-                )
-            } else {
-                recoverAfterUnplayable(
-                    if (title != null) "No se pudo reproducir «$title»" else "No se pudo reproducir",
-                )
+
+        when (val action = classifyRecoveryAction(error, queued, index, isPlayWhenReadyIntent())) {
+            RecoveryAction.SilentSinkHandled -> {
+                activeFailure = null
+                clearRejectedQueueEntries()
             }
-            return
+
+            RecoveryAction.Ignore -> {
+                onSetIsPlaying(false)
+            }
+
+            is RecoveryAction.MissingLocal -> {
+                handleMissingLocal(action.local, player)
+            }
+
+            is RecoveryAction.ResolveRemotePending -> {
+                ensureRemoteReadyAt(action.index, startPlaying = true)
+            }
+
+            is RecoveryAction.RetryRemoteStream -> {
+                startRemoteStreamRecovery(action.remote, action.index, action.deadlineMs, player)
+            }
+
+            is RecoveryAction.FallbackUnplayable -> {
+                recoverAfterUnplayable(action.message)
+            }
         }
-        if (remote.resolved == null || remote.resolved.audioUrl.isBlank()) {
-            ensureRemoteReadyAt(index, startPlaying = true)
-            return
+    }
+
+    private fun handleMissingLocal(
+        local: PlayableItem.Local,
+        player: PlaybackControllerFacade,
+    ) {
+        val title = local.title.takeIf { it.isNotBlank() }
+        scope.launch {
+            dependencies.deleteMissingLocalSong(local.song)
         }
-        remote.resolved.clientName?.let { clientName ->
-            com.bestiapop.android.data.network.YouTubeExtractor
-                .reportClientHttpFailure(clientName, 403)
+        if (dependencies.isOnline()) {
+            val msg =
+                if (title != null) {
+                    "No se encontró «$title» en el dispositivo. Buscando en streaming…"
+                } else {
+                    "No se encontró la canción en el dispositivo. Buscando en streaming…"
+                }
+            onEmitEvent(msg)
+            val streamingRemote =
+                PlayableItem
+                    .remoteFrom(
+                        identity = local.song.toIdentity(),
+                    ).copy(queueEntryId = local.queueEntryId)
+            val liveQueue = getQueue().toMutableList()
+            val targetIndex = liveQueue.indexOfFirst { it.queueEntryId == local.queueEntryId }
+            if (targetIndex >= 0) {
+                liveQueue[targetIndex] = streamingRemote
+                onUpdateQueue(liveQueue)
+                player.replaceMediaItem(targetIndex, streamingRemote)
+                resolvePlayableWithFallback(
+                    startIndex = targetIndex,
+                    triggerQueueEntryId = streamingRemote.queueEntryId,
+                    firstFailureMessage =
+                        if (title != null) {
+                            "No se pudo reproducir «$title» en streaming"
+                        } else {
+                            "No se pudo reproducir en streaming"
+                        },
+                )
+                return
+            }
         }
-        val graceMs =
-            dependencies.playbackSettings.value.streamSkipGraceSeconds
-                .coerceAtLeast(0)
-                .times(1000L)
-        if (graceMs <= 0L) {
-            recoverAfterUnplayable(unplayableRemoteMessage(remote))
-            return
-        }
-        if (remoteRecoveryQueueEntryId != remote.queueEntryId) {
-            remoteRecoveryQueueEntryId = remote.queueEntryId
-            remoteRecoveryDeadlineMs = dependencies.clockMs() + graceMs
-        }
-        if (dependencies.clockMs() >= remoteRecoveryDeadlineMs) {
-            cancelRemoteRecoveryJob()
-            recoverAfterUnplayable(unplayableRemoteMessage(remote))
-            return
-        }
+        recoverAfterUnplayable(
+            if (title != null) {
+                "No se encontró «$title» en el dispositivo"
+            } else {
+                "No se encontró la canción en el dispositivo"
+            },
+        )
+    }
+
+    private fun startRemoteStreamRecovery(
+        remote: PlayableItem.Remote,
+        index: Int,
+        deadlineMs: Long,
+        player: PlaybackControllerFacade,
+    ) {
+        remoteRecoveryQueueEntryId = remote.queueEntryId
+        remoteRecoveryDeadlineMs = deadlineMs
         if (remoteRecoveryJob?.isActive == true) return
         val generation = getPlaybackGeneration()
         val queueEntryId = remote.queueEntryId
         val expectedController = player
-        val deadlineMs = remoteRecoveryDeadlineMs
         remoteRecoveryJob =
             scope.launch {
                 val ownJob = coroutineContext[Job]
@@ -286,6 +421,7 @@ internal class PlaybackStreamRecoveryCoordinator(
                             }
                             expectedController.prepare()
                             if (isPlayWhenReadyIntent()) expectedController.play()
+                            activeFailure = null
                             return@launch
                         }
                         attempt++
@@ -461,9 +597,10 @@ internal class PlaybackStreamRecoveryCoordinator(
             onSetPlaybackPositionMs(0L)
             expectedController.seekTo(slot, 0L)
         }
-        ensurePreparedForPlayback()
+        ensurePrepared()
         if (isPlayWhenReadyIntent() && getController() === expectedController) {
             expectedController.play()
+            activeFailure = null
             prefetchAround(slot)
         }
     }
@@ -487,6 +624,35 @@ internal class PlaybackStreamRecoveryCoordinator(
         onCancelPendingPlayIntent()
         expectedController.pause()
         onEmitEvent("No se encontró una canción reproducible en la cola")
+        reportFallbackExhausted(expectedController)
+    }
+
+    private fun reportFallbackExhausted(controller: PlaybackControllerFacade) {
+        val failure = activeFailure
+        val errorToReport: Throwable =
+            failure?.error ?: IllegalStateException("Playback fallback exhausted: no playable tracks in queue")
+        val isExplicitUncovered = failure != null && !failure.isCovered && failure.error != null
+        val contextKeys =
+            mutableMapOf(
+                "playback_phase" to "fallback_exhausted",
+                "queue_size" to getQueue().size.toString(),
+                "queue_index" to controller.currentMediaItemIndex.toString(),
+                "is_covered" to (!isExplicitUncovered).toString(),
+            )
+        failure?.error?.let { err ->
+            contextKeys["uncovered_error_code"] = err.errorCode.toString()
+            contextKeys["uncovered_error_name"] = err.errorCodeName
+            err.message?.let { contextKeys["uncovered_error_message"] = it.take(256) }
+        }
+        val current = failure?.item ?: getCurrentItem()
+        if (current != null) {
+            contextKeys["track_kind"] = if (current is PlayableItem.Local) "LOCAL" else "REMOTE"
+            contextKeys["track_title"] = current.title.take(128)
+            contextKeys["track_artist"] = current.artist.take(128)
+            contextKeys["media_id"] = current.mediaId.take(256)
+        }
+        CrashReporter.recordNonFatal(errorToReport, contextKeys)
+        activeFailure = null
     }
 
     fun prefetchAround(index: Int) {
@@ -527,74 +693,7 @@ internal class PlaybackStreamRecoveryCoordinator(
             }
     }
 
-    fun maybeSaveWhileListening(
-        remote: PlayableItem.Remote,
-        event: SaveWhileListeningEvent,
-        positionMs: Long,
-        durationMs: Long = remote.durationMs,
-    ) {
-        if (!dependencies.listenSettingsReady.value) {
-            val queueEntryId = remote.queueEntryId
-            pendingSaveSettingsJobs.remove(queueEntryId)?.cancel()
-            pendingSaveSettingsJobs[queueEntryId] =
-                scope.launch {
-                    val ownJob = coroutineContext[Job]
-                    try {
-                        dependencies.listenSettingsReady.first { it }
-                        maybeSaveWhileListening(remote, event, positionMs, durationMs)
-                    } finally {
-                        if (pendingSaveSettingsJobs[queueEntryId] === ownJob) {
-                            pendingSaveSettingsJobs.remove(queueEntryId)
-                        }
-                    }
-                }
-            return
-        }
-        val settings = dependencies.listenSettings.value
-        if (!settings.saveWhileListening) return
-        if (!SaveWhileListeningPolicy.shouldSave(
-                positionMs = positionMs,
-                durationMs = durationMs,
-                thresholdPercent = settings.saveWhileListeningPercent,
-                event = event,
-            )
-        ) {
-            return
-        }
-        val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
-        if (key.isEmpty() || key in saveWhileListeningAttempted) return
-        val failedAt = saveWhileListeningFailures[key]
-        if (failedAt != null &&
-            dependencies.clockMs() - failedAt < SAVE_RETRY_COOLDOWN_MS
-        ) {
-            return
-        }
-        saveWhileListeningAttempted += key
-        scope.launch {
-            when (val result = dependencies.saveDownloads.save(remote)) {
-                is SaveWhileListeningDownloadResult.Saved -> {
-                    saveWhileListeningFailures.remove(key)
-                    onEmitEvent("«${result.song.title}» guardada en la biblioteca")
-                }
-
-                is SaveWhileListeningDownloadResult.InFlight -> {
-                    saveWhileListeningAttempted.remove(key)
-                }
-
-                is SaveWhileListeningDownloadResult.Failed -> {
-                    saveWhileListeningFailures[key] = dependencies.clockMs()
-                    saveWhileListeningAttempted.remove(key)
-                    onEmitEvent(
-                        "No se pudo guardar «${remote.title}»: " +
-                            (result.error.localizedMessage ?: "error"),
-                    )
-                }
-            }
-        }
-    }
-
     companion object {
         private const val REMOTE_RECOVERY_RETRY_MS = 600L
-        private const val SAVE_RETRY_COOLDOWN_MS = 10 * 60 * 1000L
     }
 }

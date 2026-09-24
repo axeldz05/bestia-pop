@@ -218,6 +218,13 @@ class PlaybackRuntime internal constructor(
 
     val resolvingRemote: StateFlow<Boolean> = streamRecoveryCoordinator.resolvingRemote
 
+    private val saveWhileListeningCoordinator =
+        PlaybackSaveWhileListeningCoordinator(
+            scope = scope,
+            dependencies = dependencies,
+            onEmitEvent = { _events.tryEmit(it) },
+        )
+
     private val radioCoordinator =
         PlaybackRadioCoordinator(
             scope = scope,
@@ -562,12 +569,12 @@ class PlaybackRuntime internal constructor(
                 }
             }
 
-            override fun onPlayerError() {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException?) {
                 PlaybackDiagnostics.error(
                     PlaybackDiagnostics.TAG_RUNTIME,
-                    "PlaybackRuntime.playerListener.onPlayerError() triggered",
+                    "PlaybackRuntime.playerListener.onPlayerError() triggered: errorCode=${error?.errorCodeName} (${error?.errorCode})",
                 )
-                handlePlayerError()
+                handlePlayerError(error)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -1397,8 +1404,8 @@ class PlaybackRuntime internal constructor(
         resolved: PlayableItem.Remote,
     ): Int = streamRecoveryCoordinator.applyResolvedRemote(original, resolved)
 
-    private fun handlePlayerError() {
-        streamRecoveryCoordinator.handlePlayerError()
+    private fun handlePlayerError(error: androidx.media3.common.PlaybackException? = null) {
+        streamRecoveryCoordinator.handlePlayerError(error)
     }
 
     private fun cancelRemoteRecoveryJob() {
@@ -1473,7 +1480,7 @@ class PlaybackRuntime internal constructor(
         positionMs: Long,
         durationMs: Long = remote.durationMs,
     ) {
-        streamRecoveryCoordinator.maybeSaveWhileListening(remote, event, positionMs, durationMs)
+        saveWhileListeningCoordinator.maybeSaveWhileListening(remote, event, positionMs, durationMs)
     }
 
     fun setRadioPreferredMode(mode: RadioMode) {

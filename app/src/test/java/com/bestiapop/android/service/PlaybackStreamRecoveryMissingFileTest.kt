@@ -1,5 +1,7 @@
 package com.bestiapop.android.service
 
+import android.app.Application
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.ResolvedStream
@@ -11,7 +13,12 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackStreamRecoveryMissingFileTest {
     private val testDispatcher = UnconfinedTestDispatcher()
@@ -286,5 +293,145 @@ class PlaybackStreamRecoveryMissingFileTest {
             assertTrue(replaced is PlayableItem.Remote)
             assertEquals("https://stream.example.com/audio.opus", (replaced as PlayableItem.Remote).resolved?.audioUrl)
             assertTrue(controller.isPlayingVal)
+        }
+
+    @Test
+    fun handlePlayerError_whenAudioSinkError_doesNotDeleteSongsOrPoisonQueue() =
+        testScope.runTest {
+            val song1 = testSong(1L, "Song 1")
+            val local1 = PlayableItem.Local(song1, queueEntryId = "entry-1")
+
+            var queue = listOf<PlayableItem>(local1)
+            val controller = TestController(queue)
+            val deletedSongs = mutableListOf<Song>()
+            val emittedEvents = mutableListOf<String>()
+
+            val streamAccess =
+                object : PlaybackRuntimeStreamAccess {
+                    override fun needsResolve(item: PlayableItem.Remote): Boolean = false
+
+                    override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? = item
+
+                    override suspend fun invalidate(item: PlayableItem.Remote) = Unit
+                }
+
+            val dependencies =
+                PlaybackRuntimeDependencies(
+                    scope = this,
+                    streamAccess = streamAccess,
+                    isOnline = { false },
+                    hasPhysicalFile = { true },
+                    deleteMissingLocalSong = { deletedSongs.add(it) },
+                    ioDispatcher = testDispatcher,
+                )
+
+            var currentItem: PlayableItem? = local1
+            var playWhenReadyIntent = true
+
+            val coordinator =
+                PlaybackStreamRecoveryCoordinator(
+                    scope = this,
+                    dependencies = dependencies,
+                    getQueue = { queue },
+                    onUpdateQueue = { queue = it },
+                    getCurrentItem = { currentItem },
+                    onSetCurrentItem = { item, _, _ -> currentItem = item },
+                    getPlaybackPositionMs = { 0L },
+                    onSetPlaybackPositionMs = {},
+                    onSetIsPlaying = { controller.isPlayingVal = it },
+                    isPlayWhenReadyIntent = { playWhenReadyIntent },
+                    onSetPlayWhenReadyIntent = { playWhenReadyIntent = it },
+                    getController = { controller },
+                    setLastMediaItemIndex = { controller.currentIndex = it },
+                    onEmitEvent = { emittedEvents.add(it) },
+                    onCancelPendingPlayIntent = {},
+                    ensurePreparedForPlayback = { controller.prepare() },
+                    getPlaybackGeneration = { 1L },
+                )
+
+            val sinkError =
+                PlaybackException(
+                    "AudioTrack init failed",
+                    null,
+                    PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+                )
+            coordinator.handlePlayerError(sinkError)
+
+            assertTrue(deletedSongs.isEmpty())
+            assertTrue(emittedEvents.isEmpty())
+            assertEquals(1, queue.size)
+            assertEquals(local1, queue.first())
+            assertTrue(playWhenReadyIntent)
+        }
+
+    @Test
+    fun handlePlayerError_whenUncoveredErrorAndFallbackExhausted_reachesLastFallback() =
+        testScope.runTest {
+            val song1 = testSong(1L, "Corrupt Song")
+            val local1 = PlayableItem.Local(song1, queueEntryId = "entry-1")
+
+            var queue = listOf<PlayableItem>(local1)
+            val controller = TestController(queue)
+            val deletedSongs = mutableListOf<Song>()
+            val emittedEvents = mutableListOf<String>()
+
+            val streamAccess =
+                object : PlaybackRuntimeStreamAccess {
+                    override fun needsResolve(item: PlayableItem.Remote): Boolean = false
+
+                    override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? = item
+
+                    override suspend fun invalidate(item: PlayableItem.Remote) = Unit
+                }
+
+            val dependencies =
+                PlaybackRuntimeDependencies(
+                    scope = this,
+                    streamAccess = streamAccess,
+                    isOnline = { false },
+                    hasPhysicalFile = { true },
+                    deleteMissingLocalSong = { deletedSongs.add(it) },
+                    ioDispatcher = testDispatcher,
+                )
+
+            var currentItem: PlayableItem? = local1
+            var playWhenReadyIntent = true
+
+            val coordinator =
+                PlaybackStreamRecoveryCoordinator(
+                    scope = this,
+                    dependencies = dependencies,
+                    getQueue = { queue },
+                    onUpdateQueue = { queue = it },
+                    getCurrentItem = { currentItem },
+                    onSetCurrentItem = { item, _, _ -> currentItem = item },
+                    getPlaybackPositionMs = { 0L },
+                    onSetPlaybackPositionMs = {},
+                    onSetIsPlaying = { controller.isPlayingVal = it },
+                    isPlayWhenReadyIntent = { playWhenReadyIntent },
+                    onSetPlayWhenReadyIntent = { playWhenReadyIntent = it },
+                    getController = { controller },
+                    setLastMediaItemIndex = { controller.currentIndex = it },
+                    onEmitEvent = { emittedEvents.add(it) },
+                    onCancelPendingPlayIntent = {},
+                    ensurePreparedForPlayback = { controller.prepare() },
+                    getPlaybackGeneration = { 1L },
+                )
+
+            val malformedError =
+                PlaybackException(
+                    "Container malformed",
+                    null,
+                    PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+                )
+
+            org.junit.Assert.assertFalse(coordinator.isCoveredError(malformedError, local1))
+
+            coordinator.handlePlayerError(malformedError)
+
+            assertTrue(deletedSongs.isEmpty())
+            assertTrue(emittedEvents.any { it.contains("No se pudo reproducir «Corrupt Song»") })
+            assertTrue(emittedEvents.any { it.contains("No se encontró una canción reproducible en la cola") })
+            assertTrue(!playWhenReadyIntent)
         }
 }

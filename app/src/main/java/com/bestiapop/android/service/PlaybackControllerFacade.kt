@@ -23,7 +23,7 @@ internal interface PlaybackControllerFacade {
 
         fun onPlayWhenReadyChanged(playWhenReady: Boolean) = Unit
 
-        fun onPlayerError() = Unit
+        fun onPlayerError(error: androidx.media3.common.PlaybackException? = null) = Unit
 
         fun onPlaybackStateChanged(playbackState: Int) = Unit
 
@@ -204,7 +204,7 @@ internal class MediaControllerFacade(
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                runtimeListener?.onPlayerError()
+                runtimeListener?.onPlayerError(error)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {

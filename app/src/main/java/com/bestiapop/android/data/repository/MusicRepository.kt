@@ -1,7 +1,11 @@
 package com.bestiapop.android.data.repository
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.room.withTransaction
 import com.bestiapop.android.data.db.AppDatabase
 import com.bestiapop.android.data.model.AlbumOverride
@@ -21,6 +25,7 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.SongPathRef
+import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.data.model.toPlayableItems
 import com.bestiapop.android.data.network.HttpClients
@@ -47,6 +52,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 
@@ -491,14 +497,68 @@ class MusicRepository private constructor(
             deleteSongRows(songs)
         }
 
-    override suspend fun pruneUnplayableCorruptSongs(): List<Song> =
+    override suspend fun pruneUnplayableCorruptSongs(
+        throttleDelayMs: Long,
+        onBatchPruned: suspend (List<Song>) -> Unit,
+    ): List<Song> =
         withContext(Dispatchers.IO) {
+            val toDelete = mutableListOf<Song>()
             val corrupted = musicDao.getSongsWithNonPositiveDuration()
-            val toDelete = corrupted.filterNot { hasUsableIdentity(it.artist, it.title) }
-            if (toDelete.isNotEmpty()) {
-                deleteSongRows(toDelete)
+            val initialCorrupt = corrupted.filterNot { hasUsableIdentity(it.artist, it.title) }
+            if (initialCorrupt.isNotEmpty()) {
+                deleteSongRows(initialCorrupt)
+                onBatchPruned(initialCorrupt)
+                toDelete.addAll(initialCorrupt)
+            }
+
+            val canCheckMediaStore = hasAudioPermission()
+            val existing = musicDao.getIdentitySongs()
+            val batch = mutableListOf<Song>()
+            for (song in existing) {
+                if (!coroutineContext.isActive) break
+                if (song.isRemote) continue
+                if (toDelete.any { it.id == song.id }) continue
+
+                val isMediaStore = song.uriString.startsWith("content://media/", ignoreCase = true)
+                if (isMediaStore && !canCheckMediaStore) {
+                    continue
+                }
+
+                if (!audioStore.hasPhysicalFile(song.uriString, song.folderPath)) {
+                    batch.add(song)
+                    toDelete.add(song)
+                    if (batch.size >= PRUNE_BATCH_SIZE) {
+                        val chunk = batch.toList()
+                        deleteSongRows(chunk)
+                        onBatchPruned(chunk)
+                        batch.clear()
+                    }
+                }
+                if (throttleDelayMs > 0L) {
+                    delay(throttleDelayMs)
+                }
+            }
+            if (batch.isNotEmpty()) {
+                val chunk = batch.toList()
+                deleteSongRows(chunk)
+                onBatchPruned(chunk)
+                batch.clear()
             }
             toDelete
+        }
+
+    override fun hasPhysicalFile(
+        uriString: String,
+        folderPath: String,
+    ): Boolean = audioStore.hasPhysicalFile(uriString, folderPath)
+
+    private fun hasAudioPermission(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                PackageManager.PERMISSION_GRANTED
         }
 
     private suspend fun deleteSongRows(songs: List<Song>) {

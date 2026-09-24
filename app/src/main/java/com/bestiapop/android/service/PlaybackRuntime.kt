@@ -1719,6 +1719,8 @@ class PlaybackRuntime internal constructor(
                         updateSongDuration = repository::updateSongDuration,
                         loadSongById = repository::getSongById,
                         loadSongsByIds = repository::getSongsByIds,
+                        hasPhysicalFile = { song -> repository.hasPhysicalFile(song.uriString, song.folderPath) },
+                        deleteMissingLocalSong = { song -> repository.deleteSongsFromApp(listOf(song)) },
                         requestListenSync = sync::requestSync,
                         flushPostponedTagWrites = { activeId -> repository.flushPostponedTagWrites(activeId) },
                     ),

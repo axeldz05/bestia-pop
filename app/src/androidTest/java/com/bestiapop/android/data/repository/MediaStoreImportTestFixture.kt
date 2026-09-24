@@ -331,4 +331,9 @@ private class FixtureOnlyRepositoryFileStore(
         uriString: String,
         folderPath: String,
     ): File? = delegate.readableFile(uriString, folderPath)
+
+    override fun hasPhysicalFile(
+        uriString: String,
+        folderPath: String,
+    ): Boolean = delegate.hasPhysicalFile(uriString, folderPath)
 }

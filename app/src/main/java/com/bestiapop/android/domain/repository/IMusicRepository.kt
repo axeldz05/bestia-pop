@@ -71,7 +71,16 @@ interface IMusicRepository {
     suspend fun deleteSongsFromDevice(songs: List<Song>)
 
     /** Prunes corrupted or zero-duration songs from database. Returns deleted songs. */
-    suspend fun pruneUnplayableCorruptSongs(): List<Song>
+    suspend fun pruneUnplayableCorruptSongs(
+        throttleDelayMs: Long = 0L,
+        onBatchPruned: suspend (List<Song>) -> Unit = {},
+    ): List<Song>
+
+    /** Checks if the physical audio file for the given URI / path exists on device storage. */
+    fun hasPhysicalFile(
+        uriString: String,
+        folderPath: String = "",
+    ): Boolean
 
     suspend fun enhanceSongMetadataAndLyrics(song: Song)
 

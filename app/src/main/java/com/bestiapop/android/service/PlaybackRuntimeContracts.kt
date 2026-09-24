@@ -234,6 +234,8 @@ internal data class PlaybackRuntimeDependencies(
     val loadSongById: suspend (Long) -> Song? = { null },
     val loadSongsByIds: suspend (List<Long>) -> List<Song> = { emptyList() },
     val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    val deleteMissingLocalSong: suspend (Song) -> Unit = {},
+    val hasPhysicalFile: (Song) -> Boolean = { true },
     val requestListenSync: () -> Unit = {},
     val flushPostponedTagWrites: suspend (Long?) -> Unit = {},
     val clockMs: () -> Long = System::currentTimeMillis,

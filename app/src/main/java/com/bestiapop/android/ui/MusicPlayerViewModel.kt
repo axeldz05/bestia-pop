@@ -1170,10 +1170,6 @@ class MusicPlayerViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             awaitFirstCatalogLoaded()
-            val pruned = repository.pruneUnplayableCorruptSongs()
-            if (pruned.isNotEmpty()) {
-                identifyReviewStore.removeSongIds(pruned.map { it.id }.toSet())
-            }
             if (!libraryPreferences.isCanonicalAudioUrisMigrated()) {
                 repository.migrateCanonicalAudioUris()
                 libraryPreferences.setCanonicalAudioUrisMigrated()
@@ -1192,6 +1188,9 @@ class MusicPlayerViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             awaitFirstLibraryIdle()
+            libraryScanCoordinator.startSilentCorruptFileCrawler { batch ->
+                identifyReviewStore.removeSongIds(batch.map { it.id }.toSet())
+            }
             // One-shot: the migration leaves the album untouched below HIGH confidence, so without a
             // flag every cold start re-queried the same 'YouTube Music' rows over the network forever.
             if (!libraryPreferences.isLegacyYouTubeMusicMigrated()) {

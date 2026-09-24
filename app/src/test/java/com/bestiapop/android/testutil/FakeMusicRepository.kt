@@ -64,7 +64,15 @@ open class FakeMusicRepository : IMusicRepository {
 
     override suspend fun deleteSongsFromDevice(songs: List<Song>) = Unit
 
-    override suspend fun pruneUnplayableCorruptSongs(): List<Song> = emptyList()
+    override suspend fun pruneUnplayableCorruptSongs(
+        throttleDelayMs: Long,
+        onBatchPruned: suspend (List<Song>) -> Unit,
+    ): List<Song> = emptyList()
+
+    override fun hasPhysicalFile(
+        uriString: String,
+        folderPath: String,
+    ): Boolean = true
 
     override suspend fun enhanceSongMetadataAndLyrics(song: Song) = Unit
 

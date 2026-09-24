@@ -139,6 +139,37 @@ class MusicFileStore(
         folderPath: String = "",
     ): File? = readableFile(canonicalize(uriString, folderPath))
 
+    /** Checks if the underlying physical audio file exists on the filesystem or can be opened via ContentResolver. */
+    fun hasPhysicalFile(ref: AudioPersistRef): Boolean {
+        val abs = directFilePath(ref)
+        if (abs != null) {
+            val file = File(abs)
+            return file.isFile && file.length() > 0L
+        }
+        val folder = ref.folderPath.trim()
+        if (folder.startsWith("/") && !folder.contains("://")) {
+            val f = File(folder)
+            if (f.isFile && f.length() > 0L) {
+                return true
+            }
+        }
+        if (ref.uriString.startsWith("content://", ignoreCase = true)) {
+            return try {
+                openRead(ref)?.use { pfd ->
+                    pfd.statSize > 0L || pfd.statSize == -1L
+                } ?: false
+            } catch (_: Exception) {
+                false
+            }
+        }
+        return false
+    }
+
+    fun hasPhysicalFile(
+        uriString: String,
+        folderPath: String = "",
+    ): Boolean = hasPhysicalFile(canonicalize(uriString, folderPath))
+
     /**
      * Filesystem path safe for direct File I/O. Never returns MediaStore DATA for
      * content://media (Android 15 scoped storage).

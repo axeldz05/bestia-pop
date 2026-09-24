@@ -6,6 +6,7 @@ import com.bestiapop.android.data.listenbrainz.SaveWhileListeningPolicy
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.indexOfQueueEntry
 import com.bestiapop.android.data.model.indexOfRemoteSlot
+import com.bestiapop.android.data.model.toIdentity
 import com.bestiapop.android.data.playback.PlaybackChangeHint
 import com.bestiapop.android.data.playback.PlaybackFallbackPlanner
 import com.bestiapop.android.data.util.PlaybackDiagnostics
@@ -168,13 +169,57 @@ internal class PlaybackStreamRecoveryCoordinator(
         }
         val remote = queued as? PlayableItem.Remote
         if (remote == null) {
-            recoverAfterUnplayable(
-                (queued as? PlayableItem.Local)
-                    ?.title
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { "No se pudo reproducir «$it»" }
-                    ?: "No se pudo reproducir",
-            )
+            val local = queued as? PlayableItem.Local
+            val title = local?.title?.takeIf { it.isNotBlank() }
+            val missing = local != null && !dependencies.hasPhysicalFile(local.song)
+            if (missing) {
+                scope.launch {
+                    dependencies.deleteMissingLocalSong(local.song)
+                }
+                if (dependencies.isOnline()) {
+                    val msg =
+                        if (title != null) {
+                            "No se encontró «$title» en el dispositivo. Buscando en streaming…"
+                        } else {
+                            "No se encontró la canción en el dispositivo. Buscando en streaming…"
+                        }
+                    onEmitEvent(msg)
+                    val streamingRemote =
+                        PlayableItem
+                            .remoteFrom(
+                                identity = local.song.toIdentity(),
+                            ).copy(queueEntryId = local.queueEntryId)
+                    val liveQueue = getQueue().toMutableList()
+                    val targetIndex = liveQueue.indexOfFirst { it.queueEntryId == local.queueEntryId }
+                    if (targetIndex >= 0) {
+                        liveQueue[targetIndex] = streamingRemote
+                        onUpdateQueue(liveQueue)
+                        player.replaceMediaItem(targetIndex, streamingRemote)
+                        resolvePlayableWithFallback(
+                            startIndex = targetIndex,
+                            triggerQueueEntryId = streamingRemote.queueEntryId,
+                            firstFailureMessage =
+                                if (title != null) {
+                                    "No se pudo reproducir «$title» en streaming"
+                                } else {
+                                    "No se pudo reproducir en streaming"
+                                },
+                        )
+                        return
+                    }
+                }
+                recoverAfterUnplayable(
+                    if (title != null) {
+                        "No se encontró «$title» en el dispositivo"
+                    } else {
+                        "No se encontró la canción en el dispositivo"
+                    },
+                )
+            } else {
+                recoverAfterUnplayable(
+                    if (title != null) "No se pudo reproducir «$title»" else "No se pudo reproducir",
+                )
+            }
             return
         }
         if (remote.resolved == null || remote.resolved.audioUrl.isBlank()) {
@@ -408,7 +453,9 @@ internal class PlaybackStreamRecoveryCoordinator(
         }
         val slot = getQueue().indexOfFirst { it.queueEntryId == queueEntryId }
         if (slot < 0) return
-        if (slot != expectedController.currentMediaItemIndex) {
+        if (slot != expectedController.currentMediaItemIndex ||
+            expectedController.playbackState == Player.STATE_IDLE
+        ) {
             if (!isPlayWhenReadyIntent()) return
             setLastMediaItemIndex(slot)
             onSetPlaybackPositionMs(0L)

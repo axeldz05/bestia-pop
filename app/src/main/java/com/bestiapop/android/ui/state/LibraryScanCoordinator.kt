@@ -15,6 +15,7 @@ import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.domain.repository.IMusicRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -211,5 +212,33 @@ class LibraryScanCoordinator(
                 },
             )
         }
+    }
+
+    private var silentPruneJob: Job? = null
+
+    /**
+     * Hidden, low-priority background traversal that slowly verifies local songs on disk
+     * and prunes corrupted or missing songs in batches. 
+     */
+    fun startSilentCorruptFileCrawler(onSongsPruned: suspend (List<Song>) -> Unit = {}) {
+        if (silentPruneJob?.isActive == true) return
+        silentPruneJob =
+            scope.launch(Dispatchers.IO) {
+                try {
+                    repository.pruneUnplayableCorruptSongs(
+                        throttleDelayMs = SILENT_CRAWLER_THROTTLE_MS,
+                        onBatchPruned = onSongsPruned,
+                    )
+                } catch (e: Exception) {
+                    CrashReporter.recordNonFatal(
+                        e,
+                        mapOf("phase" to "silent_corrupt_files_crawler"),
+                    )
+                }
+            }
+    }
+
+    companion object {
+        private const val SILENT_CRAWLER_THROTTLE_MS = 30L
     }
 }

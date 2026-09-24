@@ -82,6 +82,11 @@ internal interface RepositoryFileStore {
         uriString: String,
         folderPath: String = "",
     ): File?
+
+    fun hasPhysicalFile(
+        uriString: String,
+        folderPath: String = "",
+    ): Boolean
 }
 
 internal class AndroidRepositoryFileStore(
@@ -122,6 +127,11 @@ internal class AndroidRepositoryFileStore(
         uriString: String,
         folderPath: String,
     ): File? = delegate.readableFile(uriString, folderPath)
+
+    override fun hasPhysicalFile(
+        uriString: String,
+        folderPath: String,
+    ): Boolean = delegate.hasPhysicalFile(uriString, folderPath)
 }
 
 /** Network metadata seam; keeps repository tests hermetic without changing production behavior. */
@@ -351,6 +361,7 @@ internal fun PlaylistPendingTrack.toEntity() =
     )
 
 internal const val IDENTITY_SONG_ID_CHUNK = 500
+internal const val PRUNE_BATCH_SIZE = 10
 
 internal data class MusicRepositoryDependencies(
     val db: AppDatabase,

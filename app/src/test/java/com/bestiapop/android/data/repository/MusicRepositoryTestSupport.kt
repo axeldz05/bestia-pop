@@ -66,6 +66,14 @@ internal class TemporaryRepositoryFileStore(
         return file.takeIf { it.isFile && it.canRead() }
     }
 
+    override fun hasPhysicalFile(
+        uriString: String,
+        folderPath: String,
+    ): Boolean {
+        val file = resolveFile(canonicalize(uriString, folderPath)) ?: return false
+        return file.isFile && file.length() > 0L
+    }
+
     private fun requireFile(ref: AudioPersistRef): File = checkNotNull(resolveFile(ref)) { "Not a local test file: ${ref.uriString}" }
 
     private fun resolveFile(ref: AudioPersistRef): File? = SongPathNormalizer.resolveFilePath(ref.uriString, ref.folderPath)?.let(::File)

@@ -100,4 +100,148 @@ class MusicRepositoryResyncIntegrationTest {
             assertEquals("08", pruned.single().title)
             assertEquals(0, database.musicDao.getAllSongs().size)
         }
+
+    @Test
+    fun pruneUnplayableCorruptSongs_removesLocalSongWithoutPhysicalFile() =
+        runTest {
+            val repository =
+                MusicRepository(
+                    context = ApplicationProvider.getApplicationContext(),
+                    database = database.database,
+                    audioStore = TemporaryRepositoryFileStore(files.root),
+                    metadataSource = NoNetworkRepositoryMetadata,
+                    downloadRetryDelay = {},
+                )
+            val missingSong =
+                com.bestiapop.android.data.model.Song(
+                    id = 0,
+                    title = "Missing Track",
+                    artist = "Artist",
+                    album = "Album",
+                    genre = "Rock",
+                    durationMs = 180_000L,
+                    artworkUri = null,
+                    uriString = "${files.root.absolutePath}/non_existent_file.mp3",
+                    folderPath = files.root.absolutePath,
+                    trackNumber = 1,
+                    year = 2024,
+                    dateAdded = 1000L,
+                )
+            database.musicDao.insertSong(missingSong)
+            assertEquals(1, database.musicDao.getAllSongs().size)
+
+            val pruned = repository.pruneUnplayableCorruptSongs()
+            assertEquals(1, pruned.size)
+            assertEquals("Missing Track", pruned.single().title)
+            assertEquals(0, database.musicDao.getAllSongs().size)
+        }
+
+    @Test
+    fun pruneUnplayableCorruptSongs_keepsLocalSongWithExistingPhysicalFile() =
+        runTest {
+            val file = files.create("Artist - Present.mp3", byteArrayOf(1, 2, 3, 4, 5))
+            val repository =
+                MusicRepository(
+                    context = ApplicationProvider.getApplicationContext(),
+                    database = database.database,
+                    audioStore = TemporaryRepositoryFileStore(files.root),
+                    metadataSource = NoNetworkRepositoryMetadata,
+                    downloadRetryDelay = {},
+                )
+            val presentSong =
+                com.bestiapop.android.data.model.Song(
+                    id = 0,
+                    title = "Present Track",
+                    artist = "Artist",
+                    album = "Album",
+                    genre = "Rock",
+                    durationMs = 180_000L,
+                    artworkUri = null,
+                    uriString = file.absolutePath,
+                    folderPath = files.root.absolutePath,
+                    trackNumber = 1,
+                    year = 2024,
+                    dateAdded = 1000L,
+                )
+            database.musicDao.insertSong(presentSong)
+            assertEquals(1, database.musicDao.getAllSongs().size)
+
+            val pruned = repository.pruneUnplayableCorruptSongs()
+            assertEquals(0, pruned.size)
+            assertEquals(1, database.musicDao.getAllSongs().size)
+        }
+
+    @Test
+    fun pruneUnplayableCorruptSongs_neverPrunesRemoteSongs() =
+        runTest {
+            val repository =
+                MusicRepository(
+                    context = ApplicationProvider.getApplicationContext(),
+                    database = database.database,
+                    audioStore = TemporaryRepositoryFileStore(files.root),
+                    metadataSource = NoNetworkRepositoryMetadata,
+                    downloadRetryDelay = {},
+                )
+            val remoteSong =
+                com.bestiapop.android.data.model.Song(
+                    id = 0,
+                    title = "Stream Track",
+                    artist = "Artist",
+                    album = "Album",
+                    genre = "Pop",
+                    durationMs = 210_000L,
+                    artworkUri = null,
+                    uriString = "remote://catalog/123456",
+                    folderPath = "",
+                    trackNumber = 1,
+                    year = 2024,
+                    dateAdded = 1000L,
+                )
+            database.musicDao.insertSong(remoteSong)
+            assertEquals(1, database.musicDao.getAllSongs().size)
+
+            val pruned = repository.pruneUnplayableCorruptSongs()
+            assertEquals(0, pruned.size)
+            assertEquals(1, database.musicDao.getAllSongs().size)
+        }
+
+    @Test
+    fun pruneUnplayableCorruptSongs_withBatchCallback_reportsPrunedBatches() =
+        runTest {
+            val repository =
+                MusicRepository(
+                    context = ApplicationProvider.getApplicationContext(),
+                    database = database.database,
+                    audioStore = TemporaryRepositoryFileStore(files.root),
+                    metadataSource = NoNetworkRepositoryMetadata,
+                    downloadRetryDelay = {},
+                )
+            val missingSong =
+                com.bestiapop.android.data.model.Song(
+                    id = 0,
+                    title = "Missing Track 1",
+                    artist = "Artist",
+                    album = "Album",
+                    genre = "Rock",
+                    durationMs = 180_000L,
+                    artworkUri = null,
+                    uriString = "${files.root.absolutePath}/non_existent_1.mp3",
+                    folderPath = files.root.absolutePath,
+                    trackNumber = 1,
+                    year = 2024,
+                    dateAdded = 1000L,
+                )
+            database.musicDao.insertSong(missingSong)
+
+            val batches = mutableListOf<List<com.bestiapop.android.data.model.Song>>()
+            val pruned =
+                repository.pruneUnplayableCorruptSongs(
+                    throttleDelayMs = 0L,
+                    onBatchPruned = { batches.add(it) },
+                )
+            assertEquals(1, pruned.size)
+            assertEquals(1, batches.size)
+            assertEquals("Missing Track 1", batches.single().single().title)
+            assertEquals(0, database.musicDao.getAllSongs().size)
+        }
 }

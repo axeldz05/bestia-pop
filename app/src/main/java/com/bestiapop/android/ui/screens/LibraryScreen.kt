@@ -26,7 +26,7 @@ import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.LibraryJobKind
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.domain.util.albumNamesMatch
+import com.bestiapop.android.domain.util.findMatchingAlbum
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
 import com.bestiapop.android.ui.components.MultiSelectActionBar
@@ -161,9 +161,7 @@ fun LibraryScreen(
     val resolveAlbumByKey: (String) -> Album? =
         remember(viewModel) {
             { albumKey: String ->
-                viewModel.libraryProjection.albums.value.firstOrNull {
-                    albumNamesMatch(it.name, albumKey) || albumNamesMatch(it.displayName, albumKey)
-                }
+                findMatchingAlbum(viewModel.libraryProjection.albums.value, albumKey)
             }
         }
 

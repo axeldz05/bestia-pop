@@ -13,7 +13,7 @@ import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.preferences.FastScrollSettings
-import com.bestiapop.android.domain.util.albumNamesMatch
+import com.bestiapop.android.domain.util.findMatchingAlbum
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
@@ -241,10 +241,7 @@ fun NestedAlbumDisplayName(
     albumKey: String,
 ): String {
     val albums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
-    return albums
-        .firstOrNull {
-            albumNamesMatch(it.name, albumKey) || albumNamesMatch(it.displayName, albumKey)
-        }?.displayName ?: albumKey
+    return findMatchingAlbum(albums, albumKey)?.displayName ?: albumKey
 }
 
 fun songsForCurrentLibrarySelection(

@@ -110,6 +110,7 @@ fun HomeScreen(
             viewModel = viewModel,
             onBackToHome = {
                 isLibraryBrowseOpen = false
+                viewModel.clearSelectedCollection()
                 viewModel.popLibraryNested()
                 viewModel.closePlaylistDetail()
                 viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.SONGS)
@@ -378,7 +379,7 @@ fun HomeScreen(
                     viewModel.downloadOnlineTrack(track)
                 },
                 onSelectCatalogAlbum = { album ->
-                    viewModel.selectAlbumForInspection(album)
+                    viewModel.openAlbum(album)
                 },
                 onSearchMoreOnline = {
                     viewModel.searchMore()
@@ -430,7 +431,7 @@ fun HomeScreen(
                             DiscoverCatalogActions(
                                 onPlayTrack = viewModel::playCatalogOrLocalTrack,
                                 onDownloadTrack = viewModel::downloadOnlineTrack,
-                                onSelectAlbum = viewModel::selectAlbumForInspection,
+                                onSelectAlbum = viewModel::openAlbum,
                                 onSaveAlbum = { album -> viewModel.saveAlbumToLibrary(album) },
                                 onSelectPlaylist = viewModel::selectPlaylistForInspection,
                                 onSelectGenre = viewModel::selectGenreForInspection,
@@ -447,7 +448,7 @@ fun HomeScreen(
                             DiscoverTopRelatedActions(
                                 onSelectArtist = viewModel::selectArtistForInspection,
                                 onStartRadioForArtist = viewModel::startRadioForArtist,
-                                onSelectAlbum = viewModel::selectAlbumForInspection,
+                                onSelectAlbum = viewModel::openAlbum,
                                 onStartRadioForAlbum = viewModel::startRadioForAlbum,
                                 onPlayTrack = { item ->
                                     if (item.localSong != null) {

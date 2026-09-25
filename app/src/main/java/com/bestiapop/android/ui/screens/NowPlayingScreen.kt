@@ -58,6 +58,7 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.preferences.NAV_DISCOVER
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
+import com.bestiapop.android.domain.util.findMatchingAlbum
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.PlaybackScrubber
@@ -190,11 +191,11 @@ fun NowPlayingScreen(
             is PlayableItem.Local -> item.song.album
             is PlayableItem.Remote -> item.album.takeIf { it.isNotBlank() } ?: "Stream"
         }
-    val matchedAlbum by remember(viewModel, item.album) {
+    val matchedAlbum by remember(viewModel, item.album, item.artist) {
         viewModel.libraryProjection.albums
             .map { list ->
                 item.album.takeIf { it.isNotBlank() }?.let { albumName ->
-                    list.firstOrNull { it.name.equals(albumName, ignoreCase = true) }
+                    findMatchingAlbum(list, albumName, item.artist)
                 }
             }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = null)
@@ -245,11 +246,11 @@ fun NowPlayingScreen(
         matchedArtist?.name ?: item.artist.takeIf { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
 
     val navigateToAlbum: (String) -> Unit = { name ->
-        val local = matchedAlbum
+        val local = matchedAlbum ?: viewModel.findMatchingLocalAlbum(name, item.artist)
         if (local != null) {
-            goToLibrary { viewModel.openLibraryAlbum(local.name, fromNestedParent = false) }
+            goToLibrary { viewModel.openAlbum(name, item.artist, item.artworkUri) }
         } else {
-            goToDiscover { viewModel.selectAlbumForInspection(title = name, artist = item.artist, coverUrl = item.artworkUri) }
+            goToDiscover { viewModel.openAlbum(name, item.artist, item.artworkUri) }
         }
     }
 

@@ -30,6 +30,7 @@ import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.albumNamesMatch
+import com.bestiapop.android.domain.util.findMatchingAlbum
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.DownloadMissingTracksButton
 import com.bestiapop.android.ui.components.findUiDownloadByTrack
@@ -63,18 +64,24 @@ fun LibraryAlbumDetailView(
     val navigation by viewModel.navigation.collectAsStateWithLifecycle()
     val catalogCollection by viewModel.catalogCollection.collectAsStateWithLifecycle()
 
-    val matchingCatalog =
-        if (catalogCollection.title?.trim().equals(albumName.trim(), ignoreCase = true)) {
-            catalogCollection
-        } else {
-            null
-        }
-
     val album =
         remember(albums, albumName) {
-            albums.firstOrNull { albumNamesMatch(it.name, albumName) || albumNamesMatch(it.displayName, albumName) }
+            findMatchingAlbum(albums, albumName)
         }
     val albumDisplayName = album?.displayName ?: albumName
+
+    val matchingCatalog =
+        remember(catalogCollection, albumName, albumDisplayName) {
+            catalogCollection.takeIf { collection ->
+                val title = collection.title?.trim()
+                !title.isNullOrEmpty() && (
+                    title.equals(albumName.trim(), ignoreCase = true) ||
+                        title.equals(albumDisplayName.trim(), ignoreCase = true) ||
+                        albumNamesMatch(title, albumName) ||
+                        albumNamesMatch(title, albumDisplayName)
+                )
+            }
+        }
     val localSongs =
         remember(allSongs, albumName) {
             viewModel.songsForAlbum(allSongs, albumName)
@@ -94,8 +101,10 @@ fun LibraryAlbumDetailView(
     // Online catalog candidates (missing tracks or full online album tracks)
     var fetchedCandidates by remember { mutableStateOf<List<CatalogTrackCandidate>>(emptyList()) }
 
-    LaunchedEffect(albumName, albumArtist, isOfflineMode, matchingCatalog?.candidates) {
+    LaunchedEffect(albumName, albumArtist, isOfflineMode, matchingCatalog?.candidates, matchingCatalog?.isLoading) {
         if (matchingCatalog?.candidates?.isNotEmpty() == true) {
+            fetchedCandidates = emptyList()
+        } else if (matchingCatalog?.isLoading == true) {
             fetchedCandidates = emptyList()
         } else if (!isOfflineMode && albumArtist.isNotBlank() && albumName.isNotBlank()) {
             try {

@@ -127,6 +127,7 @@ import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.domain.util.assignUniqueKnownAlbumMatches
 import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
 import com.bestiapop.android.domain.util.findAlbumMergeTarget
+import com.bestiapop.android.domain.util.findMatchingAlbum
 import com.bestiapop.android.domain.util.gapApplyFields
 import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.knownAlbumQueryOf
@@ -1591,7 +1592,7 @@ class MusicPlayerViewModel(
 
     fun identifyAlbum(albumName: String) =
         runIfOnline {
-            val album = libraryProjection.albums.value.firstOrNull { albumNamesMatch(it.name, albumName) }
+            val album = findMatchingAlbum(libraryProjection.albums.value, albumName)
             if (album != null) {
                 val albumSongs = songsForAlbum(libraryProjection.songs.value, album.name)
                 if (albumSongs.isNotEmpty()) {
@@ -1993,7 +1994,17 @@ class MusicPlayerViewModel(
 
     fun closeLibraryGenre() = uiNavigationCoordinator.closeLibraryGenre()
 
-    fun popLibraryNested() = uiNavigationCoordinator.popLibraryNested()
+    fun popLibraryNested() {
+        val currentAlbum = navigation.value.libraryStack.albumName
+        if (currentAlbum != null) {
+            val cat = catalogCollection.value
+            val catTitle = cat.title
+            if (catTitle != null && (catTitle.equals(currentAlbum, ignoreCase = true) || albumNamesMatch(catTitle, currentAlbum))) {
+                clearSelectedCollection()
+            }
+        }
+        uiNavigationCoordinator.popLibraryNested()
+    }
 
     fun renameRestoredLibraryAlbum(
         sourceKey: String,
@@ -2567,13 +2578,78 @@ class MusicPlayerViewModel(
         artist: String,
         coverUrl: String? = null,
         albumId: String = "",
-    ) = catalogInspectionCoordinator.selectAlbumForInspection(title, artist, coverUrl, albumId)
+    ) = openAlbum(title, artist, coverUrl, albumId)
 
     /** Level 2: Inspect a [CatalogAlbum]. */
-    fun selectAlbumForInspection(album: CatalogAlbum) = catalogInspectionCoordinator.selectAlbumForInspection(album)
+    fun selectAlbumForInspection(album: CatalogAlbum) = openAlbum(album)
 
     /** Level 2: Inspect a [RelatedAlbumItem] without converting to a dummy [CatalogAlbum]. */
-    fun selectAlbumForInspection(album: RelatedAlbumItem) = catalogInspectionCoordinator.selectAlbumForInspection(album)
+    fun selectAlbumForInspection(album: RelatedAlbumItem) = openAlbum(album)
+
+    /**
+     * Level 2: Finds a matching local [Album] in the library by title and optional artist.
+     */
+    fun findMatchingLocalAlbum(
+        title: String,
+        artist: String = "",
+    ): Album? =
+        findMatchingAlbum(
+            libraryProjection.albums.value,
+            libraryProjection.songs.value,
+            title,
+            artist,
+        )
+
+    /**
+     * Level 1: Inspects an album with local library priority.
+     * If the album exists in the local library, opens the local album detail view and starts
+     * catalog track fetching so missing songs from the catalog can be displayed and downloaded.
+     * If the album is not in the library, opens the online streaming collection view.
+     */
+    fun openAlbum(
+        title: String,
+        artist: String = "",
+        coverUrl: String? = null,
+        albumId: String = "",
+        fromNestedParent: Boolean = false,
+    ) {
+        val localAlbum = findMatchingLocalAlbum(title, artist)
+        val effectiveArtist = if (localAlbum != null) artist.ifBlank { localAlbum.artist } else artist
+        val effectiveCover = if (localAlbum != null) coverUrl ?: localAlbum.artworkUri else coverUrl
+        catalogInspectionCoordinator.selectAlbumForInspection(
+            title = title,
+            artist = effectiveArtist,
+            coverUrl = effectiveCover,
+            albumId = albumId,
+        )
+        if (localAlbum != null) {
+            openLibraryAlbum(localAlbum.name, fromNestedParent = fromNestedParent)
+        }
+    }
+
+    /** Level 2: Inspect a [CatalogAlbum] with local library priority. */
+    fun openAlbum(
+        album: CatalogAlbum,
+        fromNestedParent: Boolean = false,
+    ) = openAlbum(
+        title = album.title,
+        artist = album.artist,
+        coverUrl = album.coverUrl,
+        albumId = album.id,
+        fromNestedParent = fromNestedParent,
+    )
+
+    /** Level 2: Inspect a [RelatedAlbumItem] with local library priority. */
+    fun openAlbum(
+        album: RelatedAlbumItem,
+        fromNestedParent: Boolean = false,
+    ) = openAlbum(
+        title = album.title,
+        artist = album.artist,
+        coverUrl = album.artworkUri,
+        albumId = "",
+        fromNestedParent = fromNestedParent,
+    )
 
     fun selectPlaylistForInspection(playlist: CatalogPlaylist) = catalogInspectionCoordinator.selectPlaylistForInspection(playlist)
 

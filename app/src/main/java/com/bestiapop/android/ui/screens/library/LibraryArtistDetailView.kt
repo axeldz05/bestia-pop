@@ -215,8 +215,7 @@ fun LibraryArtistDetailView(
             viewModel.openLibraryAlbum(album.name, fromNestedParent = true)
         },
         onSelectOnlineAlbum = { album ->
-            viewModel.selectAlbumForInspection(album)
-            viewModel.openLibraryAlbum(album.title, fromNestedParent = true)
+            viewModel.openAlbum(album, fromNestedParent = true)
         },
         onSaveOnlineAlbum = { album ->
             viewModel.saveAlbumToLibrary(album)

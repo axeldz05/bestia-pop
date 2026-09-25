@@ -1,5 +1,6 @@
 package com.bestiapop.android.domain.util
 
+import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Song
 import java.util.concurrent.ConcurrentHashMap
 
@@ -42,6 +43,71 @@ fun albumNamesMatch(
     val kb = albumIdentityKey(b)
     return ka.isNotEmpty() && ka == kb
 }
+
+/**
+ * Finds a matching [Album] in a collection by title and optional artist.
+ * Prioritizes matching both title and artist when artist is available,
+ * and avoids matching cross-artist generic album names.
+ */
+fun findMatchingAlbum(
+    albums: Iterable<Album>,
+    title: String,
+    artist: String = "",
+): Album? {
+    val cleanTitle = title.trim()
+    if (cleanTitle.isEmpty()) return null
+    val cleanArtist = artist.trim()
+
+    if (cleanArtist.isNotEmpty() && !IdentifyRanking.isPlaceholderArtist(cleanArtist)) {
+        return albums.firstOrNull { album ->
+            (albumNamesMatch(album.name, cleanTitle) || albumNamesMatch(album.displayName, cleanTitle)) &&
+                (artistsCompatible(album.artist, cleanArtist) || album.artist.isBlank())
+        }
+    }
+
+    return albums.firstOrNull { album ->
+        albumNamesMatch(album.name, cleanTitle) || albumNamesMatch(album.displayName, cleanTitle)
+    }
+}
+
+/** Level 1: Finds a matching [Album] from an [Iterable] of [Song]. */
+@JvmName("findMatchingAlbumInSongs")
+fun findMatchingAlbum(
+    songs: Iterable<Song>,
+    title: String,
+    artist: String = "",
+): Album? {
+    val cleanTitle = title.trim()
+    if (cleanTitle.isEmpty()) return null
+    val cleanArtist = artist.trim()
+
+    val song =
+        if (cleanArtist.isNotEmpty() && !IdentifyRanking.isPlaceholderArtist(cleanArtist)) {
+            songs.firstOrNull { s ->
+                albumNamesMatch(s.album, cleanTitle) &&
+                    (artistsCompatible(s.artist, cleanArtist) || s.artist.isBlank())
+            }
+        } else {
+            null
+        } ?: songs.firstOrNull { s -> albumNamesMatch(s.album, cleanTitle) }
+
+    return song?.let {
+        Album(
+            name = it.album,
+            artist = it.artist,
+            songCount = 1,
+            artworkUri = it.artworkUri,
+        )
+    }
+}
+
+/** Level 2: Finds a matching [Album] checking [albums] first, with fallback to [songs]. */
+fun findMatchingAlbum(
+    albums: Iterable<Album>,
+    songs: Iterable<Song>,
+    title: String,
+    artist: String = "",
+): Album? = findMatchingAlbum(albums, title, artist) ?: findMatchingAlbum(songs, title, artist)
 
 fun stripAlbumEditionDecor(name: String): String =
     stripDecorCache.computeIfAbsent(name) { raw ->
@@ -259,7 +325,8 @@ private fun isOtherScriptSubtitle(raw: String): Boolean {
 }
 
 private val EDITION_TOKEN =
-    """(?:deluxe(?:\s+edition)?|(?:special|limited|expanded|bonus|anniversary|explicit)(?:\s+edition)?|""" +
+    """(?:deluxe(?:\s+edition)?|(?:special|limited|expanded|bonus|explicit)(?:\s+edition)?|""" +
+        """(?:\d+(?:st|nd|rd|th)?\s+)?anniversary(?:\s+edition)?|""" +
         """remaster(?:ed)?(?:\s+\d{4})?|edition|bonus(?:\s+tracks?)?|ep|single|""" +
         """audiotree\s+live|mahogany\s+sessions?|tiny\s+desk|from\s+the\s+basement|""" +
         """like\s+a\s+version|colors\s+show)"""

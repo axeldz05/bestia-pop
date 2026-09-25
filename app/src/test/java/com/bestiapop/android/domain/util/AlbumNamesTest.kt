@@ -1,8 +1,11 @@
 package com.bestiapop.android.domain.util
 
+import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Song
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -207,6 +210,68 @@ class AlbumNamesTest {
             listOf(3L),
             songsMatchingAlbumBucket(library, "Audiotree Live", isGeneric).map { it.id },
         )
+    }
+
+    @Test
+    fun findMatchingAlbum_matchesExactAndDecoratedTitles() {
+        val albums =
+            listOf(
+                Album(name = "Hybrid Theory", artist = "Linkin Park", songCount = 12),
+                Album(name = "Meteora", artist = "Linkin Park", songCount = 13),
+                Album(name = "Greatest Hits", artist = "Blink-182", songCount = 17),
+            )
+
+        // Exact match
+        val exact = findMatchingAlbum(albums, "Hybrid Theory", "Linkin Park")
+        assertNotNull(exact)
+        assertEquals("Hybrid Theory", exact?.name)
+
+        // Decorated title matches local plain album
+        val decorated = findMatchingAlbum(albums, "Hybrid Theory (Deluxe Edition)", "Linkin Park")
+        assertNotNull(decorated)
+        assertEquals("Hybrid Theory", decorated?.name)
+
+        // Remastered suffix match
+        val remaster = findMatchingAlbum(albums, "Meteora - 20th Anniversary Edition", "Linkin Park")
+        assertNotNull(remaster)
+        assertEquals("Meteora", remaster?.name)
+
+        // Different artist with same title does NOT match
+        val wrongArtist = findMatchingAlbum(albums, "Greatest Hits", "Queen")
+        assertNull(wrongArtist)
+
+        // Artist compatibility allows matching
+        val compatibleArtist = findMatchingAlbum(albums, "Greatest Hits", "blink-182")
+        assertNotNull(compatibleArtist)
+        assertEquals("Greatest Hits", compatibleArtist?.name)
+    }
+
+    @Test
+    fun findMatchingAlbum_matchesFromSongsAndFallback() {
+        val songs =
+            listOf(
+                song(1L, "Hybrid Theory", "Linkin Park"),
+                song(2L, "Meteora (Deluxe)", "Linkin Park"),
+            )
+        val albums =
+            listOf(
+                Album(name = "Hybrid Theory", artist = "Linkin Park", songCount = 12),
+            )
+
+        // Matching from songs only
+        val fromSongs = findMatchingAlbum(songs, "Meteora", "Linkin Park")
+        assertNotNull(fromSongs)
+        assertEquals("Meteora (Deluxe)", fromSongs?.name)
+
+        // Fallback: album in albums list prioritized
+        val fallbackAlbum = findMatchingAlbum(albums, songs, "Hybrid Theory", "Linkin Park")
+        assertNotNull(fallbackAlbum)
+        assertEquals(12, fallbackAlbum?.songCount)
+
+        // Fallback: missing from albums, resolved from songs
+        val fallbackSong = findMatchingAlbum(albums, songs, "Meteora", "Linkin Park")
+        assertNotNull(fallbackSong)
+        assertEquals("Meteora (Deluxe)", fallbackSong?.name)
     }
 
     private fun song(

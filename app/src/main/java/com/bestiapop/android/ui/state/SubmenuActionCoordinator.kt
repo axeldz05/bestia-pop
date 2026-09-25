@@ -11,6 +11,8 @@ import com.bestiapop.android.data.model.toPlayableItems
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.albumNamesMatch
+import com.bestiapop.android.domain.util.findMatchingAlbum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -184,10 +186,13 @@ class SubmenuActionCoordinator(
         val cleanTitle = albumTitle.trim()
         if (cleanTitle.isEmpty()) return
 
-        val localSongs = getLibrarySongs().filter { it.album.equals(cleanTitle, ignoreCase = true) }
-        if (localSongs.isNotEmpty()) {
-            executeForSongs(action, localSongs, onAddToPlaylist)
-            return
+        val localAlbum = findMatchingAlbum(getLibrarySongs(), cleanTitle, artistName)
+        if (localAlbum != null) {
+            val localSongs = getLibrarySongs().filter { albumNamesMatch(it.album, localAlbum.name) }
+            if (localSongs.isNotEmpty()) {
+                executeForSongs(action, localSongs, onAddToPlaylist)
+                return
+            }
         }
 
         val currentCollection = getCatalogCollection()

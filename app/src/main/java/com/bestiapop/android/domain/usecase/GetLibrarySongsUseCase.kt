@@ -279,13 +279,7 @@ class GetLibrarySongsUseCase {
         if (queryTokens.isEmpty()) return emptyList()
         return songs.filter { song ->
             val haystack = haystackById?.get(song.id) ?: searchHaystack(song)
-            if (haystack.contains(normalizedQuery)) {
-                true
-            } else if (queryTokens.size > 1) {
-                queryTokens.all { token -> haystack.contains(token) }
-            } else {
-                false
-            }
+            TrackMatchKeys.matchesQuery(haystack, normalizedQuery, queryTokens)
         }
     }
 

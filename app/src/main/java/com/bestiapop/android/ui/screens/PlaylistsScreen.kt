@@ -124,7 +124,7 @@ fun PlaylistsScreen(
             } else {
                 val normalizedQuery = TrackMatchKeys.normalize(searchQuery.trim())
                 playlists.filter {
-                    TrackMatchKeys.normalize(it.name).contains(normalizedQuery)
+                    TrackMatchKeys.matchesQuery(it.name, normalizedQuery)
                 }
             }
         }

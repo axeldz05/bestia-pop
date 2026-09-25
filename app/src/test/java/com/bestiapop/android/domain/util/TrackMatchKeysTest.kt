@@ -364,4 +364,25 @@ class TrackMatchKeysTest {
         assertEquals(1, missing.size)
         assertEquals("cand-2", missing[0].id)
     }
+
+    @Test
+    fun matchesQuery_foldsDiacriticsAndPunctuation() {
+        assertTrue(TrackMatchKeys.matchesQuery("Canción Para Mi Muerte", "cancion"))
+        assertTrue(TrackMatchKeys.matchesQuery("Señor Cobranza", "senor cobranza"))
+        assertTrue(TrackMatchKeys.matchesQuery("Björk - Hunter", "bjork"))
+    }
+
+    @Test
+    fun matchesQuery_multiTokenMatchingAndOrderIndependence() {
+        val songHaystack = "Bohemian Rhapsody Queen A Night at the Opera"
+        assertTrue(TrackMatchKeys.matchesQuery(songHaystack, "queen bohemian"))
+        assertTrue(TrackMatchKeys.matchesQuery(songHaystack, "bohemian queen opera"))
+        assertFalse(TrackMatchKeys.matchesQuery(songHaystack, "queen beatles"))
+    }
+
+    @Test
+    fun matchesQuery_emptyOrBlankMatchesEverything() {
+        assertTrue(TrackMatchKeys.matchesQuery("Any Song", ""))
+        assertTrue(TrackMatchKeys.matchesQuery("Any Song", "   "))
+    }
 }

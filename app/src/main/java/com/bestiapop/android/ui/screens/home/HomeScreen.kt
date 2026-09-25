@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -46,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.Album
@@ -161,54 +164,71 @@ fun HomeScreen(
 
     val isSearchActive = searchQuery.isNotBlank()
 
+    val cleanSearchQuery = remember(searchQuery) { searchQuery.trim() }
+    val normalizedSearchQuery = remember(cleanSearchQuery) { TrackMatchKeys.normalize(cleanSearchQuery) }
+    val searchTokens = remember(normalizedSearchQuery) { normalizedSearchQuery.split(' ').filter { it.isNotEmpty() } }
+
     // Filter local songs matching query
     val matchingLocalSongs =
-        remember(searchQuery, allSongs) {
-            if (searchQuery.isBlank()) {
+        remember(normalizedSearchQuery, allSongs) {
+            if (normalizedSearchQuery.isEmpty()) {
                 emptyList()
             } else {
-                val q = searchQuery.trim().lowercase()
-                allSongs.filter {
-                    it.title.lowercase().contains(q) ||
-                        it.artist.lowercase().contains(q) ||
-                        it.album.lowercase().contains(q)
+                allSongs.filter { song ->
+                    TrackMatchKeys.matchesQuery(
+                        "${song.title} ${song.artist} ${song.album}",
+                        normalizedSearchQuery,
+                        searchTokens,
+                    )
                 }
             }
         }
 
     // Filter local albums matching query
     val matchingLocalAlbums =
-        remember(searchQuery, albums) {
-            if (searchQuery.isBlank()) {
+        remember(normalizedSearchQuery, albums) {
+            if (normalizedSearchQuery.isEmpty()) {
                 emptyList()
             } else {
-                val q = searchQuery.trim().lowercase()
-                albums.filter {
-                    it.name.lowercase().contains(q) ||
-                        it.artist.lowercase().contains(q)
+                albums.filter { album ->
+                    TrackMatchKeys.matchesQuery(
+                        "${album.name} ${album.artist}",
+                        normalizedSearchQuery,
+                        searchTokens,
+                    )
                 }
             }
         }
 
     // Filter local artists matching query
     val matchingLocalArtists =
-        remember(searchQuery, artists) {
-            if (searchQuery.isBlank()) {
+        remember(normalizedSearchQuery, artists) {
+            if (normalizedSearchQuery.isEmpty()) {
                 emptyList()
             } else {
-                val q = searchQuery.trim().lowercase()
-                artists.filter { it.name.lowercase().contains(q) }
+                artists.filter { artist ->
+                    TrackMatchKeys.matchesQuery(
+                        artist.name,
+                        normalizedSearchQuery,
+                        searchTokens,
+                    )
+                }
             }
         }
 
     // Filter local playlists matching query
     val matchingLocalPlaylists =
-        remember(searchQuery, playlists) {
-            if (searchQuery.isBlank()) {
+        remember(normalizedSearchQuery, playlists) {
+            if (normalizedSearchQuery.isEmpty()) {
                 emptyList()
             } else {
-                val q = searchQuery.trim().lowercase()
-                playlists.filter { it.name.lowercase().contains(q) }
+                playlists.filter { playlist ->
+                    TrackMatchKeys.matchesQuery(
+                        playlist.name,
+                        normalizedSearchQuery,
+                        searchTokens,
+                    )
+                }
             }
         }
 
@@ -337,6 +357,21 @@ fun HomeScreen(
                         }
                     }
                 },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions =
+                    KeyboardActions(
+                        onSearch = {
+                            val trimmed = searchQuery.trim()
+                            if (trimmed.isNotBlank()) {
+                                viewModel.addRecentSearch(trimmed)
+                                if (!isOfflineMode) {
+                                    viewModel.submitCatalogSearch(trimmed)
+                                }
+                            }
+                            focusManager.clearFocus(force = true)
+                            keyboardController?.hide()
+                        },
+                    ),
                 singleLine = true,
                 shape = RoundedCornerShape(28.dp),
                 colors =
@@ -380,25 +415,45 @@ fun HomeScreen(
                 currentSongUri = currentItem?.mediaId,
                 songItemActions = songItemActions,
                 onPlayLocalSong = { song ->
-                    viewModel.playSong(song)
+                    if (searchQuery.isNotBlank()) {
+                        viewModel.addRecentSearch(searchQuery.trim())
+                    }
+                    viewModel.playSong(song, playlistOrQueue = matchingLocalSongs)
                 },
                 onSelectLocalAlbum = { album ->
+                    if (searchQuery.isNotBlank()) {
+                        viewModel.addRecentSearch(searchQuery.trim())
+                    }
                     viewModel.openLibraryAlbum(album.name)
                 },
                 onSelectLocalPlaylist = { playlist ->
+                    if (searchQuery.isNotBlank()) {
+                        viewModel.addRecentSearch(searchQuery.trim())
+                    }
                     viewModel.openLocalPlaylist(playlist.id)
-                    isLibraryBrowseOpen = true
                 },
                 onPlayCatalogTrack = { track ->
+                    if (searchQuery.isNotBlank()) {
+                        viewModel.addRecentSearch(searchQuery.trim())
+                    }
                     viewModel.playCatalogOrLocalTrack(track)
                 },
                 onDownloadCatalogTrack = { track ->
+                    if (searchQuery.isNotBlank()) {
+                        viewModel.addRecentSearch(searchQuery.trim())
+                    }
                     viewModel.downloadOnlineTrack(track)
                 },
                 onSelectCatalogAlbum = { album ->
+                    if (searchQuery.isNotBlank()) {
+                        viewModel.addRecentSearch(searchQuery.trim())
+                    }
                     viewModel.openAlbum(album)
                 },
                 onSelectCatalogPlaylist = { playlist ->
+                    if (searchQuery.isNotBlank()) {
+                        viewModel.addRecentSearch(searchQuery.trim())
+                    }
                     viewModel.selectPlaylistForInspection(playlist)
                 },
                 onSearchMoreOnline = {
@@ -409,9 +464,20 @@ fun HomeScreen(
                 isLoadingMoreOnline = catalogSearch.isLoadingMore,
                 artists = unifiedArtists,
                 onSelectArtist = { artist ->
-                    viewModel.selectArtistForInspection(artist.name)
+                    if (searchQuery.isNotBlank()) {
+                        viewModel.addRecentSearch(searchQuery.trim())
+                    }
+                    val isLocal = matchingLocalArtists.any { it.name.equals(artist.name, ignoreCase = true) }
+                    if (isLocal || isOfflineMode) {
+                        viewModel.openLibraryArtist(artist.name)
+                    } else {
+                        viewModel.selectArtistForInspection(artist.name)
+                    }
                 },
                 onEnqueueCatalogTrack = { track ->
+                    if (searchQuery.isNotBlank()) {
+                        viewModel.addRecentSearch(searchQuery.trim())
+                    }
                     viewModel.enqueueCatalogOrLocalTrack(track)
                 },
                 modifier = Modifier.weight(1f),
@@ -519,6 +585,7 @@ fun HomeScreen(
             onSelectQuery = { query ->
                 searchQuery = query
                 viewModel.setCatalogSearchDraft(query)
+                viewModel.addRecentSearch(query)
                 if (!isOfflineMode) {
                     viewModel.submitCatalogSearch(query)
                 }

@@ -75,6 +75,37 @@ object TrackMatchKeys {
         return normalize(haystack).contains(n)
     }
 
+    /**
+     * Checks if [haystack] matches a query using full substring matching first,
+     * and multi-token matching (all tokens must be present in the normalized haystack) as fallback.
+     */
+    fun matchesQuery(
+        haystack: String,
+        query: String,
+    ): Boolean {
+        if (query.isBlank()) return true
+        val normalizedQuery = normalize(query)
+        if (normalizedQuery.isEmpty()) return false
+        val tokens = normalizedQuery.split(' ').filter { it.isNotEmpty() }
+        return matchesQuery(haystack, normalizedQuery, tokens)
+    }
+
+    /**
+     * Level 1 primitive: Checks if [haystack] matches pre-computed [normalizedQuery] and [queryTokens].
+     * Avoids re-normalizing the query or re-splitting tokens when filtering collections.
+     */
+    fun matchesQuery(
+        haystack: String,
+        normalizedQuery: String,
+        queryTokens: List<String> = emptyList(),
+    ): Boolean {
+        if (normalizedQuery.isEmpty()) return true
+        val normalizedHaystack = normalize(haystack)
+        if (normalizedHaystack.contains(normalizedQuery)) return true
+        val tokens = if (queryTokens.isNotEmpty()) queryTokens else normalizedQuery.split(' ').filter { it.isNotEmpty() }
+        return tokens.size > 1 && tokens.all { token -> normalizedHaystack.contains(token) }
+    }
+
     fun matchKey(
         artist: String,
         title: String,

@@ -285,9 +285,16 @@ fun DiscoverSearchResultsView(
                         key = { "search-playlist-${it.id}" },
                         contentType = { "search-playlist-card" },
                     ) { playlist ->
+                        val subtitle =
+                            buildString {
+                                if (playlist.trackCount > 0) {
+                                    append("${playlist.trackCount} canc. • ")
+                                }
+                                append(playlist.creator.ifBlank { playlist.provider })
+                            }
                         DiscoverMediaCard(
                             title = playlist.title,
-                            subtitle = "",
+                            subtitle = subtitle,
                             artworkUri = playlist.coverUrl,
                             onClick = { onSelectPlaylist(playlist) },
                         )

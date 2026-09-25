@@ -363,6 +363,7 @@ data class CatalogPlaylist(
     val creator: String,
     val coverUrl: String?,
     val trackCount: Int = 0,
+    val provider: String = "Deezer",
 )
 
 enum class CandidateDownloadState {

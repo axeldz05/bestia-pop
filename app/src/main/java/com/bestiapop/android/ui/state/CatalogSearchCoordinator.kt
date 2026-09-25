@@ -1,9 +1,12 @@
 package com.bestiapop.android.ui.state
 
 import com.bestiapop.android.data.model.CatalogCategory
+import com.bestiapop.android.data.model.CatalogPlaylist
 import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.network.MetadataFetcher
+import com.bestiapop.android.data.network.YouTubeExtractor
+import com.bestiapop.android.domain.util.CollectionUtils
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.matchKey
@@ -156,14 +159,24 @@ class CatalogSearchCoordinator(
                                     emptyList()
                                 }
                             }
+                        val playlistsDeferred =
+                            scope.async {
+                                if (effectiveQuery.isNotEmpty()) {
+                                    searchOnlinePlaylists(effectiveQuery)
+                                } else {
+                                    emptyList()
+                                }
+                            }
                         val tracks = tracksDeferred.await()
                         val albums = albumsDeferred.await()
                         val artists = artistsDeferred.await()
+                        val playlists = playlistsDeferred.await()
                         updateIfCurrent(generation) {
                             it.copy(
                                 tracks = tracks,
                                 albums = albums,
                                 artists = artists,
+                                playlists = playlists,
                                 canLoadMore = tracks.isNotEmpty(),
                             )
                         }
@@ -177,8 +190,8 @@ class CatalogSearchCoordinator(
 
                     CatalogCategory.PLAYLISTS -> {
                         val playlistQuery = if (cleanQ.isNotEmpty()) cleanQ else effectiveQuery
-                        val results = MetadataFetcher.searchPlaylists(playlistQuery)
-                        updateIfCurrent(generation) { it.copy(playlists = results) }
+                        val results = searchOnlinePlaylists(playlistQuery)
+                        updateIfCurrent(generation) { it.copy(playlists = results, canLoadMore = results.isNotEmpty()) }
                     }
 
                     CatalogCategory.GENRES -> {
@@ -270,6 +283,21 @@ class CatalogSearchCoordinator(
                     }
                 }
 
+                CatalogCategory.PLAYLISTS -> {
+                    val playlistQuery = if (effectiveQuery.isNotEmpty()) effectiveQuery else cleanQ
+                    val existingPlaylists = _state.value.playlists
+                    val existingIds = existingPlaylists.map { it.id }.toMutableSet()
+                    val nextPage = MetadataFetcher.searchPlaylists(playlistQuery, limit = 15, index = existingPlaylists.size)
+                    val newPlaylists = nextPage.filter { existingIds.add(it.id) }
+                    updateIfCurrent(generation) { s ->
+                        s.copy(
+                            playlists = s.playlists + newPlaylists,
+                            isLoadingMore = false,
+                            canLoadMore = newPlaylists.isNotEmpty(),
+                        )
+                    }
+                }
+
                 else -> {
                     updateIfCurrent(generation) { it.copy(isLoadingMore = false, canLoadMore = false) }
                 }
@@ -284,5 +312,18 @@ class CatalogSearchCoordinator(
         if (generation == catalogSearchGeneration) {
             _state.update { transform(it) }
         }
+    }
+
+    private suspend fun searchOnlinePlaylists(query: String): List<CatalogPlaylist> {
+        val cleanQ = query.trim()
+        if (cleanQ.isEmpty()) return emptyList()
+        val deezerDeferred = scope.async { MetadataFetcher.searchPlaylists(cleanQ) }
+        val ytDeferred = scope.async { YouTubeExtractor.searchYouTubePlaylists(cleanQ) }
+        val deezer = deezerDeferred.await()
+        val yt = ytDeferred.await()
+
+        val interleaved = CollectionUtils.interleaveEquitable(yt, deezer, limit = yt.size + deezer.size)
+        val seen = mutableSetOf<String>()
+        return interleaved.filter { seen.add(it.id) }
     }
 }

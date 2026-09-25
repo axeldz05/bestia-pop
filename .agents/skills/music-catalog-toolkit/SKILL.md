@@ -95,6 +95,19 @@ python3 .agents/skills/music-catalog-toolkit/scripts/catalog_tool.py download so
 python3 .agents/skills/music-catalog-toolkit/scripts/catalog_tool.py download album --artist "Asian Kung-Fu Generation" --title "Magic Disk" -o ./downloads
 ```
 
+### F. Verificación y Diagnóstico de Playlists (YouTube y Deezer)
+Herramienta dedicada para probar búsqueda de playlists públicas y extracción de pistas:
+```bash
+# Buscar playlists en YouTube y Deezer
+python3 .agents/skills/music-catalog-toolkit/scripts/verify_playlists.py search "rock clasico" --limit 10
+
+# Inspeccionar pistas de una playlist de YouTube por ID o enlace
+python3 .agents/skills/music-catalog-toolkit/scripts/verify_playlists.py tracks "PLBD5pRttJ7N0vCfh4NpEg7Vw47hfeCxuE" --limit 30
+
+# Verificación completa end-to-end (búsqueda + extracción de pistas)
+python3 .agents/skills/music-catalog-toolkit/scripts/verify_playlists.py test-all --query "queen"
+```
+
 ---
 
 ## 2. Diferencias Funcionales entre `catalog_tool.py` y la App Android

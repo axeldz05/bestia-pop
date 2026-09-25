@@ -1174,7 +1174,11 @@ object MetadataFetcher {
         deezerArtistId: Long? = null,
     ): List<OnlineCatalogTrack> = fetchArtistDiscography(artistName, deezerArtistId).topTracks
 
-    suspend fun searchPlaylists(query: String): List<CatalogPlaylist> =
+    suspend fun searchPlaylists(
+        query: String,
+        limit: Int = 15,
+        index: Int = 0,
+    ): List<CatalogPlaylist> =
         withContext(Dispatchers.IO) {
             val cleanQ = query.trim().ifEmpty { "top hits" }
             val list = mutableListOf<CatalogPlaylist>()
@@ -1182,7 +1186,7 @@ object MetadataFetcher {
                 val url =
                     endpoint(
                         endpoints.deezerBaseUrl,
-                        "search/playlist?q=${encodeQuery(cleanQ)}&limit=15",
+                        "search/playlist?q=${encodeQuery(cleanQ)}&limit=$limit&index=$index",
                     )
                 val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
                 if (data != null) {
@@ -1200,6 +1204,7 @@ object MetadataFetcher {
                                         obj.optString("picture_big"),
                                     ),
                                 trackCount = obj.optInt("nb_tracks", 0),
+                                provider = "Deezer",
                             ),
                         )
                     }
@@ -1611,12 +1616,21 @@ object MetadataFetcher {
         playlistTitle: String,
     ): List<CatalogTrackCandidate> =
         withContext(Dispatchers.IO) {
+            val cleanId =
+                playlistId
+                    .removePrefix("VL")
+                    .substringAfter("list=")
+                    .substringBefore("&")
+                    .trim()
+            if (cleanId.isNotBlank() && !cleanId.all { it.isDigit() }) {
+                return@withContext YouTubeExtractor.fetchPlaylistTrackCandidates(cleanId, playlistTitle)
+            }
             val resultCandidates = mutableListOf<CatalogTrackCandidate>()
             try {
                 val url =
                     endpoint(
                         endpoints.deezerBaseUrl,
-                        "playlist/$playlistId/tracks?limit=50",
+                        "playlist/$cleanId/tracks?limit=50",
                     )
                 val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
                 if (data != null) {

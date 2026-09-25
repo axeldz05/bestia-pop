@@ -1,8 +1,11 @@
 package com.bestiapop.android.data.network
 
+import com.bestiapop.android.data.model.CatalogPlaylist
+import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.data.model.toCatalogTrack
 import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.domain.util.IdentifyRanking
@@ -847,6 +850,530 @@ object YouTubeExtractor {
             }
         } catch (e: Exception) {
             0L
+        }
+    }
+
+    suspend fun searchYouTubePlaylists(query: String): List<CatalogPlaylist> =
+        withContext(Dispatchers.IO) {
+            val results = mutableListOf<CatalogPlaylist>()
+            val trimmed = query.trim()
+            if (trimmed.isEmpty()) return@withContext results
+            val seenIds = mutableSetOf<String>()
+
+            // 1. Direct playlist link or ID query check
+            val directPlaylistId =
+                when {
+                    trimmed.contains("list=") -> {
+                        trimmed.substringAfter("list=").substringBefore("&").trim()
+                    }
+
+                    (trimmed.startsWith("PL") || trimmed.startsWith("VLPL")) && !trimmed.contains(" ") -> {
+                        trimmed.removePrefix("VL")
+                    }
+
+                    else -> {
+                        null
+                    }
+                }
+            if (!directPlaylistId.isNullOrEmpty()) {
+                val directTracks = fetchPlaylistTrackCandidates(directPlaylistId, "YouTube Playlist")
+                if (directTracks.isNotEmpty()) {
+                    val cover = directTracks.firstOrNull()?.identity?.artworkUri
+                    results.add(
+                        CatalogPlaylist(
+                            id = directPlaylistId,
+                            title = "YouTube Playlist",
+                            creator = "YouTube",
+                            coverUrl = cover,
+                            trackCount = directTracks.size,
+                            provider = "YouTube",
+                        ),
+                    )
+                    return@withContext results
+                }
+            }
+
+            // 2. InnerTube API Search (/youtubei/v1/search with params = "EgIQAw%3D%3D" for playlist filter)
+            try {
+                val clientCtx =
+                    JSONObject().apply {
+                        put("clientName", ANDROID_MAIN.name)
+                        put("clientVersion", ANDROID_MAIN.version)
+                        put("hl", "es")
+                        put("gl", "US")
+                        put("userAgent", ANDROID_MAIN.userAgent)
+                        put("osName", ANDROID_MAIN.osName)
+                        put("osVersion", ANDROID_MAIN.osVersion)
+                        put("androidSdkVersion", 30)
+                    }
+
+                val bodyJson =
+                    JSONObject().apply {
+                        put("context", JSONObject().put("client", clientCtx))
+                        put("query", trimmed)
+                        put("params", "EgIQAw%3D%3D")
+                    }
+
+                val request =
+                    Request
+                        .Builder()
+                        .url(endpoint(endpoints.webBaseUrl, "youtubei/v1/search"))
+                        .header("X-YouTube-Client-Name", ANDROID_MAIN.clientId)
+                        .header("X-YouTube-Client-Version", ANDROID_MAIN.version)
+                        .header("User-Agent", ANDROID_MAIN.userAgent)
+                        .header("Content-Type", "application/json")
+                        .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+                        .build()
+
+                client.newCall(request).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val bodyStr = resp.body?.string() ?: ""
+                        val json = JSONObject(bodyStr)
+
+                        val contents =
+                            json
+                                .optJSONObject("contents")
+                                ?.optJSONObject("sectionListRenderer")
+                                ?.optJSONArray("contents")
+                                ?: json
+                                    .optJSONObject("contents")
+                                    ?.optJSONObject("twoColumnSearchResultsRenderer")
+                                    ?.optJSONObject("primaryContents")
+                                    ?.optJSONObject("sectionListRenderer")
+                                    ?.optJSONArray("contents")
+
+                        if (contents != null) {
+                            for (i in 0 until contents.length()) {
+                                val section = contents.optJSONObject(i)?.optJSONObject("itemSectionRenderer") ?: continue
+                                val items = section.optJSONArray("contents") ?: continue
+                                for (j in 0 until items.length()) {
+                                    val itemObj = items.optJSONObject(j) ?: continue
+                                    val plObj =
+                                        itemObj.optJSONObject("compactPlaylistRenderer")
+                                            ?: itemObj.optJSONObject("playlistRenderer")
+                                            ?: continue
+                                    parsePlaylistFromRenderer(plObj)?.let { pl ->
+                                        if (seenIds.add(pl.id)) {
+                                            results.add(pl)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // 3. Fallback to HTML Scraping if InnerTube returned empty
+            if (results.isEmpty()) {
+                try {
+                    val encodedQ = java.net.URLEncoder.encode(trimmed, "UTF-8")
+                    val url = endpoint(endpoints.webBaseUrl, "results?search_query=$encodedQ&sp=EgIQAw%3D%3D")
+                    val request =
+                        Request
+                            .Builder()
+                            .url(url)
+                            .header(
+                                "User-Agent",
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                            ).header("Accept-Language", "es-ES,es;q=0.9,en;q=0.8")
+                            .build()
+
+                    client.newCall(request).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val html = resp.body?.string() ?: ""
+                            val p = Pattern.compile("var ytInitialData = (\\{.*?\\});</script>")
+                            val m = p.matcher(html)
+                            if (m.find()) {
+                                val jsonStr = m.group(1) ?: ""
+                                val data = JSONObject(jsonStr)
+                                parsePlaylistSearchResultsRecursive(data, results, seenIds)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            results
+        }
+
+    private fun parsePlaylistFromRenderer(plObj: JSONObject): CatalogPlaylist? {
+        val playlistId = plObj.optString("playlistId").takeIf { it.isNotBlank() } ?: return null
+        val rawTitle =
+            plObj
+                .optJSONObject("title")
+                ?.optJSONArray("runs")
+                ?.optJSONObject(0)
+                ?.optString("text")
+                ?: plObj.optJSONObject("title")?.optString("simpleText")
+                ?: plObj.optString("title").takeIf { it.isNotBlank() }
+                ?: "Playlist"
+
+        val creator =
+            plObj
+                .optJSONObject("shortBylineText")
+                ?.optJSONArray("runs")
+                ?.optJSONObject(0)
+                ?.optString("text")
+                ?: plObj
+                    .optJSONObject("longBylineText")
+                    ?.optJSONArray("runs")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                ?: "YouTube"
+
+        val thumbnails =
+            plObj.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                ?: plObj.optJSONObject("thumbnails")?.optJSONArray("thumbnails")
+                ?: plObj
+                    .optJSONObject(
+                        "thumbnailRenderer",
+                    )?.optJSONObject("playlistVideoThumbnailRenderer")
+                    ?.optJSONObject("thumbnail")
+                    ?.optJSONArray("thumbnails")
+        val coverUrl =
+            thumbnails?.let { thumbs ->
+                if (thumbs.length() > 0) thumbs.optJSONObject(thumbs.length() - 1)?.optString("url") else null
+            }
+
+        val countStr =
+            plObj
+                .optJSONObject("videoCountShortText")
+                ?.optJSONArray("runs")
+                ?.optJSONObject(0)
+                ?.optString("text")
+                ?: plObj
+                    .optJSONObject("videoCountText")
+                    ?.optJSONArray("runs")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                ?: plObj.optJSONObject("videoCountText")?.optString("simpleText")
+                ?: plObj
+                    .optJSONObject("thumbnailText")
+                    ?.optJSONArray("runs")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                ?: plObj.optString("videoCount")
+        val trackCount = Regex("\\d+").find(countStr)?.value?.toIntOrNull() ?: 0
+
+        return CatalogPlaylist(
+            id = playlistId,
+            title = rawTitle,
+            creator = creator,
+            coverUrl = coverUrl,
+            trackCount = trackCount,
+            provider = "YouTube",
+        )
+    }
+
+    private fun parsePlaylistSearchResultsRecursive(
+        obj: Any?,
+        results: MutableList<CatalogPlaylist>,
+        seenIds: MutableSet<String>,
+    ) {
+        when (obj) {
+            is JSONObject -> {
+                val plObj =
+                    obj.optJSONObject("compactPlaylistRenderer")
+                        ?: obj.optJSONObject("playlistRenderer")
+                if (plObj != null) {
+                    parsePlaylistFromRenderer(plObj)?.let { pl ->
+                        if (seenIds.add(pl.id)) results.add(pl)
+                    }
+                }
+                val lvm = obj.optJSONObject("lockupViewModel")
+                if (lvm != null) {
+                    val contentType = lvm.optString("contentType")
+                    if (contentType.contains("PLAYLIST", ignoreCase = true)) {
+                        val playlistId = lvm.optString("contentId").takeIf { it.isNotBlank() }
+                        if (playlistId != null && seenIds.add(playlistId)) {
+                            val meta = lvm.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                            val rawTitle = meta?.optJSONObject("title")?.optString("content") ?: "Playlist"
+                            var creator = "YouTube"
+                            var trackCount = 0
+                            val rows =
+                                meta
+                                    ?.optJSONObject(
+                                        "metadata",
+                                    )?.optJSONObject("contentMetadataViewModel")
+                                    ?.optJSONArray("metadataRows")
+                            if (rows != null) {
+                                for (r in 0 until rows.length()) {
+                                    val rowObj = rows.optJSONObject(r) ?: continue
+                                    val parts = rowObj.optJSONArray("metadataParts") ?: continue
+                                    for (p in 0 until parts.length()) {
+                                        val txt =
+                                            parts
+                                                .optJSONObject(p)
+                                                ?.optJSONObject("text")
+                                                ?.optString("content")
+                                                .orEmpty()
+                                        if (txt.isNotBlank()) {
+                                            val countMatch =
+                                                Regex(
+                                                    """(\d+)\s*(?:vídeos|canciones|videos|tracks)?""",
+                                                    RegexOption.IGNORE_CASE,
+                                                ).find(txt)
+                                            if (countMatch != null) {
+                                                val num = countMatch.groupValues[1].toIntOrNull() ?: 0
+                                                if (num > trackCount) trackCount = num
+                                            } else if (creator == "YouTube" && !txt.contains("visualizaciones", ignoreCase = true) &&
+                                                !txt.contains("actualizada", ignoreCase = true)
+                                            ) {
+                                                creator = txt
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            val sources =
+                                lvm
+                                    .optJSONObject("contentImage")
+                                    ?.optJSONObject("thumbnailViewModel")
+                                    ?.optJSONObject("image")
+                                    ?.optJSONArray("sources")
+                            val coverUrl =
+                                sources?.let { s ->
+                                    if (s.length() > 0) s.optJSONObject(s.length() - 1)?.optString("url") else null
+                                }
+                            results.add(
+                                CatalogPlaylist(
+                                    id = playlistId,
+                                    title = rawTitle,
+                                    creator = creator,
+                                    coverUrl = coverUrl,
+                                    trackCount = trackCount,
+                                    provider = "YouTube",
+                                ),
+                            )
+                        }
+                    }
+                }
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    parsePlaylistSearchResultsRecursive(obj.opt(keys.next()), results, seenIds)
+                }
+            }
+
+            is JSONArray -> {
+                for (i in 0 until obj.length()) {
+                    parsePlaylistSearchResultsRecursive(obj.opt(i), results, seenIds)
+                }
+            }
+        }
+    }
+
+    suspend fun fetchPlaylistTrackCandidates(
+        playlistId: String,
+        playlistTitle: String,
+    ): List<CatalogTrackCandidate> =
+        withContext(Dispatchers.IO) {
+            val cleanId =
+                playlistId
+                    .removePrefix("VL")
+                    .substringAfter("list=")
+                    .substringBefore("&")
+                    .trim()
+            if (cleanId.isEmpty()) return@withContext emptyList()
+            val results = mutableListOf<CatalogTrackCandidate>()
+            val seenVideoIds = mutableSetOf<String>()
+
+            // 1. Try HTML scraping of playlist page
+            try {
+                val url = endpoint(endpoints.webBaseUrl, "playlist?list=$cleanId")
+                val request =
+                    Request
+                        .Builder()
+                        .url(url)
+                        .header(
+                            "User-Agent",
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                        ).header("Accept-Language", "es-ES,es;q=0.9,en;q=0.8")
+                        .build()
+
+                client.newCall(request).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val html = resp.body?.string() ?: ""
+                        val p = Pattern.compile("var ytInitialData = (\\{.*?\\});</script>")
+                        val m = p.matcher(html)
+                        if (m.find()) {
+                            val jsonStr = m.group(1) ?: ""
+                            val data = JSONObject(jsonStr)
+                            extractPlaylistTracksFromJson(data, playlistTitle, results, seenVideoIds)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // 2. Fallback to InnerTube browse endpoint if HTML scraping returned no tracks
+            if (results.isEmpty()) {
+                try {
+                    val clientCtx =
+                        JSONObject().apply {
+                            put("clientName", "WEB")
+                            put("clientVersion", "2.20240101.01.00")
+                            put("hl", "es")
+                            put("gl", "US")
+                        }
+                    val bodyJson =
+                        JSONObject().apply {
+                            put("context", JSONObject().put("client", clientCtx))
+                            put("browseId", "VL$cleanId")
+                        }
+                    val req =
+                        Request
+                            .Builder()
+                            .url(endpoint(endpoints.webBaseUrl, "youtubei/v1/browse"))
+                            .header("Content-Type", "application/json")
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                            .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
+
+                    client.newCall(req).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val bodyStr = resp.body?.string() ?: ""
+                            val data = JSONObject(bodyStr)
+                            extractPlaylistTracksFromJson(data, playlistTitle, results, seenVideoIds)
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            results
+        }
+
+    private fun extractPlaylistTracksFromJson(
+        obj: Any?,
+        playlistTitle: String,
+        results: MutableList<CatalogTrackCandidate>,
+        seenVideoIds: MutableSet<String>,
+    ) {
+        when (obj) {
+            is JSONObject -> {
+                val pvr = obj.optJSONObject("playlistVideoRenderer")
+                if (pvr != null) {
+                    val videoId = pvr.optString("videoId")
+                    if (videoId.isNotBlank() && seenVideoIds.add(videoId)) {
+                        val rawTitle =
+                            pvr
+                                .optJSONObject("title")
+                                ?.optJSONArray("runs")
+                                ?.optJSONObject(0)
+                                ?.optString("text")
+                                ?: pvr.optJSONObject("title")?.optString("simpleText")
+                                ?: "YouTube Video"
+                        val rawAuthor =
+                            pvr
+                                .optJSONObject("shortBylineText")
+                                ?.optJSONArray("runs")
+                                ?.optJSONObject(0)
+                                ?.optString("text")
+                                ?: "YouTube Artist"
+                        val (title, artist) = formatTitleAndArtist(rawTitle, rawAuthor)
+                        val lengthStr =
+                            pvr
+                                .optJSONObject("lengthText")
+                                ?.optJSONArray("runs")
+                                ?.optJSONObject(0)
+                                ?.optString("text")
+                                ?: pvr.optJSONObject("lengthText")?.optString("simpleText")
+                                ?: pvr.optString("lengthSeconds")
+                        val durationMs = parseDurationTextToMs(lengthStr)
+                        val thumbnails = pvr.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                        val coverUrl =
+                            thumbnails?.let { thumbs ->
+                                if (thumbs.length() > 0) thumbs.optJSONObject(thumbs.length() - 1)?.optString("url") else null
+                            } ?: videoThumbnailUrl(videoId)
+
+                        val identity =
+                            TrackIdentity(
+                                title = title,
+                                artist = artist,
+                                album = playlistTitle,
+                                durationMs = durationMs,
+                                artworkUri = coverUrl,
+                            )
+                        val track =
+                            identity.toCatalogTrack(
+                                provider = "YouTube",
+                                audioUrl = "https://www.youtube.com/watch?v=$videoId",
+                            )
+                        results.add(CatalogTrackCandidate(identity = track.identity, candidates = listOf(track)))
+                    }
+                }
+
+                val lvm = obj.optJSONObject("lockupViewModel")
+                if (lvm != null) {
+                    val contentType = lvm.optString("contentType")
+                    if (contentType.contains("VIDEO", ignoreCase = true)) {
+                        val videoId = lvm.optString("contentId")
+                        if (videoId.isNotBlank() && seenVideoIds.add(videoId)) {
+                            val meta = lvm.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                            val rawTitle = meta?.optJSONObject("title")?.optString("content") ?: "YouTube Video"
+                            val rows =
+                                meta
+                                    ?.optJSONObject(
+                                        "metadata",
+                                    )?.optJSONObject("contentMetadataViewModel")
+                                    ?.optJSONArray("metadataRows")
+                            val rawAuthor =
+                                rows
+                                    ?.optJSONObject(
+                                        0,
+                                    )?.optJSONArray("metadataParts")
+                                    ?.optJSONObject(0)
+                                    ?.optJSONObject("text")
+                                    ?.optString("content")
+                                    ?: "YouTube Artist"
+                            val (title, artist) = formatTitleAndArtist(rawTitle, rawAuthor)
+                            val sources =
+                                lvm
+                                    .optJSONObject("contentImage")
+                                    ?.optJSONObject("thumbnailViewModel")
+                                    ?.optJSONObject("image")
+                                    ?.optJSONArray("sources")
+                            val coverUrl =
+                                sources?.let { s ->
+                                    if (s.length() > 0) s.optJSONObject(s.length() - 1)?.optString("url") else null
+                                } ?: videoThumbnailUrl(videoId)
+
+                            val identity =
+                                TrackIdentity(
+                                    title = title,
+                                    artist = artist,
+                                    album = playlistTitle,
+                                    durationMs = 0L,
+                                    artworkUri = coverUrl,
+                                )
+                            val track =
+                                identity.toCatalogTrack(
+                                    provider = "YouTube",
+                                    audioUrl = "https://www.youtube.com/watch?v=$videoId",
+                                )
+                            results.add(CatalogTrackCandidate(identity = track.identity, candidates = listOf(track)))
+                        }
+                    }
+                }
+
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    extractPlaylistTracksFromJson(obj.opt(keys.next()), playlistTitle, results, seenVideoIds)
+                }
+            }
+
+            is JSONArray -> {
+                for (i in 0 until obj.length()) {
+                    extractPlaylistTracksFromJson(obj.opt(i), playlistTitle, results, seenVideoIds)
+                }
+            }
         }
     }
 

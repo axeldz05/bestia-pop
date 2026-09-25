@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -51,7 +52,9 @@ import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.CatalogAlbum
+import com.bestiapop.android.data.model.CatalogPlaylist
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.util.filterNotMatchingAlbums
 import com.bestiapop.android.domain.util.filterNotMatchingSongs
@@ -80,9 +83,13 @@ fun UnifiedSearchSection(
     isLoadingMoreOnline: Boolean,
     modifier: Modifier = Modifier,
     localAlbums: List<Album> = emptyList(),
+    localPlaylists: List<Playlist> = emptyList(),
     artists: List<Artist> = emptyList(),
+    catalogPlaylists: List<CatalogPlaylist> = emptyList(),
     onSelectLocalAlbum: (Album) -> Unit = {},
+    onSelectLocalPlaylist: (Playlist) -> Unit = {},
     onSelectArtist: (Artist) -> Unit = {},
+    onSelectCatalogPlaylist: (CatalogPlaylist) -> Unit = {},
     onEnqueueCatalogTrack: (OnlineCatalogTrack) -> Unit = {},
     lazyListState: LazyListState = rememberLazyListState(),
 ) {
@@ -141,7 +148,7 @@ fun UnifiedSearchSection(
         }
 
         // --- 2. LOCAL RESULTS ---
-        val localCount = localSongs.size + localAlbums.size
+        val localCount = localSongs.size + localAlbums.size + localPlaylists.size
         item {
             SearchSectionHeader(
                 title = "En tu dispositivo",
@@ -154,6 +161,28 @@ fun UnifiedSearchSection(
         }
 
         if (isLocalExpanded) {
+            if (localPlaylists.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Playlists en tu dispositivo",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    ) {
+                        items(localPlaylists, key = { "local-playlist-${it.id}" }) { playlist ->
+                            SearchPlaylistMiniCard(
+                                playlist = playlist,
+                                onClick = { onSelectLocalPlaylist(playlist) },
+                            )
+                        }
+                    }
+                }
+            }
+
             if (localAlbums.isNotEmpty()) {
                 item {
                     Text(
@@ -176,7 +205,7 @@ fun UnifiedSearchSection(
                 }
             }
 
-            if (localSongs.isEmpty() && localAlbums.isEmpty()) {
+            if (localSongs.isEmpty() && localAlbums.isEmpty() && localPlaylists.isEmpty()) {
                 item {
                     Text(
                         text = "Sin resultados locales que coincidan con \"$searchQuery\"",
@@ -206,7 +235,7 @@ fun UnifiedSearchSection(
         }
 
         // --- 2. STREAMING SUGGESTIONS ---
-        val streamingCount = deduplicatedCatalogTracks.size + deduplicatedCatalogAlbums.size
+        val streamingCount = deduplicatedCatalogTracks.size + deduplicatedCatalogAlbums.size + catalogPlaylists.size
         item {
             SearchSectionHeader(
                 title = "En streaming (Sugerencias)",
@@ -219,7 +248,9 @@ fun UnifiedSearchSection(
         }
 
         if (isStreamingExpanded) {
-            if (isSearchingOnline && deduplicatedCatalogTracks.isEmpty() && deduplicatedCatalogAlbums.isEmpty()) {
+            if (isSearchingOnline && deduplicatedCatalogTracks.isEmpty() && deduplicatedCatalogAlbums.isEmpty() &&
+                catalogPlaylists.isEmpty()
+            ) {
                 item {
                     Box(
                         modifier =
@@ -241,7 +272,7 @@ fun UnifiedSearchSection(
                         }
                     }
                 }
-            } else if (deduplicatedCatalogTracks.isEmpty() && deduplicatedCatalogAlbums.isEmpty()) {
+            } else if (deduplicatedCatalogTracks.isEmpty() && deduplicatedCatalogAlbums.isEmpty() && catalogPlaylists.isEmpty()) {
                 item {
                     val message =
                         when {
@@ -249,7 +280,7 @@ fun UnifiedSearchSection(
                                 "Buscando…"
                             }
 
-                            catalogTracks.isNotEmpty() || catalogAlbums.isNotEmpty() -> {
+                            catalogTracks.isNotEmpty() || catalogAlbums.isNotEmpty() || catalogPlaylists.isNotEmpty() -> {
                                 "Las sugerencias encontradas ya están en tu dispositivo"
                             }
 
@@ -265,6 +296,28 @@ fun UnifiedSearchSection(
                     )
                 }
             } else {
+                if (catalogPlaylists.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Playlists en streaming",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        ) {
+                            items(catalogPlaylists, key = { "stream-playlist-${it.id}" }) { playlist ->
+                                SearchPlaylistMiniCard(
+                                    playlist = playlist,
+                                    onClick = { onSelectCatalogPlaylist(playlist) },
+                                )
+                            }
+                        }
+                    }
+                }
+
                 if (deduplicatedCatalogAlbums.isNotEmpty()) {
                     item {
                         Text(
@@ -397,6 +450,82 @@ private fun SearchAlbumMiniCard(
         coverUrl = album.coverUrl,
         onClick = onClick,
     )
+}
+
+@Composable
+private fun SearchPlaylistMiniCard(
+    playlist: Playlist,
+    onClick: () -> Unit,
+) {
+    val subtitle = if (playlist.songCount == 1) "1 canción" else "${playlist.songCount} canciones"
+    SearchPlaylistMiniCard(
+        title = playlist.name,
+        subtitle = subtitle,
+        coverUrl = playlist.coverUri,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun SearchPlaylistMiniCard(
+    playlist: CatalogPlaylist,
+    onClick: () -> Unit,
+) {
+    val countPart =
+        if (playlist.trackCount > 0) {
+            if (playlist.trackCount == 1) "1 canc. • " else "${playlist.trackCount} canc. • "
+        } else {
+            ""
+        }
+    val providerOrCreator = playlist.creator.ifBlank { playlist.provider }
+    SearchPlaylistMiniCard(
+        title = playlist.title,
+        subtitle = "$countPart$providerOrCreator",
+        coverUrl = playlist.coverUrl,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun SearchPlaylistMiniCard(
+    title: String,
+    subtitle: String,
+    coverUrl: String?,
+    onClick: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        modifier =
+            Modifier
+                .width(110.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick),
+    ) {
+        Column(modifier = Modifier.padding(6.dp)) {
+            ArtworkThumbnail(
+                artworkUri = coverUrl,
+                size = 98.dp,
+                cornerRadius = 6.dp,
+                fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable

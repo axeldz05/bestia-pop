@@ -201,6 +201,17 @@ fun HomeScreen(
             }
         }
 
+    // Filter local playlists matching query
+    val matchingLocalPlaylists =
+        remember(searchQuery, playlists) {
+            if (searchQuery.isBlank()) {
+                emptyList()
+            } else {
+                val q = searchQuery.trim().lowercase()
+                playlists.filter { it.name.lowercase().contains(q) }
+            }
+        }
+
     val unifiedArtists =
         remember(matchingLocalArtists, catalogSearch.artists) {
             MetadataSplitter.deduplicateArtists(matchingLocalArtists + catalogSearch.artists)
@@ -361,8 +372,10 @@ fun HomeScreen(
                 lazyListState = searchListState,
                 localSongs = matchingLocalSongs,
                 localAlbums = matchingLocalAlbums,
+                localPlaylists = matchingLocalPlaylists,
                 catalogTracks = catalogSearch.tracks,
                 catalogAlbums = catalogSearch.albums,
+                catalogPlaylists = catalogSearch.playlists,
                 isSearchingOnline = catalogSearch.isSearching,
                 currentSongUri = currentItem?.mediaId,
                 songItemActions = songItemActions,
@@ -372,6 +385,10 @@ fun HomeScreen(
                 onSelectLocalAlbum = { album ->
                     viewModel.openLibraryAlbum(album.name)
                 },
+                onSelectLocalPlaylist = { playlist ->
+                    viewModel.openLocalPlaylist(playlist.id)
+                    isLibraryBrowseOpen = true
+                },
                 onPlayCatalogTrack = { track ->
                     viewModel.playCatalogOrLocalTrack(track)
                 },
@@ -380,6 +397,9 @@ fun HomeScreen(
                 },
                 onSelectCatalogAlbum = { album ->
                     viewModel.openAlbum(album)
+                },
+                onSelectCatalogPlaylist = { playlist ->
+                    viewModel.selectPlaylistForInspection(playlist)
                 },
                 onSearchMoreOnline = {
                     viewModel.searchMore()

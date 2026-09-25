@@ -251,4 +251,117 @@ class TrackMatchKeysTest {
         assertEquals("cat-alb-2", filtered[0].id)
         assertEquals("cat-alb-4", filtered[1].id)
     }
+
+    @Test
+    fun lookupLocalSong_matchesKatakanaLoanwordEnding_neoteny() {
+        val library = listOf(song(77, "ネオテニー", "ASIAN KUNG-FU GENERATION"))
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+        val query = TrackIdentity(title = "Neoteny", artist = "ASIAN KUNG-FU GENERATION")
+        val found = TrackMatchKeys.lookupLocalSong(index, query)
+        assertEquals(77L, found?.id)
+    }
+
+    @Test
+    fun lookupLocalSong_matchesArtistWithTrailingPeriod_chilliBeans() {
+        val library = listOf(song(88, "rose", "Chilli Beans."))
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+        val query = TrackIdentity(title = "rose", artist = "Chilli Beans")
+        val found = TrackMatchKeys.lookupLocalSong(index, query)
+        assertEquals(88L, found?.id)
+    }
+
+    @Test
+    fun lookupLocalSong_matchesRomajiLongVowelsAndConsonants_jyocho() {
+        val library = listOf(song(99, "The Beautiful Cycle of Terminal", "Jyocho"))
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+        val query = TrackIdentity(title = "The Beautiful Cycle of Terminal", artist = "Jocho")
+        val found = TrackMatchKeys.lookupLocalSong(index, query)
+        assertEquals(99L, found?.id)
+    }
+
+    @Test
+    fun filterMissingAlbumCandidates_matchesByTrackNumberAndDurationAcrossLanguages() {
+        val local =
+            listOf(
+                Song(
+                    id = 101,
+                    uriString = "file:///101",
+                    title = "あなたは煙草 私はシャボン",
+                    artist = "Lovely Summer Chan",
+                    album = "LSC",
+                    trackNumber = 1,
+                    durationMs = 240_000L,
+                ),
+                Song(
+                    id = 102,
+                    uriString = "file:///102",
+                    title = "青い車",
+                    artist = "Lovely Summer Chan",
+                    album = "LSC",
+                    trackNumber = 2,
+                    durationMs = 180_000L,
+                ),
+            )
+        val candidates =
+            listOf(
+                OnlineCatalogTrack(
+                    id = "c1",
+                    title = "You smoke, I bubble",
+                    artist = "Lovely Summer Chan",
+                    album = "LSC",
+                    trackNumber = 1,
+                    durationMs = 241_000L,
+                ),
+                OnlineCatalogTrack(
+                    id = "c2",
+                    title = "Blue Car",
+                    artist = "Lovely Summer Chan",
+                    album = "LSC",
+                    trackNumber = 2,
+                    durationMs = 179_000L,
+                ),
+            )
+
+        val missing = filterMissingAlbumCandidates(candidates, local)
+        assertTrue(missing.isEmpty())
+    }
+
+    @Test
+    fun filterMissingAlbumCandidates_preservesTrulyMissingTrack() {
+        val local =
+            listOf(
+                Song(
+                    id = 201,
+                    uriString = "file:///201",
+                    title = "走れ",
+                    artist = "tricot",
+                    album = "AND",
+                    trackNumber = 1,
+                    durationMs = 200_000L,
+                ),
+            )
+        val candidates =
+            listOf(
+                OnlineCatalogTrack(
+                    id = "cand-1",
+                    title = "Hashire",
+                    artist = "tricot",
+                    album = "AND",
+                    trackNumber = 1,
+                    durationMs = 201_000L,
+                ),
+                OnlineCatalogTrack(
+                    id = "cand-2",
+                    title = "E",
+                    artist = "tricot",
+                    album = "AND",
+                    trackNumber = 2,
+                    durationMs = 210_000L,
+                ),
+            )
+
+        val missing = filterMissingAlbumCandidates(candidates, local)
+        assertEquals(1, missing.size)
+        assertEquals("cand-2", missing[0].id)
+    }
 }

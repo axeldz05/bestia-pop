@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.isRemote
+import com.bestiapop.android.data.util.albumTrackDisplayNumber
 import java.text.Normalizer
 
 /**
@@ -100,10 +101,109 @@ object TrackMatchKeys {
 
     private val PARENTHESES_REGEX = Regex("""[\(\[\{]([^\)\]\}]+)[\)\]\}]""")
 
+    private fun isJapaneseText(text: String): Boolean {
+        for (i in 0 until text.length) {
+            val ch = text[i]
+            if (ch in '\u3040'..'\u309F' || ch in '\u30A0'..'\u30FF' || ch in '\u4E00'..'\u9FFF' || ch in '\u3400'..'\u4DBF') {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun katakanaToHiragana(text: String): String {
+        val sb = StringBuilder(text.length)
+        for (ch in text) {
+            if (ch in '\u30A1'..'\u30F6') {
+                sb.append((ch.code - 0x60).toChar())
+            } else {
+                sb.append(ch)
+            }
+        }
+        return sb.toString()
+    }
+
+    private fun phoneticTextVariants(text: String): Set<String> {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return emptySet()
+        val variants = LinkedHashSet<String>()
+        variants.add(trimmed)
+
+        // 1. Compact & underscore normalizations (e.g. "Nichijou_seikatsu" <-> "Nichijou seikatsu" <-> "nichijouseikatsu")
+        val compact = trimmed.replace(" ", "").replace("_", "")
+        if (compact.isNotEmpty() && compact != trimmed) {
+            variants.add(compact)
+        }
+        if (trimmed.contains('_')) {
+            variants.add(trimmed.replace('_', ' '))
+        }
+
+        // 2. Word-final / loanword ending: -i <-> -y, -ii <-> -y (e.g. neoteni <-> neoteny, party <-> parti)
+        if (trimmed.endsWith("i", ignoreCase = true) && !trimmed.endsWith("ii", ignoreCase = true)) {
+            variants.add(trimmed.dropLast(1) + (if (trimmed.last().isUpperCase()) "Y" else "y"))
+        } else if (trimmed.endsWith("ii", ignoreCase = true)) {
+            variants.add(trimmed.dropLast(2) + (if (trimmed.last().isUpperCase()) "Y" else "y"))
+        } else if (trimmed.endsWith("y", ignoreCase = true)) {
+            variants.add(trimmed.dropLast(1) + (if (trimmed.last().isUpperCase()) "I" else "i"))
+            variants.add(trimmed.dropLast(1) + (if (trimmed.last().isUpperCase()) "II" else "ii"))
+        }
+
+        // 3. Romaji long vowels: ou <-> o, oo <-> o, oh <-> o
+        if (trimmed.contains("ou", ignoreCase = true)) {
+            variants.add(trimmed.replace("ou", "o").replace("OU", "O").replace("Ou", "O"))
+        }
+        if (trimmed.contains("oo", ignoreCase = true)) {
+            variants.add(trimmed.replace("oo", "o").replace("OO", "O").replace("Oo", "O"))
+        }
+        if (trimmed.contains("oh", ignoreCase = true)) {
+            variants.add(trimmed.replace("oh", "o").replace("OH", "O").replace("Oh", "O"))
+        }
+
+        // 4. Consonant variations: jyo <-> jo / zyo, jya <-> ja, jyu <-> ju, shi <-> si, chi <-> ti, tsu <-> tu, fu <-> hu
+        if (trimmed.contains("jyo", ignoreCase = true)) {
+            variants.add(trimmed.replace("jyo", "jo").replace("Jyo", "Jo").replace("JYO", "JO"))
+            variants.add(trimmed.replace("jyo", "zyo").replace("Jyo", "Zyo").replace("JYO", "ZYO"))
+        } else if (trimmed.contains("jo", ignoreCase = true)) {
+            variants.add(trimmed.replace("jo", "jyo").replace("Jo", "Jyo").replace("JO", "JYO"))
+        }
+        if (trimmed.contains("jya", ignoreCase = true)) {
+            variants.add(trimmed.replace("jya", "ja").replace("Jya", "Ja").replace("JYA", "JA"))
+        } else if (trimmed.contains("ja", ignoreCase = true)) {
+            variants.add(trimmed.replace("ja", "jya").replace("Ja", "Jya").replace("JA", "JYA"))
+        }
+        if (trimmed.contains("jyu", ignoreCase = true)) {
+            variants.add(trimmed.replace("jyu", "ju").replace("Jyu", "Ju").replace("JYU", "JU"))
+        } else if (trimmed.contains("ju", ignoreCase = true)) {
+            variants.add(trimmed.replace("ju", "jyu").replace("Ju", "Jyu").replace("JU", "JYU"))
+        }
+        if (trimmed.contains("shi", ignoreCase = true)) {
+            variants.add(trimmed.replace("shi", "si").replace("Shi", "Si").replace("SHI", "SI"))
+        } else if (trimmed.contains("si", ignoreCase = true)) {
+            variants.add(trimmed.replace("si", "shi").replace("Si", "Shi").replace("SI", "SHI"))
+        }
+        if (trimmed.contains("chi", ignoreCase = true)) {
+            variants.add(trimmed.replace("chi", "ti").replace("Chi", "Ti").replace("CHI", "TI"))
+        } else if (trimmed.contains("ti", ignoreCase = true)) {
+            variants.add(trimmed.replace("ti", "chi").replace("Ti", "Chi").replace("TI", "CHI"))
+        }
+        if (trimmed.contains("tsu", ignoreCase = true)) {
+            variants.add(trimmed.replace("tsu", "tu").replace("Tsu", "Tu").replace("TSU", "TU"))
+        } else if (trimmed.contains("tu", ignoreCase = true)) {
+            variants.add(trimmed.replace("tu", "tsu").replace("Tu", "Tsu").replace("TU", "TSU"))
+        }
+        if (trimmed.contains("fu", ignoreCase = true)) {
+            variants.add(trimmed.replace("fu", "hu").replace("Fu", "Hu").replace("FU", "HU"))
+        } else if (trimmed.contains("hu", ignoreCase = true)) {
+            variants.add(trimmed.replace("hu", "fu").replace("Hu", "Fu").replace("HU", "FU"))
+        }
+
+        return variants
+    }
+
     /**
      * Level 1: Generates candidate match keys for an artist + title pair.
      * Includes canonical matchKey, transliterated non-Latin characters,
-     * Japanese Romaji r/l variations, bilingual/parenthesized sub-parts,
+     * Japanese Romaji loanwords/phonetics, r/l variations, bilingual/parenthesized sub-parts,
      * and cosmetic-noise-stripped titles.
      */
     fun candidateMatchKeys(
@@ -113,13 +213,28 @@ object TrackMatchKeys {
         val canonical = matchKey(artist, title)
         if (canonical.isEmpty()) return emptyList()
 
+        val cleanArt = artist.trimEnd('.', ' ', '-', ':')
         val transArtist = NaturalTextOrder.transliterateToLatin(artist)
-        val artistVariants =
-            if (transArtist.isNotBlank() && transArtist != artist) {
-                listOf(artist, transArtist)
-            } else {
-                listOf(artist)
+        val cleanTransArtist = NaturalTextOrder.transliterateToLatin(cleanArt)
+        val artistVariants = LinkedHashSet<String>()
+        artistVariants.add(artist)
+        if (cleanArt.isNotBlank()) artistVariants.add(cleanArt)
+        if (transArtist.isNotBlank()) artistVariants.add(transArtist)
+        if (cleanTransArtist.isNotBlank()) artistVariants.add(cleanTransArtist)
+        if (artist.contains('-')) artistVariants.add(artist.replace("-", " "))
+        if (transArtist.contains('-')) artistVariants.add(transArtist.replace("-", " "))
+        if (isJapaneseText(artist)) {
+            val hira = katakanaToHiragana(artist)
+            if (hira.isNotBlank() && hira != artist) {
+                artistVariants.add(hira)
+                val transHira = NaturalTextOrder.transliterateToLatin(hira)
+                if (transHira.isNotBlank()) artistVariants.add(transHira)
             }
+        }
+        val baseArtists = ArrayList(artistVariants)
+        for (a in baseArtists) {
+            artistVariants.addAll(phoneticTextVariants(a))
+        }
 
         val out = LinkedHashSet<String>()
 
@@ -144,21 +259,34 @@ object TrackMatchKeys {
         fun emitTitle(t: String) {
             val trimmed = t.trim()
             if (trimmed.isEmpty()) return
-            for (art in artistVariants) {
-                val key = matchKey(art, trimmed)
-                if (key.isNotEmpty()) out.add(key)
-                val trans = NaturalTextOrder.transliterateToLatin(trimmed)
-                if (trans.isNotBlank() && trans != trimmed) {
-                    val transKey = matchKey(art, trans)
-                    if (transKey.isNotEmpty()) out.add(transKey)
-                    emitRlVariants(art, trans)
-                } else {
-                    emitRlVariants(art, trimmed)
+            val trans = NaturalTextOrder.transliterateToLatin(trimmed)
+            val titlesToProcess = LinkedHashSet<String>()
+            titlesToProcess.add(trimmed)
+            if (trans.isNotBlank() && trans != trimmed) {
+                titlesToProcess.add(trans)
+            }
+            if (isJapaneseText(trimmed)) {
+                val hira = katakanaToHiragana(trimmed)
+                if (hira.isNotBlank() && hira != trimmed) {
+                    titlesToProcess.add(hira)
+                    val transHira = NaturalTextOrder.transliterateToLatin(hira)
+                    if (transHira.isNotBlank()) titlesToProcess.add(transHira)
+                }
+            }
+
+            for (rawTitle in titlesToProcess) {
+                val variants = phoneticTextVariants(rawTitle)
+                for (v in variants) {
+                    for (art in artistVariants) {
+                        val key = matchKey(art, v)
+                        if (key.isNotEmpty()) out.add(key)
+                        emitRlVariants(art, v)
+                    }
                 }
             }
         }
 
-        // 1. Primary title (canonical, transliterated, r/l)
+        // 1. Primary title (canonical, transliterated, phonetic, r/l)
         emitTitle(title)
 
         // 2. Parenthesized / bilingual portions
@@ -330,6 +458,14 @@ object TrackMatchKeys {
             skipBlank = skipBlank,
             transform = transform,
         )
+
+    /** Level 2: Determines which catalog candidates are truly missing from an album's local songs. */
+    fun <T : TrackMeta> filterMissingAlbumCandidates(
+        candidates: List<T>,
+        localSongs: List<Song>,
+    ): List<T> =
+        com.bestiapop.android.domain.util
+            .filterMissingAlbumCandidates(candidates, localSongs)
 }
 
 fun TrackMeta.matchKey(): String = TrackMatchKeys.matchKey(artist, title)
@@ -380,5 +516,89 @@ fun List<CatalogAlbum>.filterNotMatchingAlbums(localAlbums: Collection<Album>): 
     return filter { catAlb ->
         val candidates = TrackMatchKeys.candidateMatchKeys(catAlb.artist, catAlb.title)
         candidates.none { it in keys }
+    }
+}
+
+/** Level 2: Determines which catalog candidates are truly missing from an album's local songs. */
+fun <T : TrackMeta> filterMissingAlbumCandidates(
+    candidates: List<T>,
+    localSongs: List<Song>,
+): List<T> {
+    if (candidates.isEmpty()) return emptyList()
+    if (localSongs.isEmpty()) return candidates
+
+    val localKeys = HashSet<String>(localSongs.size * 8)
+    val localNormTitles = HashSet<String>(localSongs.size * 2)
+    val localCompactTitles = HashSet<String>(localSongs.size * 2)
+    val localTransTitles = HashSet<String>(localSongs.size * 2)
+    val localByTrackNum = HashMap<Int, MutableList<Song>>()
+
+    for (local in localSongs) {
+        val trackNum = albumTrackDisplayNumber(local.trackNumber)
+        if (trackNum > 0) {
+            localByTrackNum.getOrPut(trackNum) { ArrayList() }.add(local)
+        }
+        val norm = TrackMatchKeys.normalize(local.title)
+        if (norm.isNotEmpty()) {
+            localNormTitles.add(norm)
+            localCompactTitles.add(norm.replace(" ", "").replace("_", ""))
+        }
+        val trans = TrackMatchKeys.normalize(NaturalTextOrder.transliterateToLatin(local.title))
+        if (trans.isNotEmpty()) {
+            localTransTitles.add(trans)
+            localCompactTitles.add(trans.replace(" ", "").replace("_", ""))
+        }
+        localKeys.addAll(TrackMatchKeys.candidateMatchKeys(local))
+    }
+
+    return candidates.filter { candidate ->
+        val candTrackNum = albumTrackDisplayNumber(candidate.trackNumber)
+        // 1. Same track position on the album with compatible duration
+        // This is the primary anchor for multilingual releases (e.g. Japanese original
+        // titles vs English translated catalog titles on albums like LSC or Jyocho).
+        if (candTrackNum > 0) {
+            val matchingLocalTracks = localByTrackNum[candTrackNum]
+            if (matchingLocalTracks != null &&
+                matchingLocalTracks.any {
+                    durationCloseForKnownAlbum(it.durationMs, candidate.durationMs)
+                }
+            ) {
+                return@filter false
+            }
+        }
+
+        // 2. Direct normalized title
+        val candNorm = TrackMatchKeys.normalize(candidate.title)
+        if (candNorm.isNotEmpty() && candNorm in localNormTitles) {
+            return@filter false
+        }
+
+        // 3. Compact title (without spaces, underscores, hyphens)
+        val candCompact = candNorm.replace(" ", "").replace("_", "")
+        if (candCompact.isNotEmpty() && candCompact in localCompactTitles) {
+            return@filter false
+        }
+
+        // 4. Candidate match keys intersection (phonetics, loanwords -i/-y, bilingual, etc.)
+        val cKeys = TrackMatchKeys.candidateMatchKeys(candidate)
+        if (cKeys.any { it in localKeys }) {
+            return@filter false
+        }
+
+        // 5. Transliterated Latin title match
+        val candTrans = TrackMatchKeys.normalize(NaturalTextOrder.transliterateToLatin(candidate.title))
+        if (candTrans.isNotEmpty()) {
+            if (candTrans in localTransTitles) return@filter false
+            val candTransCompact = candTrans.replace(" ", "").replace("_", "")
+            if (candTransCompact in localCompactTitles) return@filter false
+        }
+
+        // 6. High similarity title when duration is compatible
+        val matchesFuzzy =
+            localSongs.any { local ->
+                durationCloseForKnownAlbum(local.durationMs, candidate.durationMs) &&
+                    IdentifyRanking.titleFieldSimilarity(candidate.title, local.title) >= 0.70f
+            }
+        !matchesFuzzy
     }
 }

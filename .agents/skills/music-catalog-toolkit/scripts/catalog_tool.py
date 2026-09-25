@@ -64,7 +64,18 @@ def is_album_match(cand_title: str, cand_artist: str, target_title: str, target_
     t_title = normalize_text(target_title)
     if not c_title or not t_title:
         return False
-    if c_title != t_title and t_title not in c_title and c_title not in t_title:
+    clean_c = re.sub(r"\b(ep|single|deluxe|edition)\b", "", c_title).strip()
+    clean_t = re.sub(r"\b(ep|single|deluxe|edition)\b", "", t_title).strip()
+    title_matches = (
+        c_title == t_title or
+        clean_c == t_title or
+        c_title == clean_t or
+        clean_c == clean_t or
+        t_title in c_title or
+        c_title in t_title or
+        c_title.replace(" ", "") == t_title.replace(" ", "")
+    )
+    if not title_matches:
         return False
     if target_artist and cand_artist:
         c_art = normalize_text(cand_artist)
@@ -72,6 +83,7 @@ def is_album_match(cand_title: str, cand_artist: str, target_title: str, target_
         if c_art and t_art and (c_art != t_art and t_art not in c_art and c_art not in t_art):
             return False
     return True
+
 
 
 def http_get_json(url: str, params: Optional[Dict[str, Any]] = None, timeout: int = DEFAULT_TIMEOUT, user_agent: str = DEFAULT_USER_AGENT) -> Optional[Dict[str, Any]]:
@@ -212,8 +224,6 @@ def resolve_album_tracks(
             if is_album_match(alb.get("title", ""), alb.get("artist", {}).get("name", ""), title, artist):
                 matched_id = alb.get("id")
                 break
-        if not matched_id and albums:
-            matched_id = albums[0].get("id")
 
         if matched_id:
             raw_tracks = deezer.get_album_tracks(matched_id)
@@ -255,8 +265,6 @@ def resolve_album_tracks(
             if is_album_match(alb.get("collectionName", ""), alb.get("artistName", ""), title, artist):
                 matched_id = alb.get("collectionId")
                 break
-        if not matched_id and albums:
-            matched_id = albums[0].get("collectionId")
 
         if matched_id:
             raw_tracks = itunes.lookup_album_tracks(matched_id)

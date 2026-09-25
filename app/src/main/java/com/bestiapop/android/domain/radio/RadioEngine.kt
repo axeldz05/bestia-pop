@@ -2,6 +2,8 @@ package com.bestiapop.android.domain.radio
 
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.isRemote
+import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -229,10 +231,16 @@ class RadioEngine(
                 lbUsername = lbUsername,
                 networkAvailable = networkAvailable,
             )
+        val libraryIndex = TrackMatchKeys.buildLibraryIndex(library)
+        val filteredRemotes =
+            remote.items.filter { item ->
+                val localMatch = TrackMatchKeys.lookupLocalSong(libraryIndex, item)
+                localMatch == null || localMatch.isRemote
+            }
         return RadioSuggestResult(
-            items = remote.items,
+            items = filteredRemotes,
             usedOnlineDiscovery = remote.usedOnlineDiscovery,
-            onlineDiscoveryFailed = remote.onlineDiscoveryFailed,
+            onlineDiscoveryFailed = remote.onlineDiscoveryFailed && filteredRemotes.isEmpty(),
         )
     }
 
@@ -266,7 +274,17 @@ class RadioEngine(
                 lbUsername = lbUsername,
                 networkAvailable = networkAvailable,
             )
-        val interleaved = interleaveEquitable(remote.items, localItems, limit)
+        val libraryIndex = TrackMatchKeys.buildLibraryIndex(library)
+        val resolvedRemotes =
+            remote.items.map { item ->
+                val localMatch = TrackMatchKeys.lookupLocalSong(libraryIndex, item)
+                if (localMatch != null && !localMatch.isRemote) {
+                    localMatch.toPlayable()
+                } else {
+                    item
+                }
+            }
+        val interleaved = interleaveEquitable(resolvedRemotes, localItems, limit)
         return RadioSuggestResult(
             items = interleaved,
             usedOnlineDiscovery = remote.usedOnlineDiscovery,

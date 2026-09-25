@@ -127,16 +127,7 @@ fun LibraryAlbumDetailView(
 
     val missingCandidates =
         remember(localSongs, catalogCandidates) {
-            if (catalogCandidates.isEmpty()) {
-                emptyList()
-            } else if (localSongs.isEmpty()) {
-                catalogCandidates
-            } else {
-                val localTitles = localSongs.map { TrackMatchKeys.normalize(it.title) }.toSet()
-                catalogCandidates.filter { candidate ->
-                    !localTitles.contains(TrackMatchKeys.normalize(candidate.title))
-                }
-            }
+            TrackMatchKeys.filterMissingAlbumCandidates<CatalogTrackCandidate>(catalogCandidates, localSongs)
         }
 
     val metadataTextOverride =

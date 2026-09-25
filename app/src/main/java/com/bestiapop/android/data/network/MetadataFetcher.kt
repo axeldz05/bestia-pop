@@ -14,6 +14,8 @@ import com.bestiapop.android.data.model.toCatalogTrack
 import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.util.encodeAlbumTrack
 import com.bestiapop.android.domain.util.IdentifyQueryVariants
+import com.bestiapop.android.domain.util.NaturalTextOrder
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -1223,27 +1225,52 @@ object MetadataFetcher {
         val cTitle = normalizeTextForComparison(candidateTitle)
         val tTitle = normalizeTextForComparison(targetTitle)
         if (cTitle.isBlank() || tTitle.isBlank()) return false
-        val titleMatch = cTitle == tTitle || cTitle.contains(tTitle) || tTitle.contains(cTitle)
-        if (!titleMatch) return false
+
         val cArtist = normalizeTextForComparison(candidateArtist)
         val tArtist = normalizeTextForComparison(targetArtist)
         if (cArtist.isNotBlank() && tArtist.isNotBlank()) {
-            val artistMatch = cArtist == tArtist || cArtist.contains(tArtist) || tArtist.contains(cArtist)
+            val artistMatch =
+                cArtist == tArtist ||
+                    cArtist.contains(tArtist) ||
+                    tArtist.contains(cArtist) ||
+                    TrackMatchKeys.normalize(cArtist) == TrackMatchKeys.normalize(tArtist) ||
+                    NaturalTextOrder.transliterateToLatin(cArtist).equals(NaturalTextOrder.transliterateToLatin(tArtist), ignoreCase = true)
             if (!artistMatch) return false
         }
-        return true
+
+        val cleanCandidate = cTitle.removeSuffix(" ep").removeSuffix(" single").trim()
+        val cleanTarget = tTitle.removeSuffix(" ep").removeSuffix(" single").trim()
+        val titleMatch =
+            cTitle == tTitle ||
+                cleanCandidate == tTitle ||
+                cTitle == cleanTarget ||
+                cleanCandidate == cleanTarget ||
+                cTitle.contains(tTitle) ||
+                tTitle.contains(cTitle) ||
+                cTitle.replace(" ", "") == tTitle.replace(" ", "") ||
+                TrackMatchKeys.normalize(cTitle) == TrackMatchKeys.normalize(tTitle) ||
+                NaturalTextOrder.transliterateToLatin(cTitle).equals(NaturalTextOrder.transliterateToLatin(tTitle), ignoreCase = true)
+
+        return titleMatch
     }
 
     private fun searchDeezerAlbum(
         cleanArtist: String,
         cleanAlbum: String,
     ): Pair<String, String?>? {
-        val query = if (cleanArtist.isNotBlank()) "artist:\"$cleanArtist\" album:\"$cleanAlbum\"" else "album:\"$cleanAlbum\""
+        val artistQuery = cleanArtist.trimEnd('.', ' ', '-', ':')
+        val query = if (artistQuery.isNotBlank()) "artist:\"$artistQuery\" album:\"$cleanAlbum\"" else "album:\"$cleanAlbum\""
         var url = endpoint(endpoints.deezerBaseUrl, "search/album?q=${encodeQuery(query)}&limit=5")
         var data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
         if (data == null || data.length() == 0) {
-            val fallbackQuery = if (cleanArtist.isNotBlank()) "$cleanArtist $cleanAlbum" else cleanAlbum
+            val fallbackQuery = if (artistQuery.isNotBlank()) "$artistQuery $cleanAlbum" else cleanAlbum
             url = endpoint(endpoints.deezerBaseUrl, "search/album?q=${encodeQuery(fallbackQuery)}&limit=5")
+            data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+        }
+        val transAlbum = NaturalTextOrder.transliterateToLatin(cleanAlbum)
+        if ((data == null || data.length() == 0) && transAlbum.isNotBlank() && transAlbum != cleanAlbum) {
+            val latinQuery = if (artistQuery.isNotBlank()) "$artistQuery $transAlbum" else transAlbum
+            url = endpoint(endpoints.deezerBaseUrl, "search/album?q=${encodeQuery(latinQuery)}&limit=5")
             data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
         }
         if (data == null || data.length() == 0) return null
@@ -1259,10 +1286,7 @@ object MetadataFetcher {
                 return Pair(id, cover)
             }
         }
-        val firstObj = data.optJSONObject(0) ?: return null
-        val id = firstObj.optLong("id").takeIf { it > 0 }?.toString() ?: return null
-        val cover = pickCoverUrl(firstObj.optString("cover_xl"), firstObj.optString("cover_big"))
-        return Pair(id, cover)
+        return null
     }
 
     private fun findMatchingItunesCollection(
@@ -1288,10 +1312,7 @@ object MetadataFetcher {
                 return Pair(collectionId, artwork)
             }
         }
-        val first = results.optJSONObject(0) ?: return null
-        val collectionId = first.optLong("collectionId").takeIf { it > 0 } ?: return null
-        val artwork = normalizeItunesArtwork(first.optString("artworkUrl100"))
-        return Pair(collectionId, artwork)
+        return null
     }
 
     fun parseDeezerAlbumTracks(
@@ -1507,14 +1528,38 @@ object MetadataFetcher {
 
             if (itunesTracks.isEmpty() && cleanAlbum.isNotBlank()) {
                 try {
-                    val queryTerm = "$cleanArtist $cleanAlbum".trim()
+                    val queryArtist = cleanArtist.trimEnd('.', ' ', '-', ':')
+                    val queryTerm = if (queryArtist.isNotBlank()) "$queryArtist $cleanAlbum" else cleanAlbum
                     val url =
                         endpoint(
                             endpoints.itunesBaseUrl,
                             "search?term=${encodeQuery(queryTerm)}&entity=album&limit=5",
                         )
                     val results = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("results")
-                    val itunesMatch = findMatchingItunesCollection(results, cleanArtist, cleanAlbum)
+                    var itunesMatch = findMatchingItunesCollection(results, cleanArtist, cleanAlbum)
+
+                    val transAlbum = NaturalTextOrder.transliterateToLatin(cleanAlbum)
+                    if (itunesMatch == null && transAlbum.isNotBlank() && transAlbum != cleanAlbum) {
+                        val transQuery = if (queryArtist.isNotBlank()) "$queryArtist $transAlbum" else transAlbum
+                        val transUrl =
+                            endpoint(
+                                endpoints.itunesBaseUrl,
+                                "search?term=${encodeQuery(transQuery)}&entity=album&limit=5",
+                            )
+                        val transResults = getJson(transUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
+                        itunesMatch = findMatchingItunesCollection(transResults, cleanArtist, cleanAlbum)
+                    }
+
+                    if (itunesMatch == null) {
+                        val jpUrl =
+                            endpoint(
+                                endpoints.itunesBaseUrl,
+                                "search?term=${encodeQuery(queryTerm)}&entity=album&country=JP&limit=5",
+                            )
+                        val jpResults = getJson(jpUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
+                        itunesMatch = findMatchingItunesCollection(jpResults, cleanArtist, cleanAlbum)
+                    }
+
                     if (itunesMatch != null) {
                         val itunesCollectionId = itunesMatch.first
                         if (effectiveCoverUrl == null) {

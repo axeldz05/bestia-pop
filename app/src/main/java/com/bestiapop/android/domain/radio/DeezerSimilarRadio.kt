@@ -51,7 +51,7 @@ class DeezerSimilarRadio(
             val key = TrackMatchKeys.matchKey(hint.artist, hint.title)
             if (key.isEmpty() || key in localSeen) return
             // NEW/BOTH remote pool: skip tracks already in the library
-            if (libraryIndex.containsKey(key)) return
+            if (TrackMatchKeys.lookupLocalSong(libraryIndex, hint) != null) return
             localSeen.add(key)
             remotes.add(PlayableItem.remoteFrom(identity = hint))
         }

@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.hypot
 
 /**
  * Gestor unificado para pantallas modales superpuestas con apertura por swipe up progresivo
@@ -189,6 +191,7 @@ fun Modifier.sheetDragUpTrigger(
                 velocityTracker.resetTracking()
                 velocityTracker.addPosition(down.uptimeMillis, down.position)
                 var isDragging = false
+                var totalDragX = 0f
                 var totalDragY = 0f
 
                 while (true) {
@@ -207,24 +210,28 @@ fun Modifier.sheetDragUpTrigger(
                         break
                     }
 
-                    val deltaY = change.positionChange().y
-                    totalDragY += deltaY
+                    val delta = change.positionChange()
+                    totalDragX += delta.x
+                    totalDragY += delta.y
                     velocityTracker.addPosition(change.uptimeMillis, change.position)
 
                     if (!isDragging) {
-                        if (totalDragY < -touchSlop || kotlin.math.abs(totalDragY) > touchSlop) {
-                            if (totalDragY < 0f || state.offset < state.screenHeightPx) {
+                        val totalDistance = hypot(totalDragX, totalDragY)
+                        if (totalDistance > touchSlop) {
+                            if (abs(totalDragY) > abs(totalDragX) && (totalDragY < 0f || state.offset < state.screenHeightPx)) {
                                 isDragging = true
                                 state.cancelAnimation()
                                 onStartDrag()
                                 change.consume()
                                 state.onDragDelta(totalDragY)
+                            } else {
+                                break
                             }
                         }
                     } else {
                         change.consume()
-                        if (deltaY < 0f || state.offset < state.screenHeightPx) {
-                            state.onDragDelta(deltaY)
+                        if (delta.y < 0f || state.offset < state.screenHeightPx) {
+                            state.onDragDelta(delta.y)
                         }
                     }
                 }
@@ -252,6 +259,7 @@ fun Modifier.sheetDragDownDismiss(
                 velocityTracker.resetTracking()
                 velocityTracker.addPosition(down.uptimeMillis, down.position)
                 var isDragging = false
+                var totalDragX = 0f
                 var totalDragY = 0f
 
                 while (true) {
@@ -267,23 +275,27 @@ fun Modifier.sheetDragDownDismiss(
                         break
                     }
 
-                    val deltaY = change.positionChange().y
-                    totalDragY += deltaY
+                    val delta = change.positionChange()
+                    totalDragX += delta.x
+                    totalDragY += delta.y
                     velocityTracker.addPosition(change.uptimeMillis, change.position)
 
                     if (!isDragging) {
-                        if (totalDragY > touchSlop) {
-                            if (totalDragY > 0f || state.offset > 0f) {
+                        val totalDistance = hypot(totalDragX, totalDragY)
+                        if (totalDistance > touchSlop) {
+                            if (abs(totalDragY) > abs(totalDragX) && (totalDragY > 0f || state.offset > 0f)) {
                                 isDragging = true
                                 state.cancelAnimation()
                                 change.consume()
                                 state.onDragDelta(totalDragY)
+                            } else {
+                                break
                             }
                         }
                     } else {
                         change.consume()
-                        if (deltaY > 0f || state.offset > 0f) {
-                            state.onDragDelta(deltaY)
+                        if (delta.y > 0f || state.offset > 0f) {
+                            state.onDragDelta(delta.y)
                         }
                     }
                 }

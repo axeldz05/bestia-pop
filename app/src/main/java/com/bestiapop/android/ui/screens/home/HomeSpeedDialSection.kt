@@ -33,6 +33,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
+import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 
 @Immutable
@@ -44,6 +47,59 @@ data class HomeSpeedDialItem(
     val isRemote: Boolean = false,
     val onClick: () -> Unit,
 )
+
+/**
+ * Level 2: Factory function building speed dial items from playlists, albums, and online playlists.
+ */
+fun buildHomeSpeedDialItems(
+    playlists: List<Playlist>,
+    albums: List<Album>,
+    onlinePlaylists: List<LbPlaylistSummary>,
+    isOfflineMode: Boolean,
+    onOpenPlaylist: (Playlist) -> Unit,
+    onPlayAlbum: (Album) -> Unit,
+    onOpenOnlinePlaylist: (LbPlaylistSummary) -> Unit,
+): List<HomeSpeedDialItem> =
+    buildList {
+        playlists.take(4).forEach { pl ->
+            add(
+                HomeSpeedDialItem(
+                    id = "pl-${pl.id}",
+                    title = pl.name,
+                    subtitle = "Playlist",
+                    artworkUri = pl.coverUri,
+                    isRemote = false,
+                    onClick = { onOpenPlaylist(pl) },
+                ),
+            )
+        }
+        albums.take(4).forEach { alb ->
+            add(
+                HomeSpeedDialItem(
+                    id = "alb-${alb.name}",
+                    title = alb.displayName,
+                    subtitle = alb.artist,
+                    artworkUri = alb.artworkUri,
+                    isRemote = false,
+                    onClick = { onPlayAlbum(alb) },
+                ),
+            )
+        }
+        if (!isOfflineMode) {
+            onlinePlaylists.take(2).forEach { lbPl ->
+                add(
+                    HomeSpeedDialItem(
+                        id = "lb-${lbPl.mbid}",
+                        title = lbPl.title,
+                        subtitle = "ListenBrainz",
+                        artworkUri = null,
+                        isRemote = true,
+                        onClick = { onOpenOnlinePlaylist(lbPl) },
+                    ),
+                )
+            }
+        }
+    }
 
 /**
  * Level 2: Speed dial carousel with 2 items per column.

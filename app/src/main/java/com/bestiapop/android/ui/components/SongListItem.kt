@@ -58,6 +58,8 @@ data class SongItemActions(
     val deleteLabel: String = "Eliminar",
 ) {
     companion object {
+        val EMPTY = SongItemActions()
+
         fun from(
             queueActions: SongQueueActions,
             onAddToPlaylist: ((Song) -> Unit)? = null,

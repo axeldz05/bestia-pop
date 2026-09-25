@@ -18,12 +18,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.components.ActiveAlbumDownloadProgress
+import com.bestiapop.android.ui.components.AlbumDetailActions
+import com.bestiapop.android.ui.components.AlbumDetailLayout
 import com.bestiapop.android.ui.components.AlbumDownloadStateButton
 import com.bestiapop.android.ui.components.CollectionDetailHero
 import com.bestiapop.android.ui.components.ScreenBackHeader
@@ -103,6 +106,56 @@ fun DiscoverCollectionDetailView(
     currentItem: PlayableItem? = null,
     modifier: Modifier = Modifier,
 ) {
+    if (kind == CatalogCollectionKind.ALBUM) {
+        val discoverContext = LocalDiscoverContext.current
+        val albumActions =
+            remember(
+                onBack,
+                onPlayAll,
+                onShuffle,
+                onPlayCandidate,
+                onDownloadCandidate,
+                onDownloadAll,
+                onSaveAlbum,
+                onSelectArtist,
+                albumDownloadProgress,
+                albumStatus,
+                discoverContext,
+            ) {
+                AlbumDetailActions(
+                    onBack = onBack,
+                    onPlayAll = onPlayAll,
+                    onShuffleAll = onShuffle,
+                    onPlayCandidate = onPlayCandidate,
+                    onDownloadCandidate = onDownloadCandidate,
+                    onDownloadAll = onDownloadAll,
+                    onSaveAlbum = onSaveAlbum,
+                    onSelectArtist = onSelectArtist,
+                    albumDownloadProgress = albumDownloadProgress,
+                    albumStatus = albumStatus,
+                    getTrackStatus = { discoverContext.getTrackStatus(it.identity) },
+                )
+            }
+
+        AlbumDetailLayout(
+            title = title,
+            actions = albumActions,
+            artist =
+                candidates
+                    .firstOrNull()
+                    ?.artist
+                    .orEmpty()
+                    .takeIf { it.isNotBlank() },
+            artworkUri = coverUrl,
+            catalogCandidates = candidates,
+            currentItem = currentItem,
+            activeDownloads = discoverContext.activeDownloads,
+            isLoading = isLoading,
+            modifier = modifier,
+        )
+        return
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         ScreenBackHeader(
             title = title,

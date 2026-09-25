@@ -1,10 +1,12 @@
 package com.bestiapop.android.ui.screens.home
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,8 +18,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Cloud
@@ -46,6 +50,43 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
+
+/**
+ * Level 2: Main Home Feed layout when search is inactive, orchestrating speed dial,
+ * recent tracks, frequent tracks, and optional streaming discovery content.
+ */
+@Composable
+fun HomeFeedContent(
+    speedDialItems: List<HomeSpeedDialItem>,
+    recentSongs: List<Song>,
+    frequentSongs: List<Song>,
+    onPlayRecentSong: (Song) -> Unit,
+    onPlayFrequentSong: (Song) -> Unit,
+    modifier: Modifier = Modifier,
+    scrollState: ScrollState = rememberScrollState(),
+    discoveryContent: (@Composable ColumnScope.() -> Unit)? = null,
+) {
+    Column(
+        modifier =
+            modifier
+                .verticalScroll(scrollState)
+                .padding(bottom = 80.dp),
+    ) {
+        HomeSpeedDialSection(items = speedDialItems)
+
+        RecentSongsCarousel(
+            songs = recentSongs,
+            onPlaySong = onPlayRecentSong,
+        )
+
+        FrequentSongsCarousel(
+            songs = frequentSongs,
+            onPlaySong = onPlayFrequentSong,
+        )
+
+        discoveryContent?.invoke(this)
+    }
+}
 
 /**
  * Level 2: "Vuelve a escuchar" horizontal carousel for frequent songs.

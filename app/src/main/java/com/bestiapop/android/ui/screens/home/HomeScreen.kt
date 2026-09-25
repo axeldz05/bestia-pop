@@ -1,8 +1,6 @@
 package com.bestiapop.android.ui.screens.home
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,12 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
@@ -33,7 +28,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,7 +38,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -54,7 +47,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.CatalogAlbum
-import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.preferences.DiscoverSourcePreference
@@ -240,57 +232,23 @@ fun HomeScreen(
     // Prepare Speed Dial items
     val speedDialItems =
         remember(playlists, albums, lbDiscover, isOfflineMode) {
-            buildList {
-                // 1. Playlists
-                playlists.take(4).forEach { pl ->
-                    add(
-                        HomeSpeedDialItem(
-                            id = "pl-${pl.id}",
-                            title = pl.name,
-                            subtitle = "Playlist",
-                            artworkUri = pl.coverUri,
-                            isRemote = false,
-                            onClick = {
-                                viewModel.openLocalPlaylist(pl.id)
-                                isLibraryBrowseOpen = true
-                            },
-                        ),
-                    )
-                }
-                // 2. Albums
-                albums.take(4).forEach { alb ->
-                    add(
-                        HomeSpeedDialItem(
-                            id = "alb-${alb.name}",
-                            title = alb.displayName,
-                            subtitle = alb.artist,
-                            artworkUri = alb.artworkUri,
-                            isRemote = false,
-                            onClick = {
-                                val albumSongs = viewModel.songsForAlbum(allSongs, alb.name)
-                                viewModel.playCollection(albumSongs, 0)
-                            },
-                        ),
-                    )
-                }
-                // 3. Online playlists if not offline
-                if (!isOfflineMode) {
-                    lbDiscover.data?.take(2)?.forEach { lbPl ->
-                        add(
-                            HomeSpeedDialItem(
-                                id = "lb-${lbPl.mbid}",
-                                title = lbPl.title,
-                                subtitle = "ListenBrainz",
-                                artworkUri = null,
-                                isRemote = true,
-                                onClick = {
-                                    viewModel.openListenBrainzPlaylistDetail(lbPl.mbid)
-                                },
-                            ),
-                        )
-                    }
-                }
-            }
+            buildHomeSpeedDialItems(
+                playlists = playlists,
+                albums = albums,
+                onlinePlaylists = lbDiscover.data ?: emptyList(),
+                isOfflineMode = isOfflineMode,
+                onOpenPlaylist = { pl ->
+                    viewModel.openLocalPlaylist(pl.id)
+                    isLibraryBrowseOpen = true
+                },
+                onPlayAlbum = { alb ->
+                    val albumSongs = viewModel.songsForAlbum(allSongs, alb.name)
+                    viewModel.playCollection(albumSongs, 0)
+                },
+                onOpenOnlinePlaylist = { lbPl ->
+                    viewModel.openListenBrainzPlaylistDetail(lbPl.mbid)
+                },
+            )
         }
 
     // Refresh feeds if empty
@@ -402,6 +360,9 @@ fun HomeScreen(
 
         // --- CONTENT: UNIFIED SEARCH OR HOME FEED ---
         if (isSearchActive) {
+            val recordSearch: () -> Unit = {
+                if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery.trim())
+            }
             UnifiedSearchSection(
                 searchQuery = searchQuery,
                 lazyListState = searchListState,
@@ -415,45 +376,31 @@ fun HomeScreen(
                 currentSongUri = currentItem?.mediaId,
                 songItemActions = songItemActions,
                 onPlayLocalSong = { song ->
-                    if (searchQuery.isNotBlank()) {
-                        viewModel.addRecentSearch(searchQuery.trim())
-                    }
+                    recordSearch()
                     viewModel.playSong(song, playlistOrQueue = matchingLocalSongs)
                 },
                 onSelectLocalAlbum = { album ->
-                    if (searchQuery.isNotBlank()) {
-                        viewModel.addRecentSearch(searchQuery.trim())
-                    }
+                    recordSearch()
                     viewModel.openLibraryAlbum(album.name)
                 },
                 onSelectLocalPlaylist = { playlist ->
-                    if (searchQuery.isNotBlank()) {
-                        viewModel.addRecentSearch(searchQuery.trim())
-                    }
+                    recordSearch()
                     viewModel.openLocalPlaylist(playlist.id)
                 },
                 onPlayCatalogTrack = { track ->
-                    if (searchQuery.isNotBlank()) {
-                        viewModel.addRecentSearch(searchQuery.trim())
-                    }
+                    recordSearch()
                     viewModel.playCatalogOrLocalTrack(track)
                 },
                 onDownloadCatalogTrack = { track ->
-                    if (searchQuery.isNotBlank()) {
-                        viewModel.addRecentSearch(searchQuery.trim())
-                    }
+                    recordSearch()
                     viewModel.downloadOnlineTrack(track)
                 },
                 onSelectCatalogAlbum = { album ->
-                    if (searchQuery.isNotBlank()) {
-                        viewModel.addRecentSearch(searchQuery.trim())
-                    }
+                    recordSearch()
                     viewModel.openAlbum(album)
                 },
                 onSelectCatalogPlaylist = { playlist ->
-                    if (searchQuery.isNotBlank()) {
-                        viewModel.addRecentSearch(searchQuery.trim())
-                    }
+                    recordSearch()
                     viewModel.selectPlaylistForInspection(playlist)
                 },
                 onSearchMoreOnline = {
@@ -464,9 +411,7 @@ fun HomeScreen(
                 isLoadingMoreOnline = catalogSearch.isLoadingMore,
                 artists = unifiedArtists,
                 onSelectArtist = { artist ->
-                    if (searchQuery.isNotBlank()) {
-                        viewModel.addRecentSearch(searchQuery.trim())
-                    }
+                    recordSearch()
                     val isLocal = matchingLocalArtists.any { it.name.equals(artist.name, ignoreCase = true) }
                     if (isLocal || isOfflineMode) {
                         viewModel.openLibraryArtist(artist.name)
@@ -475,107 +420,86 @@ fun HomeScreen(
                     }
                 },
                 onEnqueueCatalogTrack = { track ->
-                    if (searchQuery.isNotBlank()) {
-                        viewModel.addRecentSearch(searchQuery.trim())
-                    }
+                    recordSearch()
                     viewModel.enqueueCatalogOrLocalTrack(track)
                 },
                 modifier = Modifier.weight(1f),
             )
         } else {
-            val homeScrollState = rememberScrollState()
-            Column(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .verticalScroll(homeScrollState)
-                        .padding(bottom = 80.dp),
-            ) {
-                // 1. Speed Dial Section
-                HomeSpeedDialSection(items = speedDialItems)
+            HomeFeedContent(
+                speedDialItems = speedDialItems,
+                recentSongs = recentSongs,
+                frequentSongs = frequentSongs,
+                onPlayRecentSong = { song -> viewModel.playCollection(recentSongs, song) },
+                onPlayFrequentSong = { song -> viewModel.playCollection(frequentSongs, song) },
+                modifier = Modifier.weight(1f),
+                discoveryContent = {
+                    if (!isOfflineMode) {
+                        val catalogActions =
+                            remember(viewModel, catalogSearch.isLoadingMore, catalogSearch.canLoadMore) {
+                                DiscoverCatalogActions(
+                                    onPlayTrack = viewModel::playCatalogOrLocalTrack,
+                                    onDownloadTrack = viewModel::downloadOnlineTrack,
+                                    onSelectAlbum = viewModel::openAlbum,
+                                    onSaveAlbum = { album -> viewModel.saveAlbumToLibrary(album) },
+                                    onSelectPlaylist = viewModel::selectPlaylistForInspection,
+                                    onSelectGenre = viewModel::selectGenreForInspection,
+                                    onSearchMore = viewModel::searchMore,
+                                    onSelectArtist = viewModel::selectArtistForInspection,
+                                    isLoadingMore = catalogSearch.isLoadingMore,
+                                    canLoadMore = catalogSearch.canLoadMore,
+                                    onPlayTrackInCollection = viewModel::playCatalogOrLocalTrack,
+                                )
+                            }
 
-                // 2. "Escuchado recientemente" Section
-                RecentSongsCarousel(
-                    songs = recentSongs,
-                    onPlaySong = { song ->
-                        viewModel.playCollection(recentSongs, song)
-                    },
-                )
+                        val topRelatedActions =
+                            remember(viewModel) {
+                                DiscoverTopRelatedActions(
+                                    onSelectArtist = viewModel::selectArtistForInspection,
+                                    onStartRadioForArtist = viewModel::startRadioForArtist,
+                                    onSelectAlbum = viewModel::openAlbum,
+                                    onStartRadioForAlbum = viewModel::startRadioForAlbum,
+                                    onPlayTrack = { item ->
+                                        if (item.localSong != null) {
+                                            viewModel.playSong(item.localSong)
+                                        } else {
+                                            searchQuery = item.title
+                                            viewModel.setCatalogSearchDraft(item.title)
+                                            viewModel.submitCatalogSearch(item.title)
+                                        }
+                                    },
+                                    onStartRadioForTrack = viewModel::startRadioForTrack,
+                                    onRefresh = { viewModel.refreshTopRelatedFeed(forceRefresh = true) },
+                                )
+                            }
 
-                // 3. "Vuelve a escuchar" Section (Frequent songs)
-                FrequentSongsCarousel(
-                    songs = frequentSongs,
-                    onPlaySong = { song ->
-                        viewModel.playCollection(frequentSongs, song)
-                    },
-                )
+                        val lbActions =
+                            remember(viewModel) {
+                                DiscoverListenBrainzActions(
+                                    onOpenPlaylist = { viewModel.openListenBrainzPlaylistDetail(it) },
+                                    onOpenCfRecommendations = { viewModel.openCfRecommendationsDetail() },
+                                )
+                            }
 
-                // 4. Streaming Discovery Feeds (ListenBrainz, Deezer, Top Related)
-                if (!isOfflineMode) {
-                    val catalogActions =
-                        remember(viewModel, catalogSearch.isLoadingMore, catalogSearch.canLoadMore) {
-                            DiscoverCatalogActions(
-                                onPlayTrack = viewModel::playCatalogOrLocalTrack,
-                                onDownloadTrack = viewModel::downloadOnlineTrack,
-                                onSelectAlbum = viewModel::openAlbum,
-                                onSaveAlbum = { album -> viewModel.saveAlbumToLibrary(album) },
-                                onSelectPlaylist = viewModel::selectPlaylistForInspection,
-                                onSelectGenre = viewModel::selectGenreForInspection,
-                                onSearchMore = viewModel::searchMore,
-                                onSelectArtist = viewModel::selectArtistForInspection,
-                                isLoadingMore = catalogSearch.isLoadingMore,
-                                canLoadMore = catalogSearch.canLoadMore,
-                                onPlayTrackInCollection = viewModel::playCatalogOrLocalTrack,
-                            )
-                        }
-
-                    val topRelatedActions =
-                        remember(viewModel) {
-                            DiscoverTopRelatedActions(
-                                onSelectArtist = viewModel::selectArtistForInspection,
-                                onStartRadioForArtist = viewModel::startRadioForArtist,
-                                onSelectAlbum = viewModel::openAlbum,
-                                onStartRadioForAlbum = viewModel::startRadioForAlbum,
-                                onPlayTrack = { item ->
-                                    if (item.localSong != null) {
-                                        viewModel.playSong(item.localSong)
-                                    } else {
-                                        searchQuery = item.title
-                                        viewModel.setCatalogSearchDraft(item.title)
-                                        viewModel.submitCatalogSearch(item.title)
-                                    }
-                                },
-                                onStartRadioForTrack = viewModel::startRadioForTrack,
-                                onRefresh = { viewModel.refreshTopRelatedFeed(forceRefresh = true) },
-                            )
-                        }
-
-                    val lbActions =
-                        remember(viewModel) {
-                            DiscoverListenBrainzActions(
-                                onOpenPlaylist = { viewModel.openListenBrainzPlaylistDetail(it) },
-                                onOpenCfRecommendations = { viewModel.openCfRecommendationsDetail() },
-                            )
-                        }
-
-                    DiscoverHomeFeedView(
-                        feed = discoverFeed,
-                        isLoading = isLoadingDiscoverFeed,
-                        onRefresh = { viewModel.refreshDiscoverFeed(forceRefresh = true) },
-                        source = discoverSource,
-                        onSourceChange = { src -> viewModel.setDiscoverSource(src) },
-                        topRelatedFeed = topRelatedFeed,
-                        isLoadingTopRelated = isLoadingTopRelated,
-                        topRelatedActions = topRelatedActions,
-                        lbDiscoverPlaylists = lbDiscover.data ?: emptyList(),
-                        cfRecommendations = cfRecommendations,
-                        lbActions = lbActions,
-                        showLbSections = discoverSource != DiscoverSourcePreference.DEEZER && lbSettings.enabled,
-                        actions = catalogActions,
-                        scrollState = null,
-                    )
-                }
-            }
+                        DiscoverHomeFeedView(
+                            feed = discoverFeed,
+                            isLoading = isLoadingDiscoverFeed,
+                            onRefresh = { viewModel.refreshDiscoverFeed(forceRefresh = true) },
+                            source = discoverSource,
+                            onSourceChange = { src -> viewModel.setDiscoverSource(src) },
+                            topRelatedFeed = topRelatedFeed,
+                            isLoadingTopRelated = isLoadingTopRelated,
+                            topRelatedActions = topRelatedActions,
+                            lbDiscoverPlaylists = lbDiscover.data ?: emptyList(),
+                            cfRecommendations = cfRecommendations,
+                            lbActions = lbActions,
+                            showLbSections = discoverSource != DiscoverSourcePreference.DEEZER && lbSettings.enabled,
+                            actions = catalogActions,
+                            scrollState = null,
+                        )
+                    }
+                },
+            )
         }
     }
 

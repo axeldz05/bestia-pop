@@ -1,33 +1,12 @@
 package com.bestiapop.android.ui.screens.library
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BookmarkAdded
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,30 +14,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bestiapop.android.data.model.ActiveDownload
-import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.CatalogTrackCandidate
-import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.firstArtworkUri
-import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.ui.MusicPlayerViewModel
-import com.bestiapop.android.ui.components.ArtistDetailHero
-import com.bestiapop.android.ui.components.EmptyListHint
-import com.bestiapop.android.ui.components.ScreenBackHeader
-import com.bestiapop.android.ui.components.findUiDownloadByTrack
-import com.bestiapop.android.ui.components.isCurrentPlaying
-import com.bestiapop.android.ui.screens.discover.DiscoverAlbumCard
-import com.bestiapop.android.ui.screens.discover.DiscoverCarouselRow
-import com.bestiapop.android.ui.screens.discover.DiscoverMediaCard
-import com.bestiapop.android.ui.screens.discover.DiscoverTrackListItem
-import com.bestiapop.android.ui.state.ItemLibraryStatus
+import com.bestiapop.android.ui.components.ArtistDetailActions
+import com.bestiapop.android.ui.components.ArtistDetailLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -183,53 +147,68 @@ fun LibraryArtistDetailView(
         }
     }
 
-    ArtistDetailContent(
+    val artistActions =
+        remember(
+            viewModel,
+            localSongs,
+            onlineTopTracks,
+            artistName,
+            onBack,
+            onStartRadio,
+        ) {
+            ArtistDetailActions(
+                onBack = onBack,
+                onPlayAll = {
+                    if (localSongs.isNotEmpty()) {
+                        viewModel.playArtist(artistName, startShuffled = false)
+                    } else if (onlineTopTracks.isNotEmpty()) {
+                        viewModel.playCatalogCandidates(onlineTopTracks, startIndex = 0, startShuffled = false)
+                    }
+                },
+                onShuffle = {
+                    if (localSongs.isNotEmpty()) {
+                        viewModel.playArtist(artistName, startShuffled = true)
+                    } else if (onlineTopTracks.isNotEmpty()) {
+                        viewModel.playCatalogCandidates(onlineTopTracks, startIndex = 0, startShuffled = true)
+                    }
+                },
+                onStartRadio = onStartRadio,
+                onSelectLocalAlbum = { album ->
+                    viewModel.openLibraryAlbum(album.name, fromNestedParent = true)
+                },
+                onSelectOnlineAlbum = { album ->
+                    viewModel.openAlbum(album, fromNestedParent = true)
+                },
+                onSaveOnlineAlbum = { album ->
+                    viewModel.saveAlbumToLibrary(album)
+                },
+                onPlayTrack = { candidate ->
+                    viewModel.playCatalogCandidate(candidate, onlineTopTracks)
+                },
+                onDownloadTrack = { candidate ->
+                    viewModel.downloadCatalogCandidate(candidate)
+                },
+                getAlbumStatus = { album -> viewModel.getAlbumLibraryStatus(album) },
+                getTrackStatus = { candidate -> viewModel.getTrackLibraryStatus(candidate.identity) },
+            )
+        }
+
+    ArtistDetailLayout(
         artistName = artistName,
+        actions = artistActions,
         summary = summaryText,
         displayCoverUrl = displayCoverUrl,
         localAlbums = localAlbums,
-        localAppearedOn = localAppearedOn,
         onlineAlbums = onlineAlbums,
         onlineSinglesAndEps = onlineSinglesAndEps,
+        localAppearedOn = localAppearedOn,
         onlineAppearedOn = onlineAppearedOn,
         onlineTopTracks = onlineTopTracks,
         currentItem = currentItem,
         activeDownloads = activeDownloads,
-        onBack = onBack,
-        onPlayAll = {
-            if (localSongs.isNotEmpty()) {
-                viewModel.playArtist(artistName, startShuffled = false)
-            } else if (onlineTopTracks.isNotEmpty()) {
-                viewModel.playCatalogCandidates(onlineTopTracks, startIndex = 0, startShuffled = false)
-            }
-        },
-        onShuffle = {
-            if (localSongs.isNotEmpty()) {
-                viewModel.playArtist(artistName, startShuffled = true)
-            } else if (onlineTopTracks.isNotEmpty()) {
-                viewModel.playCatalogCandidates(onlineTopTracks, startIndex = 0, startShuffled = true)
-            }
-        },
-        onStartRadio = onStartRadio,
-        onSelectLocalAlbum = { album ->
-            viewModel.openLibraryAlbum(album.name, fromNestedParent = true)
-        },
-        onSelectOnlineAlbum = { album ->
-            viewModel.openAlbum(album, fromNestedParent = true)
-        },
-        onSaveOnlineAlbum = { album ->
-            viewModel.saveAlbumToLibrary(album)
-        },
-        onPlayTrack = { candidate ->
-            viewModel.playCatalogCandidate(candidate, onlineTopTracks)
-        },
-        onDownloadTrack = { candidate ->
-            viewModel.downloadCatalogCandidate(candidate)
-        },
-        getAlbumStatus = { album -> viewModel.getAlbumLibraryStatus(album) },
-        getTrackStatus = { candidate -> viewModel.getTrackLibraryStatus(candidate.identity) },
-        modifier = modifier,
         isLoading = isLoading,
+        playEnabled = localSongs.isNotEmpty() || localAlbums.isNotEmpty() || onlineTopTracks.isNotEmpty(),
+        modifier = modifier,
         headerTrailing = {
             Box {
                 IconButton(onClick = { showArtistMenu = true }) {
@@ -267,296 +246,4 @@ fun LibraryArtistDetailView(
             }
         },
     )
-}
-
-/**
- * Level 1: Shared layout for Artist Detail views in Library and Discover (continuous granularity).
- */
-@Composable
-fun ArtistDetailContent(
-    artistName: String,
-    summary: String,
-    displayCoverUrl: String?,
-    localAlbums: List<Album>,
-    onlineAlbums: List<CatalogAlbum>,
-    onlineTopTracks: List<CatalogTrackCandidate>,
-    currentItem: PlayableItem?,
-    activeDownloads: List<ActiveDownload>,
-    onBack: () -> Unit,
-    onPlayAll: () -> Unit,
-    onShuffle: () -> Unit,
-    onStartRadio: () -> Unit,
-    onSelectLocalAlbum: (Album) -> Unit,
-    onSelectOnlineAlbum: (CatalogAlbum) -> Unit,
-    onSaveOnlineAlbum: (CatalogAlbum) -> Unit,
-    onPlayTrack: (CatalogTrackCandidate) -> Unit,
-    onDownloadTrack: (CatalogTrackCandidate) -> Unit,
-    getAlbumStatus: (CatalogAlbum) -> ItemLibraryStatus,
-    getTrackStatus: (CatalogTrackCandidate) -> ItemLibraryStatus,
-    modifier: Modifier = Modifier,
-    localAppearedOn: List<Album> = emptyList(),
-    onlineSinglesAndEps: List<CatalogAlbum> = emptyList(),
-    onlineAppearedOn: List<CatalogAlbum> = emptyList(),
-    isLoading: Boolean = false,
-    headerTrailing: (@Composable RowScope.() -> Unit)? = null,
-) {
-    val listState = rememberLazyListState()
-
-    Column(modifier = modifier.fillMaxSize()) {
-        ScreenBackHeader(
-            title = artistName,
-            onBack = onBack,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            trailing = { headerTrailing?.invoke(this) },
-        )
-
-        if (isLoading && localAlbums.isEmpty() && onlineAlbums.isEmpty() && onlineSinglesAndEps.isEmpty() && onlineAppearedOn.isEmpty() &&
-            onlineTopTracks.isEmpty()
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
-            return
-        }
-
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 96.dp),
-        ) {
-            // Artist Hero
-            item(key = "artist-hero-header") {
-                ArtistDetailHero(
-                    artistName = artistName,
-                    summary = summary,
-                    coverUrl = displayCoverUrl,
-                    playEnabled = localAlbums.isNotEmpty() || onlineTopTracks.isNotEmpty(),
-                    shuffleEnabled = localAlbums.isNotEmpty() || onlineTopTracks.isNotEmpty(),
-                    radioEnabled = true,
-                    onPlay = onPlayAll,
-                    onShuffle = onShuffle,
-                    onStartRadio = onStartRadio,
-                )
-            }
-
-            // Section 1: En tu biblioteca
-            if (localAlbums.isNotEmpty()) {
-                item(key = "local-section-header") {
-                    Text(
-                        text = "En tu biblioteca",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-
-                item(key = "local-albums-carousel") {
-                    DiscoverCarouselRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        items(
-                            items = localAlbums,
-                            key = { "local-alb-${it.name}" },
-                        ) { album ->
-                            DiscoverMediaCard(
-                                title = album.displayName,
-                                subtitle = "${album.songCount} canciones",
-                                artworkUri = album.artworkUri,
-                                cardWidth = 150.dp,
-                                imageSize = 134.dp,
-                                onClick = { onSelectLocalAlbum(album) },
-                                topEndBadge = {
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .padding(6.dp)
-                                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
-                                                .padding(4.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp),
-                                        )
-                                    }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Section 2: Álbumes del artista (Catálogo online)
-            if (onlineAlbums.isNotEmpty()) {
-                item(key = "online-albums-header") {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Álbumes del artista (${onlineAlbums.size})",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-
-                item(key = "online-albums-carousel") {
-                    DiscoverCarouselRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        itemsIndexed(
-                            items = onlineAlbums,
-                            key = { index, it -> "online-alb-${it.id.ifEmpty { it.title }}-$index" },
-                        ) { _, album ->
-                            DiscoverAlbumCard(
-                                album = album,
-                                onClick = { onSelectOnlineAlbum(album) },
-                                onSave = { onSaveOnlineAlbum(album) },
-                                status = getAlbumStatus(album),
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Section 3: Sencillos y EPs
-            if (onlineSinglesAndEps.isNotEmpty()) {
-                item(key = "online-singles-eps-header") {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Sencillos y EPs (${onlineSinglesAndEps.size})",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-
-                item(key = "online-singles-eps-carousel") {
-                    DiscoverCarouselRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        itemsIndexed(
-                            items = onlineSinglesAndEps,
-                            key = { index, it -> "online-single-${it.id.ifEmpty { it.title }}-$index" },
-                        ) { _, album ->
-                            DiscoverAlbumCard(
-                                album = album,
-                                onClick = { onSelectOnlineAlbum(album) },
-                                onSave = { onSaveOnlineAlbum(album) },
-                                status = getAlbumStatus(album),
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Section 4: Apareció en (Colaboraciones y participaciones)
-            val totalAppearedOn = localAppearedOn.size + onlineAppearedOn.size
-            if (totalAppearedOn > 0) {
-                item(key = "appeared-on-header") {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Apareció en ($totalAppearedOn)",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-
-                item(key = "appeared-on-carousel") {
-                    DiscoverCarouselRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        // Local appeared on first
-                        items(
-                            items = localAppearedOn,
-                            key = { "local-app-${it.name}-${it.artist}" },
-                        ) { album ->
-                            DiscoverMediaCard(
-                                title = album.displayName,
-                                subtitle = album.artist,
-                                artworkUri = album.artworkUri,
-                                cardWidth = 150.dp,
-                                imageSize = 134.dp,
-                                onClick = { onSelectLocalAlbum(album) },
-                                topEndBadge = {
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .padding(6.dp)
-                                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
-                                                .padding(4.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp),
-                                        )
-                                    }
-                                },
-                            )
-                        }
-
-                        // Online appeared on
-                        itemsIndexed(
-                            items = onlineAppearedOn,
-                            key = { index, it -> "online-app-${it.id.ifEmpty { it.title }}-$index" },
-                        ) { _, album ->
-                            DiscoverAlbumCard(
-                                album = album,
-                                onClick = { onSelectOnlineAlbum(album) },
-                                onSave = { onSaveOnlineAlbum(album) },
-                                status = getAlbumStatus(album),
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Section 5: Canciones populares (Top tracks online)
-            if (onlineTopTracks.isNotEmpty()) {
-                item(key = "online-top-tracks-header") {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Canciones populares",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-
-                itemsIndexed(
-                    items = onlineTopTracks,
-                    key = { index, it -> "online-top-${it.trackNumber}-${it.identity.artist}-${it.identity.title}-$index" },
-                ) { _, candidate ->
-                    val activeDownload = activeDownloads.findUiDownloadByTrack(candidate.artist, candidate.title)
-                    val isPlaying = isCurrentPlaying(currentItem, candidate.identity.artist, candidate.identity.title)
-                    val trackStatus = getTrackStatus(candidate)
-                    Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
-                        DiscoverTrackListItem(
-                            track = candidate,
-                            onPlay = { onPlayTrack(candidate) },
-                            onDownload = { onDownloadTrack(candidate) },
-                            activeDownload = activeDownload,
-                            status = trackStatus,
-                            highlighted = isPlaying,
-                            leading = {
-                                val num = candidate.trackNumber.takeIf { it > 0 }
-                                if (num != null) {
-                                    Text(
-                                        text = "$num",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.width(28.dp),
-                                    )
-                                }
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
 }

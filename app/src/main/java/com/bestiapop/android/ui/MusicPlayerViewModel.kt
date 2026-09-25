@@ -640,18 +640,21 @@ class MusicPlayerViewModel(
     val radioLoading = playbackRuntime.radioLoading
     val radioMode = playbackRuntime.radioMode
     val radioStatusLabel = playbackRuntime.radioStatusLabel
+    val radioError = playbackRuntime.radioError
     val radioState: StateFlow<RadioPlaybackState> =
         combine(
             radioActive,
             radioLoading,
             radioMode,
             radioStatusLabel,
-        ) { active, loading, mode, statusLabel ->
+            radioError,
+        ) { active, loading, mode, statusLabel, error ->
             RadioPlaybackState(
                 active = active,
                 loading = loading,
                 mode = mode,
                 statusLabel = statusLabel,
+                error = error,
             )
         }.stateInUi(viewModelScope, RadioPlaybackState())
 
@@ -1764,6 +1767,10 @@ class MusicPlayerViewModel(
 
     fun stopRadio() {
         playbackRuntime.stopRadio()
+    }
+
+    fun clearRadioError() {
+        playbackRuntime.clearRadioError()
     }
 
     fun startRadio(

@@ -1,6 +1,8 @@
 package com.bestiapop.android.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -26,10 +28,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -202,118 +206,236 @@ fun QueueScreen(
                     // Radio Indicator Card
                     item(key = "radio_card") {
                         Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            if (radioState.active) {
-                                Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-                                    modifier = Modifier.fillMaxWidth(),
+                            val isActive = radioState.active
+                            val isLoading = radioState.loading && !isActive
+                            val hasError = !isActive && !isLoading && radioState.error != null
+
+                            val containerColor by animateColorAsState(
+                                targetValue =
+                                    when {
+                                        isActive -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                        isLoading -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
+                                        hasError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                                        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                    },
+                                label = "radioCardBg",
+                            )
+
+                            val borderColor by animateColorAsState(
+                                targetValue =
+                                    when {
+                                        isActive -> MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                                        isLoading -> MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                        hasError -> MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
+                                        else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                    },
+                                label = "radioCardBorder",
+                            )
+
+                            val iconContainerColor by animateColorAsState(
+                                targetValue =
+                                    when {
+                                        isActive -> MaterialTheme.colorScheme.primary
+                                        isLoading -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                        hasError -> MaterialTheme.colorScheme.error.copy(alpha = 0.18f)
+                                        else -> MaterialTheme.colorScheme.surfaceVariant
+                                    },
+                                label = "radioCardIconBg",
+                            )
+
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = containerColor,
+                                border = BorderStroke(1.dp, borderColor),
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .animateContentSize(),
+                            ) {
+                                Row(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
                                     Row(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .padding(14.dp),
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.weight(1f),
                                     ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.weight(1f),
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = iconContainerColor,
+                                            modifier = Modifier.size(36.dp),
                                         ) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(36.dp),
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Radio,
-                                                        contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                                        modifier = Modifier.size(20.dp),
-                                                    )
+                                            Box(contentAlignment = Alignment.Center) {
+                                                when {
+                                                    isLoading -> {
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(20.dp),
+                                                            strokeWidth = 2.dp,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                        )
+                                                    }
+
+                                                    hasError -> {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Warning,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.error,
+                                                            modifier = Modifier.size(20.dp),
+                                                        )
+                                                    }
+
+                                                    isActive -> {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Radio,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                                            modifier = Modifier.size(20.dp),
+                                                        )
+                                                    }
+
+                                                    else -> {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Radio,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.size(20.dp),
+                                                        )
+                                                    }
                                                 }
                                             }
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Column {
-                                                Text(
-                                                    text = "Radio activa",
-                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                )
-                                                val label =
-                                                    radioState.statusLabel
-                                                        ?: "Modo ${radioState.mode.name.lowercase().replaceFirstChar { it.uppercase() }}"
-                                                Text(
-                                                    text = label,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                                )
-                                            }
                                         }
-                                        TextButton(onClick = viewModel::stopRadio) {
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                                            val titleText =
+                                                when {
+                                                    isActive -> "Radio activa"
+                                                    isLoading -> "Iniciando radio…"
+                                                    hasError -> "No se pudo iniciar la radio"
+                                                    else -> "Modo radio"
+                                                }
+                                            val titleColor =
+                                                when {
+                                                    isActive -> MaterialTheme.colorScheme.onPrimaryContainer
+                                                    isLoading -> MaterialTheme.colorScheme.primary
+                                                    hasError -> MaterialTheme.colorScheme.onErrorContainer
+                                                    else -> MaterialTheme.colorScheme.onSurface
+                                                }
                                             Text(
-                                                text = "Detener",
-                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.primary,
+                                                text = titleText,
+                                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = titleColor,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+
+                                            val subtitleText =
+                                                when {
+                                                    isActive -> {
+                                                        radioState.statusLabel
+                                                            ?: "Modo ${radioState.mode.name.lowercase().replaceFirstChar {
+                                                                it.uppercase()
+                                                            }}"
+                                                    }
+
+                                                    isLoading -> {
+                                                        "Buscando canciones similares…"
+                                                    }
+
+                                                    hasError -> {
+                                                        radioState.error ?: "Error al buscar canciones similares"
+                                                    }
+
+                                                    else -> {
+                                                        "Canciones similares automáticas al terminar"
+                                                    }
+                                                }
+                                            val subtitleColor =
+                                                when {
+                                                    isActive -> MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                                    isLoading -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                                    hasError -> MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
+                                                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                                }
+                                            Text(
+                                                text = subtitleText,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = subtitleColor,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
                                             )
                                         }
                                     }
-                                }
-                            } else {
-                                Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Row(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .padding(14.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.weight(1f),
-                                        ) {
-                                            Surface(
-                                                shape = CircleShape,
-                                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                                modifier = Modifier.size(36.dp),
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Radio,
-                                                        contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                        modifier = Modifier.size(20.dp),
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Column {
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    when {
+                                        isActive -> {
+                                            TextButton(onClick = viewModel::stopRadio) {
                                                 Text(
-                                                    text = "Modo radio",
-                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                )
-                                                Text(
-                                                    text = "Canciones similares automáticas al terminar",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                                    text = "Detener",
+                                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.primary,
                                                 )
                                             }
                                         }
-                                        TextButton(onClick = { viewModel.startRadio() }) {
-                                            Text(
-                                                text = "Iniciar",
-                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.primary,
-                                            )
+
+                                        isLoading -> {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(horizontal = 8.dp),
+                                            ) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(14.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "Iniciando…",
+                                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                                )
+                                            }
+                                        }
+
+                                        hasError -> {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                IconButton(
+                                                    onClick = viewModel::clearRadioError,
+                                                    modifier = Modifier.size(28.dp),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Descartar aviso",
+                                                        tint = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f),
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(2.dp))
+                                                TextButton(onClick = { viewModel.startRadio() }) {
+                                                    Text(
+                                                        text = "Reintentar",
+                                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                        color = MaterialTheme.colorScheme.error,
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        else -> {
+                                            TextButton(onClick = { viewModel.startRadio() }) {
+                                                Text(
+                                                    text = "Iniciar",
+                                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
                                         }
                                     }
                                 }

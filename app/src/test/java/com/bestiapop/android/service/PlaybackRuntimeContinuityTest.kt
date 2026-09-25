@@ -930,6 +930,56 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
+    fun startRadio_keepsPlayedSongsAndCurrentItem_andReplacesUpcomingWithRadio() {
+        val radioSongs = (1..5).map { PlayableItem.Local(song(200L + it, "Radio Track $it")) }
+        val fixture =
+            fixture(
+                radioSuggester =
+                    PlaybackRuntimeRadioSuggester {
+                        RadioSuggestResult(
+                            items = radioSongs,
+                            usedOnlineDiscovery = false,
+                            onlineDiscoveryFailed = false,
+                        )
+                    },
+            )
+        try {
+            val initialSongs =
+                listOf(
+                    PlayableItem.Local(song(1, "Track 1")),
+                    PlayableItem.Local(song(2, "Track 2")),
+                    PlayableItem.Local(song(3, "Track 3")),
+                    PlayableItem.Local(song(4, "Track 4")),
+                )
+            fixture.runtime.playPlayableCollection(initialSongs, rotate = false)
+            fixture.runtime.skipToQueueIndex(1)
+            assertEquals(
+                "Track 2",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
+
+            fixture.runtime.startRadio()
+
+            assertTrue("Radio must be active", fixture.runtime.radioActive.value)
+            assertEquals(
+                "Current song must remain uninterrupted",
+                "Track 2",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
+            val queue = fixture.runtime.displayQueue.value
+            assertEquals("Queue should have 2 kept songs + 5 radio songs", 7, queue.size)
+            assertEquals("Track 1", queue[0].title)
+            assertEquals("Track 2", queue[1].title)
+            assertEquals("Radio Track 1", queue[2].title)
+            assertEquals("Radio Track 2", queue[3].title)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun failedControllerFuture_isClearedAndRetriedWithBackoff() =
         runBlocking {
             val backoffAttempts = mutableListOf<Int>()

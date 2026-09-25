@@ -12,6 +12,7 @@ data class RadioPlaybackState(
     val loading: Boolean = false,
     val mode: RadioMode = RadioMode.KNOWN,
     val statusLabel: String? = null,
+    val error: String? = null,
 )
 
 /**

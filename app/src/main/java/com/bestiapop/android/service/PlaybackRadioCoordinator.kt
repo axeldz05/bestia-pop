@@ -46,6 +46,9 @@ internal class PlaybackRadioCoordinator(
     private val _radioStatusLabel = MutableStateFlow<String?>(null)
     val radioStatusLabel = _radioStatusLabel.asStateFlow()
 
+    private val _radioError = MutableStateFlow<String?>(null)
+    val radioError = _radioError.asStateFlow()
+
     private var radioStartJob: Job? = null
     private var radioRefillJob: Job? = null
     private val playedInRadioSession = linkedSetOf<String>()
@@ -58,6 +61,10 @@ internal class PlaybackRadioCoordinator(
 
     fun preferredRadioModeOrNull(): RadioMode? = radioPreferredMode
 
+    fun clearRadioError() {
+        _radioError.value = null
+    }
+
     fun stopRadio() {
         radioStartJob?.cancel()
         radioStartJob = null
@@ -66,6 +73,7 @@ internal class PlaybackRadioCoordinator(
         lastEmptyRadioRefillAtMs = 0L
         _radioLoading.value = false
         _radioActive.value = false
+        _radioError.value = null
         playedInRadioSession.clear()
         _radioMode.value = RadioMode.KNOWN
         updateRadioStatusLabel()
@@ -80,6 +88,7 @@ internal class PlaybackRadioCoordinator(
         radioRefillJob?.cancel()
         radioRefillJob = null
         _radioActive.value = false
+        _radioError.value = null
         playedInRadioSession.clear()
         updateRadioStatusLabel()
     }
@@ -93,23 +102,36 @@ internal class PlaybackRadioCoordinator(
     ) {
         val seed =
             seedSong?.toPlayable() ?: seedPlayable ?: getCurrentItem() ?: run {
-                if (!auto) onEmitEvent("Elegí una canción para iniciar la radio")
+                if (!auto) {
+                    val message = "Elegí una canción para iniciar la radio"
+                    _radioError.value = message
+                    onEmitEvent(message)
+                }
                 return
             }
-        if (seed.artist.isBlank() || seed.title.isBlank()) return
+        if (seed.artist.isBlank() || seed.title.isBlank()) {
+            if (!auto) {
+                val message = "La canción seleccionada no tiene metadatos para la radio"
+                _radioError.value = message
+                onEmitEvent(message)
+            }
+            return
+        }
         if (_radioLoading.value) return
         if (mode != null) radioPreferredMode = mode
         val resolvedMode =
             mode ?: radioPreferredMode
                 ?: if (dependencies.isOnline()) RadioMode.BOTH else RadioMode.KNOWN
-        val keepCurrent = !auto && canKeepCurrent()
+        val isTargetingCurrent = (seedSong == null && seedPlayable == null) || isCurrentSeed(seed)
+        val keepCurrent = !auto && canKeepCurrent() && isTargetingCurrent
         radioStartJob?.cancel()
+        _radioError.value = null
+        _radioLoading.value = true
         radioStartJob =
             scope.launch {
-                dependencies.listenSettingsReady.first { it }
-                if (!isActive) return@launch
-                _radioLoading.value = true
                 try {
+                    dependencies.listenSettingsReady.first { it }
+                    if (!isActive) return@launch
                     val exclude = buildRadioExcludeKeys(seed, includeQueue = true, getCurrentItem())
                     val batch =
                         suggestRadioWithRetry(
@@ -125,14 +147,17 @@ internal class PlaybackRadioCoordinator(
                         )
                     if (!isActive) return@launch
                     if (batch.items.isEmpty()) {
+                        val message =
+                            if (resolvedMode == RadioMode.NEW) {
+                                "Radio online no disponible"
+                            } else if (!dependencies.isOnline() && resolvedMode != RadioMode.KNOWN) {
+                                "Sin conexión a internet"
+                            } else {
+                                "No encontré canciones parecidas"
+                            }
+                        _radioError.value = message
                         if (!auto) {
-                            onEmitEvent(
-                                if (resolvedMode == RadioMode.NEW) {
-                                    "Radio online no disponible"
-                                } else {
-                                    "No encontré canciones parecidas"
-                                },
-                            )
+                            onEmitEvent(message)
                         }
                         return@launch
                     }
@@ -147,6 +172,7 @@ internal class PlaybackRadioCoordinator(
                     playedInRadioSession += exclude
                     rememberRadioPlayed(seed)
                     _radioActive.value = true
+                    _radioError.value = null
                     updateRadioStatusLabel()
                     if (announceMode && !auto) onEmitEvent(radioModeLabel(resolvedMode))
                     if (keepCurrent) {
@@ -160,6 +186,16 @@ internal class PlaybackRadioCoordinator(
                             false,
                         )
                     }
+                } catch (t: Throwable) {
+                    if (t is kotlinx.coroutines.CancellationException) throw t
+                    val message =
+                        if (!dependencies.isOnline()) {
+                            "Sin conexión a internet"
+                        } else {
+                            "Error al iniciar la radio"
+                        }
+                    _radioError.value = message
+                    if (!auto) onEmitEvent(message)
                 } finally {
                     _radioLoading.value = false
                 }
@@ -226,6 +262,16 @@ internal class PlaybackRadioCoordinator(
             .takeIf { it.isNotEmpty() }
             ?.let(playedInRadioSession::add)
         playedInRadioSession += item.mediaId
+    }
+
+    private fun isCurrentSeed(seed: PlayableItem): Boolean {
+        val current = getCurrentItem() ?: return false
+        return seed.queueEntryId == current.queueEntryId ||
+            seed.mediaId == current.mediaId ||
+            (
+                seed.artist.equals(current.artist, ignoreCase = true) &&
+                    seed.title.equals(current.title, ignoreCase = true)
+            )
     }
 
     private fun buildRadioExcludeKeys(

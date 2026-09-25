@@ -250,6 +250,7 @@ class PlaybackRuntime internal constructor(
     val radioLoading = radioCoordinator.radioLoading
     val radioMode = radioCoordinator.radioMode
     val radioStatusLabel = radioCoordinator.radioStatusLabel
+    val radioError = radioCoordinator.radioError
 
     private val analyticsCoordinator =
         PlaybackAnalyticsCoordinator(
@@ -1503,35 +1504,62 @@ class PlaybackRuntime internal constructor(
         radioCoordinator.startRadio(seedSong, seedPlayable, mode, auto, announceMode)
     }
 
+    fun clearRadioError() {
+        radioCoordinator.clearRadioError()
+    }
+
     internal suspend fun suggestRadioWithRetry(request: PlaybackRuntimeRadioRequest): RadioSuggestResult =
         radioCoordinator.suggestRadioWithRetry(request)
 
     private fun replaceUpcomingWithRadio(suggestions: List<PlayableItem>) {
-        val currentIndex = (controller?.currentMediaItemIndex ?: lastMediaItemIndex).coerceAtLeast(0)
+        timelineSynchronizer.cancelQueueAppend()
+        val current = _currentItem.value
         val live = _queue.value
-        if (currentIndex !in live.indices) {
+        val queueIndex =
+            if (current != null) {
+                live
+                    .indexOfFirst { it.queueEntryId == current.queueEntryId }
+                    .takeIf { it >= 0 }
+                    ?: live.indexOfFirst { it.mediaId == current.mediaId }.takeIf { it >= 0 }
+                    ?: (controller?.currentMediaItemIndex ?: lastMediaItemIndex).coerceIn(live.indices)
+            } else {
+                (controller?.currentMediaItemIndex ?: lastMediaItemIndex).coerceIn(live.indices)
+            }
+        if (queueIndex !in live.indices) {
             playPlayableCollection(suggestions, fromRadio = true, rotate = false)
             return
         }
         invalidatePlaybackWork(clearRejectedEntries = false)
         val additions = suggestions.withFreshQueueEntryIds()
-        _queue.value = live.subList(0, currentIndex + 1) + additions
+        _queue.value = live.subList(0, queueIndex + 1) + additions
         mutateMaterializedTimeline { player ->
-            val next = currentIndex + 1
-            if (next < player.mediaItemCount) player.removeMediaItems(next, player.mediaItemCount)
-            player.addMediaItems(additions)
+            val playerIndex = player.currentMediaItemIndex
+            if (playerIndex in 0 until player.mediaItemCount) {
+                val next = playerIndex + 1
+                if (next < player.mediaItemCount) {
+                    player.removeMediaItems(next, player.mediaItemCount)
+                }
+                player.addMediaItems(additions)
+            } else {
+                player.addMediaItems(additions)
+            }
         }
+        lastMediaItemIndex = queueIndex
         persistPlaybackSession(force = true)
         restartAsyncPlaybackWork()
     }
 
     private fun shouldKeepCurrentWhenStartingRadio(): Boolean {
-        val player = controller ?: return false
-        val index = player.currentMediaItemIndex
-        return _queue.value.isNotEmpty() &&
-            index in _queue.value.indices &&
-            player.playbackState != Player.STATE_ENDED &&
-            player.playbackState != Player.STATE_IDLE
+        val live = _queue.value
+        if (live.isEmpty()) return false
+        val current = _currentItem.value ?: return false
+        val index =
+            live
+                .indexOfFirst { it.queueEntryId == current.queueEntryId }
+                .takeIf { it >= 0 }
+                ?: live.indexOfFirst { it.mediaId == current.mediaId }.takeIf { it >= 0 }
+                ?: (controller?.currentMediaItemIndex ?: lastMediaItemIndex)
+        return index in live.indices
     }
 
     private fun clearDiscoverPlaybackOrigin() {

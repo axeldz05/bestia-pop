@@ -513,7 +513,12 @@ internal class PlaybackQueueCoordinator(
                 isShuffle(),
                 getRepeatMode(),
             )
-        applyResolvedModes(shuffle, repeat)
+        if (shuffle != isShuffle()) {
+            setShuffleEnabled(shuffle)
+            syncShuffleToPlayer()
+        }
+        preShuffleOrder = null
+        if (repeat != getRepeatMode()) setRepeatMode(repeat)
     }
 
     fun applyResolvedModes(

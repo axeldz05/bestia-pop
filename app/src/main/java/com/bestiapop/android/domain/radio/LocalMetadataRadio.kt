@@ -2,7 +2,7 @@ package com.bestiapop.android.domain.radio
 
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlin.math.abs
 import kotlin.random.Random
@@ -20,7 +20,7 @@ class LocalMetadataRadio(
         excludeKeys: Set<String>,
         limit: Int,
         coPlaylistSongIds: Set<Long> = emptySet(),
-    ): List<PlayableItem.Local> {
+    ): List<PlayableItem> {
         if (limit <= 0 || library.isEmpty()) return emptyList()
 
         val seedArtist = TrackMatchKeys.normalize(seed.artist)
@@ -75,7 +75,7 @@ class LocalMetadataRadio(
                         it.uriString !in excludeKeys
                 }.shuffled(random)
                 .take(limit)
-                .map { it.toPlayable() }
+                .map { it.toPlayableItem() }
                 .toList()
         }
 
@@ -100,7 +100,7 @@ class LocalMetadataRadio(
             if (picked.size >= limit) break
         }
 
-        return picked.map { it.toPlayable() }
+        return picked.map { it.toPlayableItem() }
     }
 
     private fun meaningfulGenre(genre: String?): String? {

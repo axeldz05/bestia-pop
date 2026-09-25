@@ -11,8 +11,9 @@ import com.bestiapop.android.data.model.ResolvedStream
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.toIdentity
-import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.data.model.withFreshQueueEntryIds
 import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.util.AudioPersistRef
@@ -168,11 +169,24 @@ object QueueSnapshotCodec {
     private fun toPersisted(item: PlayableItem): PersistedQueueItem =
         when (item) {
             is PlayableItem.Local -> {
-                PersistedQueueItem.Local(
-                    songId = item.song.id,
-                    uriString = item.song.uriString,
-                    identity = item.song.toIdentity(),
-                )
+                if (item.song.isRemote) {
+                    val ytQuery =
+                        if (item.song.uriString.startsWith("remote://yt/")) {
+                            item.song.uriString.removePrefix("remote://yt/")
+                        } else {
+                            null
+                        }
+                    PersistedQueueItem.Remote(
+                        identity = item.song.toIdentity(),
+                        youtubeQueryOrId = ytQuery,
+                    )
+                } else {
+                    PersistedQueueItem.Local(
+                        songId = item.song.id,
+                        uriString = item.song.uriString,
+                        identity = item.song.toIdentity(),
+                    )
+                }
             }
 
             is PlayableItem.Remote -> {
@@ -354,7 +368,7 @@ object PlaybackHydration {
             when (persisted) {
                 is PersistedQueueItem.Local -> {
                     matchPersistedLocal(persisted, library)
-                        ?.let { resolved.add(origIdx to it.toPlayable()) }
+                        ?.let { resolved.add(origIdx to it.toPlayableItem()) }
                 }
 
                 is PersistedQueueItem.Remote -> {

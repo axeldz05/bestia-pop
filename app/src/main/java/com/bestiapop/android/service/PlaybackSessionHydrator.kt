@@ -3,7 +3,7 @@ package com.bestiapop.android.service
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.playback.PlaybackQueueSlots
 import com.bestiapop.android.data.preferences.HydratedQueue
@@ -221,7 +221,7 @@ internal class PlaybackSessionHydrator(
         return PersistedCollectionProjection(
             snapshot =
                 PlaybackCollectionSnapshot(
-                    items = listOf(seed.toPlayable()),
+                    items = listOf(seed.toPlayableItem()),
                     currentIndex = 0,
                     positionMs = PlaybackHydration.resumePositionMs(seed, last),
                 ),

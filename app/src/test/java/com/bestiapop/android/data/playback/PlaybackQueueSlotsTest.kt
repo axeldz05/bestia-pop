@@ -192,12 +192,14 @@ class PlaybackQueueSlotsTest {
         id: Long,
         title: String,
     ): PlayableItem.Local =
-        Song(
-            id = id,
-            uriString = "content://song/$id",
-            title = title,
-            artist = "Artist",
-        ).toPlayable()
+        PlayableItem.Local(
+            Song(
+                id = id,
+                uriString = "content://song/$id",
+                title = title,
+                artist = "Artist",
+            ),
+        )
 
     private fun remote(title: String): PlayableItem.Remote =
         PlayableItem.remoteFrom(

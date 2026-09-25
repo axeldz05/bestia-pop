@@ -57,7 +57,7 @@ import com.bestiapop.android.data.model.isSavedRemote
 import com.bestiapop.android.data.model.isStreamHistory
 import com.bestiapop.android.data.model.lane
 import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
-import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.LyricsTranslationSource
@@ -1732,7 +1732,7 @@ class MusicPlayerViewModel(
         val seeds =
             songs
                 .asSequence()
-                .map { it.toPlayable() }
+                .map { it.toPlayableItem() }
                 .filter { it.artist.isNotBlank() && it.title.isNotBlank() }
                 .take(RadioEngine.MAX_SEEDS)
                 .toList()

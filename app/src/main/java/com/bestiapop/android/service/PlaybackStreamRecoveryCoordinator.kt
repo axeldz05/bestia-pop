@@ -109,7 +109,11 @@ internal class PlaybackStreamRecoveryCoordinator(
                 code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
                 code == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
                 code == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
-                code == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
+                code == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
+                code == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+                code == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+                code == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
+                code == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED
         }
         return false
     }

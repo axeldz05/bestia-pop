@@ -3,7 +3,7 @@ package com.bestiapop.android.domain.radio
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.isRemote
-import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -279,7 +279,7 @@ class RadioEngine(
             remote.items.map { item ->
                 val localMatch = TrackMatchKeys.lookupLocalSong(libraryIndex, item)
                 if (localMatch != null && !localMatch.isRemote) {
-                    localMatch.toPlayable()
+                    localMatch.toPlayableItem()
                 } else {
                     item
                 }

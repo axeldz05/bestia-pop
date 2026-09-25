@@ -3,6 +3,7 @@ package com.bestiapop.android.domain.radio
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -32,7 +33,8 @@ class LocalMetadataRadioTest {
 
     @Test
     fun sameArtistScoresHigherThanGenreOnly() {
-        val seed = song(1, "Seed", "Artist A", genre = "Rock", year = 2000).toPlayable()
+        val seedSong = song(1, "Seed", "Artist A", genre = "Rock", year = 2000)
+        val seed = seedSong.toPlayableItem()
         val sameArtist = song(2, "Other", "Artist A", genre = "Jazz", year = 1990)
         val sameGenre = song(3, "Other2", "Artist B", genre = "Rock", year = 1990)
         val radio = LocalMetadataRadio(random = Random(0))
@@ -40,7 +42,7 @@ class LocalMetadataRadioTest {
         val result =
             radio.suggest(
                 seed = seed,
-                library = listOf(sameArtist, sameGenre, seed.song),
+                library = listOf(sameArtist, sameGenre, seedSong),
                 excludeKeys = emptySet(),
                 limit = 10,
             )
@@ -51,7 +53,8 @@ class LocalMetadataRadioTest {
 
     @Test
     fun excludesSeedAndCooldownKeys() {
-        val seed = song(1, "Seed", "Artist A").toPlayable()
+        val seedSong = song(1, "Seed", "Artist A")
+        val seed = seedSong.toPlayableItem()
         val other = song(2, "Keep", "Artist A")
         val cooldown = song(3, "Skip", "Artist A")
         val radio = LocalMetadataRadio(random = Random(0))
@@ -60,7 +63,7 @@ class LocalMetadataRadioTest {
         val result =
             radio.suggest(
                 seed = seed,
-                library = listOf(seed.song, other, cooldown),
+                library = listOf(seedSong, other, cooldown),
                 excludeKeys = exclude,
                 limit = 10,
             )
@@ -73,7 +76,8 @@ class LocalMetadataRadioTest {
 
     @Test
     fun capsTracksPerAlbum() {
-        val seed = song(1, "Seed", "Artist A", album = "Other").toPlayable()
+        val seedSong = song(1, "Seed", "Artist A", album = "Other")
+        val seed = seedSong.toPlayableItem()
         val albumTracks =
             (2L..6L).map {
                 song(it, "Track$it", "Artist A", album = "Same Album")
@@ -83,12 +87,12 @@ class LocalMetadataRadioTest {
         val result =
             radio.suggest(
                 seed = seed,
-                library = albumTracks + seed.song,
+                library = albumTracks + seedSong,
                 excludeKeys = emptySet(),
                 limit = 10,
             )
 
-        val fromSame = result.count { it.song.album == "Same Album" }
+        val fromSame = result.count { it.album == "Same Album" }
         assertEquals(2, fromSame)
     }
 }
@@ -200,8 +204,9 @@ class RadioEngineTest {
                     localRadio = LocalMetadataRadio(random = Random(1)),
                     listenBrainzRadio = lb,
                 )
-            val seed = song(1, "Seed", "Artist A").toPlayable()
-            val library = listOf(seed.song, song(2, "B", "Artist A"), song(3, "C", "Artist A"))
+            val seedSong = song(1, "Seed", "Artist A")
+            val seed = seedSong.toPlayableItem()
+            val library = listOf(seedSong, song(2, "B", "Artist A"), song(3, "C", "Artist A"))
 
             val result =
                 engine.suggest(
@@ -229,8 +234,9 @@ class RadioEngineTest {
                     localRadio = LocalMetadataRadio(random = Random(2)),
                     listenBrainzRadio = failingLb(),
                 )
-            val seed = song(1, "Seed", "Artist A").toPlayable()
-            val library = listOf(seed.song, song(2, "B", "Artist A"))
+            val seedSong = song(1, "Seed", "Artist A")
+            val seed = seedSong.toPlayableItem()
+            val library = listOf(seedSong, song(2, "B", "Artist A"))
 
             val result =
                 engine.suggest(
@@ -257,8 +263,9 @@ class RadioEngineTest {
                     localRadio = LocalMetadataRadio(random = Random(3)),
                     listenBrainzRadio = lbWithLibraryMatchAndRemote(),
                 )
-            val seed = song(1, "Seed", "Artist A").toPlayable()
-            val library = listOf(seed.song, song(2, "B", "Artist A"), song(3, "C", "Artist A"))
+            val seedSong = song(1, "Seed", "Artist A")
+            val seed = seedSong.toPlayableItem()
+            val library = listOf(seedSong, song(2, "B", "Artist A"), song(3, "C", "Artist A"))
 
             val result =
                 engine.suggest(
@@ -287,8 +294,9 @@ class RadioEngineTest {
                     localRadio = LocalMetadataRadio(random = Random(3)),
                     listenBrainzRadio = lbWithLibraryMatchAndRemote(),
                 )
-            val seed = song(1, "Seed", "Artist A").toPlayable()
-            val library = listOf(seed.song, song(2, "B", "Artist A"), song(3, "C", "Artist A"))
+            val seedSong = song(1, "Seed", "Artist A")
+            val seed = seedSong.toPlayableItem()
+            val library = listOf(seedSong, song(2, "B", "Artist A"), song(3, "C", "Artist A"))
 
             val result =
                 engine.suggest(
@@ -323,8 +331,9 @@ class RadioEngineTest {
                     localRadio = LocalMetadataRadio(random = Random(2)),
                     listenBrainzRadio = failingLb(),
                 )
-            val seed = song(1, "Seed", "Artist A").toPlayable()
-            val library = listOf(seed.song, song(2, "B", "Artist A"))
+            val seedSong = song(1, "Seed", "Artist A")
+            val seed = seedSong.toPlayableItem()
+            val library = listOf(seedSong, song(2, "B", "Artist A"))
 
             val result =
                 engine.suggest(
@@ -424,8 +433,9 @@ class RadioEngineTest {
                     listenBrainzRadio = lb,
                     cfRecommendationsRadio = cf,
                 )
-            val seed = song(1, "Seed", "Artist A").toPlayable()
-            val library = listOf(seed.song)
+            val seedSong = song(1, "Seed", "Artist A")
+            val seed = seedSong.toPlayableItem()
+            val library = listOf(seedSong)
 
             val result =
                 engine.suggest(
@@ -469,8 +479,9 @@ class RadioEngineTest {
                     listenBrainzRadio = failingLb(),
                     similarProviders = listOf(deezer),
                 )
-            val seed = song(1, "Seed", "Artist A").toPlayable()
-            val library = listOf(seed.song, song(2, "Local Only", "Artist A"))
+            val seedSong = song(1, "Seed", "Artist A")
+            val seed = seedSong.toPlayableItem()
+            val library = listOf(seedSong, song(2, "Local Only", "Artist A"))
 
             val result =
                 engine.suggest(
@@ -512,8 +523,9 @@ class RadioEngineTest {
                 RadioEngine(
                     similarProviders = listOf(deezer),
                 )
-            val seed = song(1, "Seed", "Artist A").toPlayable()
-            val library = listOf(seed.song, song(2, "In Library", "Artist A"))
+            val seedSong = song(1, "Seed", "Artist A")
+            val seed = seedSong.toPlayableItem()
+            val library = listOf(seedSong, song(2, "In Library", "Artist A"))
 
             val result =
                 engine.suggest(

@@ -77,7 +77,6 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistMessages
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.domain.util.TrackMatchKeys
@@ -594,7 +593,7 @@ private fun PlaylistDetailScreen(
                                     song = song,
                                     actions = playlistSongActions,
                                     artworkUri = viewModel.resolveAlbumArtwork(song),
-                                    isCurrentPlaying = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), song),
+                                    isCurrentPlaying = isCurrentPlaying(currentItem ?: currentSong?.toPlayableItem(), song),
                                     isReorderMode = isReorderMode,
                                     index = index,
                                     reorderCount = localSongs.size,
@@ -610,7 +609,12 @@ private fun PlaylistDetailScreen(
                                 PlaylistPendingTrackItem(
                                     viewModel = viewModel,
                                     pending = pending,
-                                    highlighted = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), pending.artist, pending.title),
+                                    highlighted =
+                                        isCurrentPlaying(
+                                            currentItem ?: currentSong?.toPlayableItem(),
+                                            pending.artist,
+                                            pending.title,
+                                        ),
                                     onClick = {
                                         viewModel.playPlayableCollection(allPlayables, startIndex = localSongs.size + pendingIndex)
                                     },

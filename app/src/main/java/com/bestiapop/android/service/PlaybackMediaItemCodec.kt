@@ -8,7 +8,9 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.ResolvedStream
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.toIdentity
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.data.util.TrackIdentityJson
 import org.json.JSONObject
 
@@ -57,8 +59,22 @@ object PlaybackMediaItemCodec {
         localPlayableUri: (Song) -> Uri,
     ): MediaItem =
         when (item) {
-            is PlayableItem.Local -> encodeLocal(item, localPlayableUri(item.song))
-            is PlayableItem.Remote -> encodeRemote(item)
+            is PlayableItem.Local -> {
+                if (item.song.isRemote) {
+                    encodeRemote(
+                        item.song.toPlayableItem(
+                            queueEntryId = item.queueEntryId,
+                            artworkUri = item.artworkUri,
+                        ) as PlayableItem.Remote,
+                    )
+                } else {
+                    encodeLocal(item, localPlayableUri(item.song))
+                }
+            }
+
+            is PlayableItem.Remote -> {
+                encodeRemote(item)
+            }
         }
 
     /** Pure, JVM-testable representation of codec extras. It has no field capable of holding CDN. */
@@ -101,6 +117,19 @@ object PlaybackMediaItemCodec {
         return when (payload.kind) {
             KIND_LOCAL -> {
                 val uri = payload.localUri?.takeIf { it.isNotBlank() } ?: return null
+                if (uri.startsWith("remote://") || uri.startsWith("remote:")) {
+                    return PlayableItem
+                        .remoteFrom(
+                            identity = payload.identity,
+                            recordingMbid = payload.recordingMbid,
+                            youtubeQueryOrId =
+                                if (uri.startsWith("remote://yt/")) {
+                                    uri.removePrefix("remote://yt/")
+                                } else {
+                                    payload.queryOrId
+                                },
+                        ).copy(queueEntryId = payload.queueEntryId)
+                }
                 val song =
                     songLookup?.invoke(payload.localSongId, uri)
                         ?: (
@@ -123,7 +152,10 @@ object PlaybackMediaItemCodec {
                             durationMs = payload.identity.durationMs,
                             trackNumber = payload.identity.trackNumber,
                         )
-                PlayableItem.Local(song, payload.queueEntryId, resolvedArtworkUri = payload.identity.artworkUri)
+                song.toPlayableItem(
+                    queueEntryId = payload.queueEntryId,
+                    artworkUri = payload.identity.artworkUri,
+                )
             }
 
             KIND_REMOTE -> {
@@ -287,7 +319,7 @@ object PlaybackMediaItemCodec {
     ): PlayableItem? {
         val uri = mediaItem.mediaId
         val local = songLookup?.invoke(null, uri) ?: library.firstOrNull { it.uriString == uri }
-        if (local != null) return PlayableItem.Local(local)
+        if (local != null) return local.toPlayableItem()
         return null
     }
 

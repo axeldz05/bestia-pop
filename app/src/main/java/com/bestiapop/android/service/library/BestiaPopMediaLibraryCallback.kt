@@ -15,7 +15,7 @@ import androidx.media3.session.SessionResult
 import com.bestiapop.android.BestiaPopApplication
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.service.PlaybackMediaItemCodec
@@ -193,7 +193,7 @@ internal class BestiaPopMediaLibraryCallback(
                 } ?: throw IllegalArgumentException("Unknown BestiaPop media item")
             val staged =
                 application.playbackRuntime.stageExternalPlayableCollection(
-                    items = selection.songs.map(Song::toPlayable),
+                    items = selection.songs.map { it.toPlayableItem() },
                     startIndex = selection.startIndex,
                     startPositionMs = selection.startPositionMs,
                 ) ?: throw IllegalArgumentException("Empty BestiaPop playback selection")

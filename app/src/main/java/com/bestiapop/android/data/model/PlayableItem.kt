@@ -175,7 +175,7 @@ private inline fun <T, R> List<T>.mapFast(transform: (T) -> R): List<R> {
     return out
 }
 
-fun Song.toPlayable(artworkUri: String? = null): PlayableItem.Local = PlayableItem.Local(this, resolvedArtworkUri = artworkUri)
+fun Song.toPlayable(artworkUri: String? = null): PlayableItem = toPlayableItem(artworkUri = artworkUri)
 
 fun Song.toPlayableItem(
     queueEntryId: String = newQueueEntryId(),

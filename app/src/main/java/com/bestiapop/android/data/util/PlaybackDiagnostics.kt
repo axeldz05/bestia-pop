@@ -113,17 +113,41 @@ object PlaybackDiagnostics {
         log(TAG_SERVICE, "$event$detailStr")
     }
 
+    internal fun isHandledPlayerError(
+        errorCode: Int,
+        kind: TrackKind,
+    ): Boolean =
+        when (kind) {
+            TrackKind.LOCAL -> {
+                errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
+            }
+
+            TrackKind.REMOTE -> {
+                errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
+                    errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                    errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+                    errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+                    errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
+                    errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+                    errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+                    errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
+                    errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED
+            }
+
+            TrackKind.NONE -> {
+                false
+            }
+        }
+
     fun logPlayerError(
         error: PlaybackException,
         currentMediaId: String?,
     ) {
         val kind = TrackKind.from(currentMediaId)
-        val isPendingRemoteFileNotFound =
-            kind == TrackKind.REMOTE && error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
-        if (isPendingRemoteFileNotFound) {
+        if (isHandledPlayerError(error.errorCode, kind)) {
             warn(
                 TAG_PLAYBACK,
-                "ExoPlayer.onPlayerError: transient remote resolution pending: errorCode=${error.errorCodeName} (${error.errorCode}), msg=${error.message}, trackType=$kind",
+                "ExoPlayer.onPlayerError: handled recovery error: errorCode=${error.errorCodeName} (${error.errorCode}), msg=${error.message}, trackType=$kind",
             )
         } else {
             error(

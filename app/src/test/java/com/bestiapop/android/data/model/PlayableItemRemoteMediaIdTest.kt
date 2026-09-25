@@ -141,11 +141,13 @@ class PlayableItemRemoteMediaIdTest {
     @Test
     fun queueEntryId_survivesCopyAndReorder_forLocalAndRemote() {
         val local =
-            Song(
-                id = 1L,
-                uriString = "content://song/1",
-                title = "Local",
-            ).toPlayable()
+            PlayableItem.Local(
+                Song(
+                    id = 1L,
+                    uriString = "content://song/1",
+                    title = "Local",
+                ),
+            )
         val remote =
             PlayableItem.remoteFrom(
                 artist = "Artist",

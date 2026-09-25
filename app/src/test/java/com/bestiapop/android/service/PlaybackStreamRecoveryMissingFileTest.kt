@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -425,7 +426,7 @@ class PlaybackStreamRecoveryMissingFileTest {
                     PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
                 )
 
-            org.junit.Assert.assertFalse(coordinator.isCoveredError(malformedError, local1))
+            assertFalse(coordinator.isCoveredError(malformedError, local1))
 
             coordinator.handlePlayerError(malformedError)
 
@@ -433,5 +434,61 @@ class PlaybackStreamRecoveryMissingFileTest {
             assertTrue(emittedEvents.any { it.contains("No se pudo reproducir «Corrupt Song»") })
             assertTrue(emittedEvents.any { it.contains("No se encontró una canción reproducible en la cola") })
             assertTrue(!playWhenReadyIntent)
+        }
+
+    @Test
+    fun isCoveredError_whenParsingErrorOnRemoteTrack_returnsTrue() =
+        testScope.runTest {
+            val remote = PlayableItem.remoteFrom(artist = "Artist", title = "Title")
+            val dependencies =
+                PlaybackRuntimeDependencies(
+                    scope = this,
+                    streamAccess =
+                        object : PlaybackRuntimeStreamAccess {
+                            override fun needsResolve(item: PlayableItem.Remote): Boolean = false
+
+                            override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? = item
+
+                            override suspend fun invalidate(item: PlayableItem.Remote) = Unit
+                        },
+                    isOnline = { true },
+                    hasPhysicalFile = { false },
+                    deleteMissingLocalSong = {},
+                    ioDispatcher = testDispatcher,
+                )
+            val coordinator =
+                PlaybackStreamRecoveryCoordinator(
+                    scope = this,
+                    dependencies = dependencies,
+                    getQueue = { listOf(remote) },
+                    onUpdateQueue = {},
+                    getCurrentItem = { remote },
+                    onSetCurrentItem = { _, _, _ -> },
+                    getPlaybackPositionMs = { 0L },
+                    onSetPlaybackPositionMs = {},
+                    onSetIsPlaying = {},
+                    isPlayWhenReadyIntent = { true },
+                    onSetPlayWhenReadyIntent = {},
+                    getController = { TestController(listOf(remote)) },
+                    setLastMediaItemIndex = {},
+                    onEmitEvent = {},
+                    onCancelPendingPlayIntent = {},
+                    ensurePreparedForPlayback = {},
+                    getPlaybackGeneration = { 1L },
+                )
+
+            val malformedContainer =
+                PlaybackException("Container malformed", null, PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED)
+            val unsupportedContainer =
+                PlaybackException("Container unsupported", null, PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED)
+            val malformedManifest =
+                PlaybackException("Manifest malformed", null, PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED)
+            val unsupportedManifest =
+                PlaybackException("Manifest unsupported", null, PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED)
+
+            assertTrue(coordinator.isCoveredError(malformedContainer, remote))
+            assertTrue(coordinator.isCoveredError(unsupportedContainer, remote))
+            assertTrue(coordinator.isCoveredError(malformedManifest, remote))
+            assertTrue(coordinator.isCoveredError(unsupportedManifest, remote))
         }
 }

@@ -3,7 +3,7 @@ package com.bestiapop.android.service
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.radio.RadioSuggestResult
 import com.bestiapop.android.domain.util.TrackMatchKeys
@@ -101,7 +101,7 @@ internal class PlaybackRadioCoordinator(
         announceMode: Boolean = false,
     ) {
         val seed =
-            seedSong?.toPlayable() ?: seedPlayable ?: getCurrentItem() ?: run {
+            seedSong?.toPlayableItem() ?: seedPlayable ?: getCurrentItem() ?: run {
                 if (!auto) {
                     val message = "Elegí una canción para iniciar la radio"
                     _radioError.value = message

@@ -41,11 +41,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -295,7 +298,25 @@ class PlaybackRuntime internal constructor(
         set(value) {
             timelineSynchronizer.timelineMaterialized = value
         }
-    private var playWhenReadyIntent = false
+    private val _isBuffering = MutableStateFlow(false)
+    val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+    private val playWhenReadyState = MutableStateFlow(false)
+    val playWhenReadyIntentFlow: StateFlow<Boolean> = playWhenReadyState.asStateFlow()
+    private var playWhenReadyIntent: Boolean
+        get() = playWhenReadyState.value
+        set(value) {
+            playWhenReadyState.value = value
+        }
+
+    val isPlaybackLoading: StateFlow<Boolean> =
+        combine(
+            resolvingRemote,
+            _isBuffering,
+            playWhenReadyState,
+            _isPlaying,
+        ) { resolving, buffering, intent, playing ->
+            (resolving || buffering) && (intent || playing)
+        }.stateIn(scope, SharingStarted.Eagerly, false)
     private var suppressPlaylistMutationCallbacks: Boolean
         get() = timelineSynchronizer.suppressPlaylistMutationCallbacks
         set(value) {
@@ -535,6 +556,7 @@ class PlaybackRuntime internal constructor(
                 )
                 _isPlaying.value = isPlaying
                 if (isPlaying) {
+                    _isBuffering.value = false
                     clearRemoteRecoveryAfterProgress()
                     scope.launch { samplePositionAndOwnership() }
                 } else {
@@ -565,6 +587,7 @@ class PlaybackRuntime internal constructor(
                     ensureRemoteReadyAt(index, startPlaying = true)
                     prefetchAround(index)
                 } else {
+                    _isBuffering.value = false
                     cancelPendingPlayIntent()
                     streamRecoveryCoordinator.invalidatePlaybackWork(clearRejectedEntries = false)
                 }
@@ -579,6 +602,8 @@ class PlaybackRuntime internal constructor(
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                _isBuffering.value =
+                    playbackState == Player.STATE_BUFFERING && (playWhenReadyIntent || _isPlaying.value)
                 if (playbackState != Player.STATE_ENDED) return
                 (_currentItem.value as? PlayableItem.Remote)?.let {
                     maybeSaveWhileListening(
@@ -971,6 +996,7 @@ class PlaybackRuntime internal constructor(
         val player = controller
         if (playWhenReadyIntent || pendingPlayIntentEpoch != null) {
             playWhenReadyIntent = false
+            _isBuffering.value = false
             cancelPendingPlayIntent()
             streamRecoveryCoordinator.invalidatePlaybackWork(clearRejectedEntries = false)
             player?.pause()

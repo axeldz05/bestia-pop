@@ -82,6 +82,7 @@ fun NowPlayingLyricsView(
     onSeekToLyric: (Long) -> Unit,
     onRetryFetchLyrics: (Song) -> Unit,
     modifier: Modifier = Modifier,
+    isPlaybackLoading: Boolean = false,
 ) = NowPlayingLyricsView(
     song = song,
     viewModel = viewModel,
@@ -101,6 +102,7 @@ fun NowPlayingLyricsView(
     onSeekToLyric = onSeekToLyric,
     onRetryFetchLyrics = onRetryFetchLyrics,
     modifier = modifier,
+    isPlaybackLoading = isPlaybackLoading,
 )
 
 /**
@@ -126,6 +128,7 @@ fun NowPlayingLyricsView(
     onSeekToLyric: (Long) -> Unit,
     onRetryFetchLyrics: (Song) -> Unit,
     modifier: Modifier = Modifier,
+    isPlaybackLoading: Boolean = false,
 ) {
     val rawLyrics = song.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
 
@@ -466,6 +469,7 @@ fun NowPlayingLyricsView(
                     onToggleRepeatMode = onToggleRepeatMode,
                     playFabSize = 56.dp,
                     playIconSize = 32.dp,
+                    isPlaybackLoading = isPlaybackLoading,
                 )
             }
         }

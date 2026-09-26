@@ -26,6 +26,22 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
 
+enum class PlayPauseVisualState {
+    Loading,
+    Playing,
+    Paused,
+}
+
+fun resolvePlayPauseVisualState(
+    isPlaying: Boolean,
+    isPlaybackLoading: Boolean,
+): PlayPauseVisualState =
+    when {
+        isPlaybackLoading -> PlayPauseVisualState.Loading
+        isPlaying -> PlayPauseVisualState.Playing
+        else -> PlayPauseVisualState.Paused
+    }
+
 fun playPauseVector(isPlaying: Boolean): ImageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
 
 fun playbackProgressFraction(

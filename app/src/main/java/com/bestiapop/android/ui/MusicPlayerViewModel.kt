@@ -648,6 +648,7 @@ class MusicPlayerViewModel(
     val displayQueue = playbackRuntime.displayQueue
     val discoverPlaybackOrigin = playbackRuntime.discoverPlaybackOrigin
     val resolvingRemote = playbackRuntime.resolvingRemote
+    val isPlaybackLoading = playbackRuntime.isPlaybackLoading
 
     /** Artists already looked up this session (hit or miss) — a miss must not be retried forever. */
     private val artistPhotoAttempted = mutableSetOf<String>()

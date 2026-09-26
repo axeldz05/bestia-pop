@@ -92,6 +92,7 @@ fun NowPlayingScreen(
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val isPlaybackLoading by viewModel.isPlaybackLoading.collectAsStateWithLifecycle()
     // Do NOT collect playbackPositionMs here — it ticks every 200ms and would recompose
     // the whole screen (including the Cola LazyColumn). Scrubber/lyrics collect locally.
     val repeatMode by viewModel.repeatMode.collectAsStateWithLifecycle()
@@ -579,6 +580,7 @@ fun NowPlayingScreen(
                                     // 4. Fila de controles de reproducción
                                     NowPlayingControlsRow(
                                         isPlaying = isPlaying,
+                                        isPlaybackLoading = isPlaybackLoading,
                                         isShuffle = isShuffle,
                                         repeatMode = repeatMode,
                                         actions = transportActions,
@@ -602,6 +604,7 @@ fun NowPlayingScreen(
                                 positionMsFlow = viewModel.playbackPositionMs,
                                 durationMs = item.durationMs,
                                 isPlaying = isPlaying,
+                                isPlaybackLoading = isPlaybackLoading,
                                 isShuffle = isShuffle,
                                 repeatMode = repeatMode,
                                 isFetchingLyrics = isFetchingLyrics,

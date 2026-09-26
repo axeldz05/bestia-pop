@@ -1,5 +1,7 @@
 package com.bestiapop.android.ui.screens.nowplaying
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,11 +18,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.RepeatMode
-import com.bestiapop.android.ui.components.playPauseVector
+import com.bestiapop.android.ui.components.PlayPauseVisualState
+import com.bestiapop.android.ui.components.resolvePlayPauseVisualState
 import com.bestiapop.android.ui.state.NowPlayingTransportActions
 
 /**
@@ -139,6 +145,7 @@ fun NowPlayingControlsRow(
     modifier: Modifier = Modifier,
     playFabSize: Dp = 64.dp,
     playIconSize: Dp = 36.dp,
+    isPlaybackLoading: Boolean = false,
 ) = NowPlayingControlsRow(
     isPlaying = isPlaying,
     isShuffle = isShuffle,
@@ -151,6 +158,7 @@ fun NowPlayingControlsRow(
     modifier = modifier,
     playFabSize = playFabSize,
     playIconSize = playIconSize,
+    isPlaybackLoading = isPlaybackLoading,
 )
 
 /**
@@ -169,6 +177,7 @@ fun NowPlayingControlsRow(
     modifier: Modifier = Modifier,
     playFabSize: Dp = 64.dp,
     playIconSize: Dp = 36.dp,
+    isPlaybackLoading: Boolean = false,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -207,12 +216,39 @@ fun NowPlayingControlsRow(
             shadowElevation = 8.dp,
         ) {
             IconButton(onClick = onTogglePlayPause) {
-                Icon(
-                    imageVector = playPauseVector(isPlaying),
-                    contentDescription = "Play/Pause",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(playIconSize),
-                )
+                Crossfade(
+                    targetState = resolvePlayPauseVisualState(isPlaying, isPlaybackLoading),
+                    animationSpec = tween(durationMillis = 200),
+                    label = "NowPlayingPlayPauseCrossfade",
+                ) { state ->
+                    when (state) {
+                        PlayPauseVisualState.Loading -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(playIconSize * 0.72f),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
+
+                        PlayPauseVisualState.Playing -> {
+                            Icon(
+                                imageVector = Icons.Default.Pause,
+                                contentDescription = "Pausar",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(playIconSize),
+                            )
+                        }
+
+                        PlayPauseVisualState.Paused -> {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Reproducir",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(playIconSize),
+                            )
+                        }
+                    }
+                }
             }
         }
 

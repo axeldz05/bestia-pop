@@ -101,6 +101,7 @@ fun MainScreen(
 
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val isPlaybackLoading by viewModel.isPlaybackLoading.collectAsStateWithLifecycle()
     val radioStatusLabel by viewModel.radioStatusLabel.collectAsStateWithLifecycle()
     val resolvingRemote by viewModel.resolvingRemote.collectAsStateWithLifecycle()
     val radioLoading by viewModel.radioLoading.collectAsStateWithLifecycle()
@@ -351,6 +352,7 @@ fun MainScreen(
                 onNextClick = { viewModel.skipToNext() },
                 onBarClick = { openFullPlayer() },
                 statusLabel = miniPlayerStatusLabel,
+                isPlaybackLoading = isPlaybackLoading,
             )
 
             NavigationBar(

@@ -1383,7 +1383,10 @@ class MusicPlayerViewModel(
         playlistOrQueue: List<Song> = emptyList(),
         applyManualModes: Boolean = true,
         openNowPlaying: Boolean = true,
-    ) = playbackExecutionCoordinator.playSong(song, playlistOrQueue, applyManualModes, openNowPlaying)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playSong(song, playlistOrQueue, applyManualModes, openNowPlaying)
+    }
 
     fun playPlayableCollection(
         items: List<PlayableItem>,
@@ -1395,24 +1398,32 @@ class MusicPlayerViewModel(
         origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
         resumeAtMs: Long? = null,
         openNowPlaying: Boolean = true,
-    ) = playbackExecutionCoordinator.playPlayableCollection(
-        items,
-        startIndex,
-        fromRadio,
-        rotate,
-        applyManualModes,
-        startShuffled,
-        origin,
-        resumeAtMs,
-        openNowPlaying,
-    )
+    ) {
+        if (!fromRadio) {
+            commitActiveSearchToHistory()
+        }
+        playbackExecutionCoordinator.playPlayableCollection(
+            items,
+            startIndex,
+            fromRadio,
+            rotate,
+            applyManualModes,
+            startShuffled,
+            origin,
+            resumeAtMs,
+            openNowPlaying,
+        )
+    }
 
     fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String = playbackExecutionCoordinator.catalogPreviewKeyForTrack(track)
 
     fun playOnlineCatalogTrackAsStream(
         track: OnlineCatalogTrack,
         openNowPlaying: Boolean = true,
-    ) = playbackExecutionCoordinator.playOnlineCatalogTrackAsStream(track, openNowPlaying)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playOnlineCatalogTrackAsStream(track, openNowPlaying)
+    }
 
     /** Returns matched local (non-remote) Song from library index in O(1) time. */
     fun findLocalSongFor(meta: TrackMeta): Song? = playbackExecutionCoordinator.findLocalSongFor(meta)
@@ -1423,10 +1434,14 @@ class MusicPlayerViewModel(
         collection: List<OnlineCatalogTrack> = emptyList(),
         startShuffled: Boolean = false,
         openNowPlaying: Boolean = true,
-    ) = playbackExecutionCoordinator.playCatalogOrLocalTrack(track, collection, startShuffled, openNowPlaying)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playCatalogOrLocalTrack(track, collection, startShuffled, openNowPlaying)
+    }
 
     /** Enqueues local version if available in library; otherwise enqueues online stream. */
     fun enqueueCatalogOrLocalTrack(track: OnlineCatalogTrack) {
+        commitActiveSearchToHistory()
         playbackExecutionCoordinator.enqueueCatalogOrLocalTrack(track)
         toast("Canción añadida a la cola")
     }
@@ -1437,7 +1452,10 @@ class MusicPlayerViewModel(
         startIndex: Int = 0,
         startShuffled: Boolean = false,
         openNowPlaying: Boolean = true,
-    ) = playbackExecutionCoordinator.playCatalogCandidates(candidates, startIndex, startShuffled, openNowPlaying)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playCatalogCandidates(candidates, startIndex, startShuffled, openNowPlaying)
+    }
 
     /** Plays collection of candidates starting at [startCandidate]. */
     fun playCatalogCandidates(
@@ -1445,7 +1463,10 @@ class MusicPlayerViewModel(
         startCandidate: CatalogTrackCandidate,
         startShuffled: Boolean = false,
         openNowPlaying: Boolean = true,
-    ) = playbackExecutionCoordinator.playCatalogCandidates(candidates, startCandidate, startShuffled, openNowPlaying)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playCatalogCandidates(candidates, startCandidate, startShuffled, openNowPlaying)
+    }
 
     /** Plays a single catalog candidate using local file if present, or streaming, enqueuing the rest of [collection] if provided. */
     fun playCatalogCandidate(
@@ -1453,7 +1474,10 @@ class MusicPlayerViewModel(
         collection: List<CatalogTrackCandidate> = emptyList(),
         startShuffled: Boolean = false,
         openNowPlaying: Boolean = true,
-    ) = playbackExecutionCoordinator.playCatalogCandidate(candidate, collection, startShuffled, openNowPlaying)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playCatalogCandidate(candidate, collection, startShuffled, openNowPlaying)
+    }
 
     /** Level 2: Downloads a single catalog candidate preserving all candidate matches and identity. */
     fun downloadCatalogCandidate(
@@ -1461,6 +1485,7 @@ class MusicPlayerViewModel(
         source: ActiveDownloadSource = ActiveDownloadSource.CATALOG,
         targetPlaylistId: Long? = null,
     ) {
+        commitActiveSearchToHistory()
         val targetTrack = candidate.currentTrack ?: candidate.effectiveTrack
         val resolvedPlaylistId =
             targetPlaylistId ?: (
@@ -1528,17 +1553,26 @@ class MusicPlayerViewModel(
         songs: List<Song>,
         startIndex: Int = 0,
         startShuffled: Boolean = false,
-    ) = playbackExecutionCoordinator.playCollection(songs, startIndex, startShuffled)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playCollection(songs, startIndex, startShuffled)
+    }
 
     fun playCollection(
         songs: List<Song>,
         startShuffled: Boolean,
-    ) = playbackExecutionCoordinator.playCollection(songs, startShuffled)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playCollection(songs, startShuffled)
+    }
 
     fun playCollection(
         songs: List<Song>,
         startSong: Song,
-    ) = playbackExecutionCoordinator.playCollection(songs, startSong)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playCollection(songs, startSong)
+    }
 
     /**
      * Level 1: Core pipeline for executing playback actions on any collection of songs.
@@ -1546,44 +1580,83 @@ class MusicPlayerViewModel(
     fun executeGroupPlayback(
         songs: List<Song>,
         action: GroupPlaybackAction,
-    ) = playbackExecutionCoordinator.executeGroupPlayback(songs, action)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.executeGroupPlayback(songs, action)
+    }
 
     // Unified Group / Aggregate Actions ("Everything is a Collection")
     fun playAlbum(
         albumName: String,
         startShuffled: Boolean = false,
-    ) = playbackExecutionCoordinator.playAlbum(albumName, startShuffled)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playAlbum(albumName, startShuffled)
+    }
 
     fun playAlbum(
         album: Album,
         startShuffled: Boolean = false,
-    ) = playbackExecutionCoordinator.playAlbum(album, startShuffled)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playAlbum(album, startShuffled)
+    }
 
-    fun playAlbumNext(albumName: String) = playbackExecutionCoordinator.playAlbumNext(albumName)
+    fun playAlbumNext(albumName: String) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playAlbumNext(albumName)
+    }
 
-    fun playAlbumNext(album: Album) = playbackExecutionCoordinator.playAlbumNext(album)
+    fun playAlbumNext(album: Album) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playAlbumNext(album)
+    }
 
-    fun enqueueAlbum(albumName: String) = playbackExecutionCoordinator.enqueueAlbum(albumName)
+    fun enqueueAlbum(albumName: String) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.enqueueAlbum(albumName)
+    }
 
-    fun enqueueAlbum(album: Album) = playbackExecutionCoordinator.enqueueAlbum(album)
+    fun enqueueAlbum(album: Album) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.enqueueAlbum(album)
+    }
 
     fun playArtist(
         artistName: String,
         startShuffled: Boolean = false,
-    ) = playbackExecutionCoordinator.playArtist(artistName, startShuffled)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playArtist(artistName, startShuffled)
+    }
 
-    fun playArtistNext(artistName: String) = playbackExecutionCoordinator.playArtistNext(artistName)
+    fun playArtistNext(artistName: String) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playArtistNext(artistName)
+    }
 
-    fun enqueueArtist(artistName: String) = playbackExecutionCoordinator.enqueueArtist(artistName)
+    fun enqueueArtist(artistName: String) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.enqueueArtist(artistName)
+    }
 
     fun playGenre(
         genreName: String,
         startShuffled: Boolean = false,
-    ) = playbackExecutionCoordinator.playGenre(genreName, startShuffled)
+    ) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playGenre(genreName, startShuffled)
+    }
 
-    fun playGenreNext(genreName: String) = playbackExecutionCoordinator.playGenreNext(genreName)
+    fun playGenreNext(genreName: String) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playGenreNext(genreName)
+    }
 
-    fun enqueueGenre(genreName: String) = playbackExecutionCoordinator.enqueueGenre(genreName)
+    fun enqueueGenre(genreName: String) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.enqueueGenre(genreName)
+    }
 
     fun identifyAlbum(album: Album) =
         runIfOnline {
@@ -1657,9 +1730,15 @@ class MusicPlayerViewModel(
         libraryEditCoordinator.mergeAlbumInto(sourceAlbumKey, targetAlbumKey)
     }
 
-    fun shuffleCollection(songs: List<Song>) = playbackExecutionCoordinator.shuffleCollection(songs)
+    fun shuffleCollection(songs: List<Song>) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.shuffleCollection(songs)
+    }
 
-    fun enqueueCollection(songs: List<Song>) = playbackExecutionCoordinator.enqueueCollection(songs)
+    fun enqueueCollection(songs: List<Song>) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.enqueueCollection(songs)
+    }
 
     fun togglePlayPause() {
         playbackRuntime.togglePlayPause()
@@ -1690,11 +1769,20 @@ class MusicPlayerViewModel(
     }
 
     // Queue Management
-    fun addToQueue(song: Song) = playbackExecutionCoordinator.addToQueue(song)
+    fun addToQueue(song: Song) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.addToQueue(song)
+    }
 
-    fun addToQueueBatch(songs: List<Song>) = playbackExecutionCoordinator.addToQueueBatch(songs)
+    fun addToQueueBatch(songs: List<Song>) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.addToQueueBatch(songs)
+    }
 
-    fun addPlayableBatch(items: List<PlayableItem>) = playbackExecutionCoordinator.addPlayableBatch(items)
+    fun addPlayableBatch(items: List<PlayableItem>) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.addPlayableBatch(items)
+    }
 
     fun setRadioPreferredMode(mode: RadioMode) {
         playbackRuntime.setRadioPreferredMode(mode)
@@ -1780,6 +1868,7 @@ class MusicPlayerViewModel(
         auto: Boolean = false,
         announceMode: Boolean = false,
     ) {
+        commitActiveSearchToHistory()
         playbackRuntime.startRadio(
             seedSong = seedSong,
             seedPlayable = seedPlayable,
@@ -1790,6 +1879,7 @@ class MusicPlayerViewModel(
     }
 
     fun startRadioForArtist(artistName: String) {
+        commitActiveSearchToHistory()
         val artistSongs = songsForArtist(libraryProjection.songs.value, artistName)
         if (artistSongs.isNotEmpty()) {
             startRadio(seedSong = artistSongs.random())
@@ -1807,6 +1897,7 @@ class MusicPlayerViewModel(
     }
 
     fun startRadioForAlbum(album: RelatedAlbumItem) {
+        commitActiveSearchToHistory()
         val allAlbumSongs = songsForAlbum(libraryProjection.songs.value, album.title)
         val albumSongs =
             allAlbumSongs.filter { it.artist.equals(album.artist, ignoreCase = true) }.ifEmpty { allAlbumSongs }
@@ -1827,6 +1918,7 @@ class MusicPlayerViewModel(
     }
 
     fun startRadioForTrack(track: RelatedTrackItem) {
+        commitActiveSearchToHistory()
         if (track.localSong != null) {
             startRadio(seedSong = track.localSong)
         } else {
@@ -1841,11 +1933,20 @@ class MusicPlayerViewModel(
         }
     }
 
-    fun playNextInQueue(song: Song) = playbackExecutionCoordinator.playNextInQueue(song)
+    fun playNextInQueue(song: Song) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playNextInQueue(song)
+    }
 
-    fun playNextBatch(songs: List<Song>) = playbackExecutionCoordinator.playNextBatch(songs)
+    fun playNextBatch(songs: List<Song>) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playNextBatch(songs)
+    }
 
-    fun playNextPlayableBatch(items: List<PlayableItem>) = playbackExecutionCoordinator.playNextPlayableBatch(items)
+    fun playNextPlayableBatch(items: List<PlayableItem>) {
+        commitActiveSearchToHistory()
+        playbackExecutionCoordinator.playNextPlayableBatch(items)
+    }
 
     fun addSongsToPlaylist(
         playlistId: Long,
@@ -1858,6 +1959,7 @@ class MusicPlayerViewModel(
         songIds: List<Long>,
         onAdded: (() -> Unit)? = null,
     ) {
+        commitActiveSearchToHistory()
         viewModelScope.launch {
             repository.addSongsToPlaylist(playlistId, songIds)
             onAdded?.invoke()
@@ -1989,11 +2091,20 @@ class MusicPlayerViewModel(
     fun openLibraryAlbum(
         name: String,
         fromNestedParent: Boolean = false,
-    ) = uiNavigationCoordinator.openLibraryAlbum(name, fromNestedParent)
+    ) {
+        commitActiveSearchToHistory()
+        uiNavigationCoordinator.openLibraryAlbum(name, fromNestedParent)
+    }
 
-    fun openLibraryArtist(name: String) = uiNavigationCoordinator.openLibraryArtist(name)
+    fun openLibraryArtist(name: String) {
+        commitActiveSearchToHistory()
+        uiNavigationCoordinator.openLibraryArtist(name)
+    }
 
-    fun openLibraryGenre(name: String) = uiNavigationCoordinator.openLibraryGenre(name)
+    fun openLibraryGenre(name: String) {
+        commitActiveSearchToHistory()
+        uiNavigationCoordinator.openLibraryGenre(name)
+    }
 
     fun closeLibraryAlbum() = uiNavigationCoordinator.closeLibraryAlbum()
 
@@ -2018,7 +2129,10 @@ class MusicPlayerViewModel(
         targetKey: String,
     ) = uiNavigationCoordinator.renameRestoredLibraryAlbum(sourceKey, targetKey)
 
-    fun openLocalPlaylist(id: Long) = uiNavigationCoordinator.openLocalPlaylist(id)
+    fun openLocalPlaylist(id: Long) {
+        commitActiveSearchToHistory()
+        uiNavigationCoordinator.openLocalPlaylist(id)
+    }
 
     fun openListenBrainzPlaylistDetail(mbid: String) = uiNavigationCoordinator.openListenBrainzPlaylistDetail(mbid)
 
@@ -2104,7 +2218,10 @@ class MusicPlayerViewModel(
     fun openIdentifySetup(
         songs: List<Song>,
         contextTitle: String = "",
-    ) = identifyCoordinator.openIdentifySetup(songs, contextTitle)
+    ) {
+        commitActiveSearchToHistory()
+        identifyCoordinator.openIdentifySetup(songs, contextTitle)
+    }
 
     fun setIdentifySetupFields(fields: IdentifyApplyFields) = identifyCoordinator.setIdentifySetupFields(fields)
 
@@ -2212,6 +2329,7 @@ class MusicPlayerViewModel(
         playlistId: Long,
         action: GroupPlaybackAction,
     ) {
+        commitActiveSearchToHistory()
         playlistCoordinator.runWithPlaylistPlayables(playlistId) { playables ->
             playbackExecutionCoordinator.executeGroupPlaybackForPlayables(playables, action)
         }
@@ -2418,39 +2536,57 @@ class MusicPlayerViewModel(
         action: SubmenuSwipeAction,
         items: List<PlayableItem>,
         onAddToPlaylist: ((List<PlayableItem>) -> Unit)? = null,
-    ) = submenuActionCoordinator.executeForPlayables(action, items, onAddToPlaylist)
+    ) {
+        commitActiveSearchToHistory()
+        submenuActionCoordinator.executeForPlayables(action, items, onAddToPlaylist)
+    }
 
     fun executeSubmenuActionForSongs(
         action: SubmenuSwipeAction,
         songs: List<Song>,
         onAddToPlaylist: ((List<Song>) -> Unit)? = null,
-    ) = submenuActionCoordinator.executeForSongs(action, songs, onAddToPlaylist)
+    ) {
+        commitActiveSearchToHistory()
+        submenuActionCoordinator.executeForSongs(action, songs, onAddToPlaylist)
+    }
 
     fun executeSubmenuActionForCandidates(
         action: SubmenuSwipeAction,
         candidates: List<CatalogTrackCandidate>,
         onAddToPlaylist: ((List<CatalogTrackCandidate>) -> Unit)? = null,
-    ) = submenuActionCoordinator.executeForCandidates(action, candidates, onAddToPlaylist)
+    ) {
+        commitActiveSearchToHistory()
+        submenuActionCoordinator.executeForCandidates(action, candidates, onAddToPlaylist)
+    }
 
     fun executeSubmenuActionForTrack(
         action: SubmenuSwipeAction,
         track: TrackMeta,
         onAddToPlaylist: ((Song) -> Unit)? = null,
-    ) = submenuActionCoordinator.executeForTrack(action, track, onAddToPlaylist)
+    ) {
+        commitActiveSearchToHistory()
+        submenuActionCoordinator.executeForTrack(action, track, onAddToPlaylist)
+    }
 
     /** Level 2: Execute submenu action for a [CatalogAlbum]. */
     fun executeSubmenuActionForAlbum(
         action: SubmenuSwipeAction,
         album: CatalogAlbum,
         onAddToPlaylist: ((List<Song>) -> Unit)? = null,
-    ) = submenuActionCoordinator.executeForAlbum(action, album, onAddToPlaylist)
+    ) {
+        commitActiveSearchToHistory()
+        submenuActionCoordinator.executeForAlbum(action, album, onAddToPlaylist)
+    }
 
     /** Level 2: Execute submenu action for a local [Album]. */
     fun executeSubmenuActionForAlbum(
         action: SubmenuSwipeAction,
         album: Album,
         onAddToPlaylist: ((List<Song>) -> Unit)? = null,
-    ) = submenuActionCoordinator.executeForAlbum(action, album, onAddToPlaylist)
+    ) {
+        commitActiveSearchToHistory()
+        submenuActionCoordinator.executeForAlbum(action, album, onAddToPlaylist)
+    }
 
     /** Level 1: Execute submenu action for an album with raw string parameters. */
     fun executeSubmenuActionForAlbum(
@@ -2460,13 +2596,19 @@ class MusicPlayerViewModel(
         albumId: String = "",
         coverUrl: String? = null,
         onAddToPlaylist: ((List<Song>) -> Unit)? = null,
-    ) = submenuActionCoordinator.executeForAlbum(action, albumTitle, artistName, albumId, coverUrl, onAddToPlaylist)
+    ) {
+        commitActiveSearchToHistory()
+        submenuActionCoordinator.executeForAlbum(action, albumTitle, artistName, albumId, coverUrl, onAddToPlaylist)
+    }
 
     fun executeSubmenuActionForArtist(
         action: SubmenuSwipeAction,
         artistName: String,
         onAddToPlaylist: ((List<Song>) -> Unit)? = null,
-    ) = submenuActionCoordinator.executeForArtist(action, artistName, onAddToPlaylist)
+    ) {
+        commitActiveSearchToHistory()
+        submenuActionCoordinator.executeForArtist(action, artistName, onAddToPlaylist)
+    }
 
     fun setLibraryBlobsSettings(settings: LibraryBlobsSettings) {
         viewModelScope.launch {
@@ -2489,6 +2631,19 @@ class MusicPlayerViewModel(
     fun addRecentSearch(query: String) {
         viewModelScope.launch {
             searchHistoryPreferences.addSearchQuery(query)
+        }
+    }
+
+    fun commitActiveSearchToHistory(explicitQuery: String? = null) {
+        val queryToSave = explicitQuery?.trim()?.takeIf { it.isNotBlank() }
+        if (queryToSave != null) {
+            addRecentSearch(queryToSave)
+        } else {
+            catalogSearchCoordinator.recordDraftToRecent()
+            val libQuery = _searchQuery.value.trim()
+            if (libQuery.isNotBlank()) {
+                addRecentSearch(libQuery)
+            }
         }
     }
 
@@ -2516,6 +2671,7 @@ class MusicPlayerViewModel(
         candidates: List<CatalogTrackCandidate> = emptyList(),
         albumId: String = "",
     ) {
+        commitActiveSearchToHistory()
         libraryEditCoordinator.saveAlbumToLibrary(
             albumTitle = albumTitle,
             artistName = artistName,
@@ -2534,6 +2690,7 @@ class MusicPlayerViewModel(
         album: CatalogAlbum,
         candidates: List<CatalogTrackCandidate> = emptyList(),
     ) {
+        commitActiveSearchToHistory()
         libraryEditCoordinator.saveAlbumToLibrary(album, candidates)
     }
 
@@ -2620,6 +2777,7 @@ class MusicPlayerViewModel(
         albumId: String = "",
         fromNestedParent: Boolean = false,
     ) {
+        commitActiveSearchToHistory()
         val localAlbum = findMatchingLocalAlbum(title, artist)
         val effectiveArtist = if (localAlbum != null) artist.ifBlank { localAlbum.artist } else artist
         val effectiveCover = if (localAlbum != null) coverUrl ?: localAlbum.artworkUri else coverUrl
@@ -2658,11 +2816,20 @@ class MusicPlayerViewModel(
         fromNestedParent = fromNestedParent,
     )
 
-    fun selectPlaylistForInspection(playlist: CatalogPlaylist) = catalogInspectionCoordinator.selectPlaylistForInspection(playlist)
+    fun selectPlaylistForInspection(playlist: CatalogPlaylist) {
+        commitActiveSearchToHistory()
+        catalogInspectionCoordinator.selectPlaylistForInspection(playlist)
+    }
 
-    fun selectGenreForInspection(genre: CatalogGenre) = catalogInspectionCoordinator.selectGenreForInspection(genre)
+    fun selectGenreForInspection(genre: CatalogGenre) {
+        commitActiveSearchToHistory()
+        catalogInspectionCoordinator.selectGenreForInspection(genre)
+    }
 
-    fun selectArtistForInspection(artistName: String) = catalogInspectionCoordinator.selectArtistForInspection(artistName)
+    fun selectArtistForInspection(artistName: String) {
+        commitActiveSearchToHistory()
+        catalogInspectionCoordinator.selectArtistForInspection(artistName)
+    }
 
     fun toggleTrackSelection(index: Int) = catalogInspectionCoordinator.toggleTrackSelection(index)
 
@@ -2739,6 +2906,7 @@ class MusicPlayerViewModel(
     }
 
     fun downloadSelectedCandidatesBatch() {
+        commitActiveSearchToHistory()
         catalogDownloadCoordinator.downloadSelectedCandidatesBatch(catalogCollection.value)
     }
 
@@ -2758,6 +2926,7 @@ class MusicPlayerViewModel(
         lookupIdentity: TrackIdentity? = null,
         explicitId: String? = null,
     ) {
+        commitActiveSearchToHistory()
         catalogDownloadCoordinator.downloadOnlineTrack(
             track = track,
             source = source,

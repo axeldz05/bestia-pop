@@ -150,13 +150,23 @@ fun PlaylistsScreen(
     val playlistActions =
         remember(viewModel) {
             PlaylistHeaderActions(
-                onPlay = { viewModel.playPlaylist(it.id, startShuffled = false) },
-                onShuffle = { viewModel.playPlaylist(it.id, startShuffled = true) },
-                onOpen = { viewModel.openLocalPlaylist(it.id) },
+                onPlay = {
+                    viewModel.playPlaylist(it.id, startShuffled = false)
+                },
+                onShuffle = {
+                    viewModel.playPlaylist(it.id, startShuffled = true)
+                },
+                onOpen = {
+                    viewModel.openLocalPlaylist(it.id)
+                },
                 onEdit = { playlistToEdit = it },
                 onDelete = { playlistToDelete = it },
-                onPlayNext = { viewModel.playPlaylistNext(it.id) },
-                onAddToQueue = { viewModel.enqueuePlaylist(it.id) },
+                onPlayNext = {
+                    viewModel.playPlaylistNext(it.id)
+                },
+                onAddToQueue = {
+                    viewModel.enqueuePlaylist(it.id)
+                },
             )
         }
 

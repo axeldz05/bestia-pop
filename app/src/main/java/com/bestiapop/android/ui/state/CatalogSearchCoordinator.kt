@@ -113,6 +113,13 @@ class CatalogSearchCoordinator(
         search(query = query, filters = filters, saveToRecent = true)
     }
 
+    fun recordDraftToRecent() {
+        val cleanQ = _state.value.searchQueryDraft.trim()
+        if (cleanQ.isNotBlank()) {
+            onSaveRecentSearch(cleanQ)
+        }
+    }
+
     fun search(
         query: String = _state.value.searchQueryDraft,
         filters: IdentifySearchFilters = _state.value.searchFilters,

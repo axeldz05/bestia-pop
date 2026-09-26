@@ -149,16 +149,12 @@ fun LibraryBrowsePane(
                     isPlaylistAdditionMode,
                     isMultiSelectMode,
                     songList,
-                    searchQuery,
                     onToggleSelect,
                 ) {
                     { song: Song, index: Int ->
                         if (isPlaylistAdditionMode || isMultiSelectMode) {
                             onToggleSelect(song)
                         } else {
-                            if (searchQuery.isNotBlank()) {
-                                viewModel.addRecentSearch(searchQuery)
-                            }
                             viewModel.playCollection(songList.songsVisual, index)
                         }
                     }

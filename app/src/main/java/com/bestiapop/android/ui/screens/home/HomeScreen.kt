@@ -319,12 +319,9 @@ fun HomeScreen(
                 keyboardActions =
                     KeyboardActions(
                         onSearch = {
-                            val trimmed = searchQuery.trim()
-                            if (trimmed.isNotBlank()) {
-                                viewModel.addRecentSearch(trimmed)
-                                if (!isOfflineMode) {
-                                    viewModel.submitCatalogSearch(trimmed)
-                                }
+                            viewModel.commitActiveSearchToHistory(searchQuery)
+                            if (!isOfflineMode && searchQuery.isNotBlank()) {
+                                viewModel.submitCatalogSearch(searchQuery.trim())
                             }
                             focusManager.clearFocus(force = true)
                             keyboardController?.hide()
@@ -360,9 +357,6 @@ fun HomeScreen(
 
         // --- CONTENT: UNIFIED SEARCH OR HOME FEED ---
         if (isSearchActive) {
-            val recordSearch: () -> Unit = {
-                if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery.trim())
-            }
             UnifiedSearchSection(
                 searchQuery = searchQuery,
                 lazyListState = searchListState,
@@ -376,31 +370,24 @@ fun HomeScreen(
                 currentSongUri = currentItem?.mediaId,
                 songItemActions = songItemActions,
                 onPlayLocalSong = { song ->
-                    recordSearch()
                     viewModel.playSong(song, playlistOrQueue = matchingLocalSongs)
                 },
                 onSelectLocalAlbum = { album ->
-                    recordSearch()
                     viewModel.openLibraryAlbum(album.name)
                 },
                 onSelectLocalPlaylist = { playlist ->
-                    recordSearch()
                     viewModel.openLocalPlaylist(playlist.id)
                 },
                 onPlayCatalogTrack = { track ->
-                    recordSearch()
                     viewModel.playCatalogOrLocalTrack(track)
                 },
                 onDownloadCatalogTrack = { track ->
-                    recordSearch()
                     viewModel.downloadOnlineTrack(track)
                 },
                 onSelectCatalogAlbum = { album ->
-                    recordSearch()
                     viewModel.openAlbum(album)
                 },
                 onSelectCatalogPlaylist = { playlist ->
-                    recordSearch()
                     viewModel.selectPlaylistForInspection(playlist)
                 },
                 onSearchMoreOnline = {
@@ -411,7 +398,6 @@ fun HomeScreen(
                 isLoadingMoreOnline = catalogSearch.isLoadingMore,
                 artists = unifiedArtists,
                 onSelectArtist = { artist ->
-                    recordSearch()
                     val isLocal = matchingLocalArtists.any { it.name.equals(artist.name, ignoreCase = true) }
                     if (isLocal || isOfflineMode) {
                         viewModel.openLibraryArtist(artist.name)
@@ -420,7 +406,6 @@ fun HomeScreen(
                     }
                 },
                 onEnqueueCatalogTrack = { track ->
-                    recordSearch()
                     viewModel.enqueueCatalogOrLocalTrack(track)
                 },
                 modifier = Modifier.weight(1f),

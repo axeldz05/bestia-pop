@@ -333,14 +333,17 @@ fun LibraryScreen(
     val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
 
     val albumBrowseActions =
-        remember(viewModel, searchQuery, gestureSettings) {
+        remember(viewModel, gestureSettings) {
             AlbumBrowseActions(
                 onAlbumClick = { album ->
-                    if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery)
                     viewModel.openLibraryAlbum(album.name, fromNestedParent = false)
                 },
-                onPlayAlbum = { album -> viewModel.playAlbum(album, startShuffled = false) },
-                onShuffleAlbum = { album -> viewModel.playAlbum(album, startShuffled = true) },
+                onPlayAlbum = { album ->
+                    viewModel.playAlbum(album, startShuffled = false)
+                },
+                onShuffleAlbum = { album ->
+                    viewModel.playAlbum(album, startShuffled = true)
+                },
                 onEditAlbum = { album -> albumForEdit = album },
                 onChangeAlbumCover = { album -> albumForCoverChange = album },
                 onIdentifyAlbum = { album -> viewModel.identifyAlbum(album) },
@@ -351,14 +354,17 @@ fun LibraryScreen(
             )
         }
     val artistBrowseActions =
-        remember(viewModel, searchQuery, gestureSettings) {
+        remember(viewModel, gestureSettings) {
             AggregateBrowseActions<Artist>(
                 onClick = { artist ->
-                    if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery)
                     viewModel.openLibraryArtist(artist.name)
                 },
-                onPlay = { artist -> viewModel.playArtist(artist.name, startShuffled = false) },
-                onShuffle = { artist -> viewModel.playArtist(artist.name, startShuffled = true) },
+                onPlay = { artist ->
+                    viewModel.playArtist(artist.name, startShuffled = false)
+                },
+                onShuffle = { artist ->
+                    viewModel.playArtist(artist.name, startShuffled = true)
+                },
                 onSwipeAction = { artist ->
                     val songs = viewModel.songsForArtist(viewModel.libraryProjection.songs.value, artist.name)
                     viewModel.executeSubmenuActionForSongs(gestureSettings.swipeLeftAction, songs)
@@ -366,14 +372,17 @@ fun LibraryScreen(
             )
         }
     val genreBrowseActions =
-        remember(viewModel, searchQuery, gestureSettings) {
+        remember(viewModel, gestureSettings) {
             AggregateBrowseActions<GenreGroup>(
                 onClick = { genre ->
-                    if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery)
                     viewModel.openLibraryGenre(genre.name)
                 },
-                onPlay = { genre -> viewModel.playGenre(genre.name, startShuffled = false) },
-                onShuffle = { genre -> viewModel.playGenre(genre.name, startShuffled = true) },
+                onPlay = { genre ->
+                    viewModel.playGenre(genre.name, startShuffled = false)
+                },
+                onShuffle = { genre ->
+                    viewModel.playGenre(genre.name, startShuffled = true)
+                },
                 onSwipeAction = { genre ->
                     val songs = viewModel.songsForGenre(viewModel.libraryProjection.songs.value, genre.name)
                     viewModel.executeSubmenuActionForSongs(gestureSettings.swipeLeftAction, songs)
@@ -568,11 +577,7 @@ fun LibraryScreen(
                         recentSearches = recentSearches,
                         onOpenSearchHistory = { showSearchHistorySheet = true },
                         searchFocusRequester = searchFocusRequester,
-                        onSearchSubmit = { query ->
-                            if (query.isNotBlank()) {
-                                viewModel.addRecentSearch(query)
-                            }
-                        },
+                        onSearchSubmit = viewModel::commitActiveSearchToHistory,
                         selectedAlbumName = selectedAlbumName,
                         onEditAlbum = { selectedAlbumName?.let { onEditAlbumByKey(it) } },
                         isMultiSelectMode = isMultiSelectMode,
@@ -585,7 +590,7 @@ fun LibraryScreen(
                             recentSearches = recentSearches,
                             onSelectQuery = { query ->
                                 viewModel.setSearchQuery(query)
-                                viewModel.addRecentSearch(query)
+                                viewModel.commitActiveSearchToHistory(query)
                             },
                             onRemoveQuery = { viewModel.removeRecentSearch(it) },
                             onClearAll = { viewModel.clearRecentSearches() },

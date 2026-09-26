@@ -1672,6 +1672,7 @@ object YouTubeExtractor {
             val status = playability?.optString("status")
             if (status != null && status != "OK") {
                 val reason = playability.optString("reason", status)
+                clientCooldowns[clientProfile.name] = System.currentTimeMillis() + DEFAULT_CLIENT_COOLDOWN_MS
                 return Pair(null, reason)
             }
 

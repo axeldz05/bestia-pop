@@ -1026,14 +1026,14 @@ class PlaybackRuntime internal constructor(
             player.pause()
             player.seekTo(index, position)
         }
-        if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) {
-            player.prepare()
-        }
-        player.play()
         val remote = items[index] as? PlayableItem.Remote
         if (remote != null && dependencies.streamAccess.needsResolve(remote)) {
             ensureRemoteReadyAt(index, startPlaying = true)
         } else {
+            if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) {
+                player.prepare()
+            }
+            player.play()
             ensurePreparedForPlayback()
             prefetchAround(index)
         }
@@ -1301,7 +1301,7 @@ class PlaybackRuntime internal constructor(
             ensurePreparedForPlayback()
             if (playWhenReadyIntent) {
                 val remoteItem = reshuffled[0] as? PlayableItem.Remote
-                if (remoteItem != null && (remoteItem.resolved == null || remoteItem.resolved.audioUrl.isBlank())) {
+                if (remoteItem != null && dependencies.streamAccess.needsResolve(remoteItem)) {
                     ensureRemoteReadyAt(0, startPlaying = true)
                 }
                 prefetchAround(0)
@@ -1367,7 +1367,7 @@ class PlaybackRuntime internal constructor(
             ensurePreparedForPlayback()
             if (playWhenReadyIntent) {
                 val remoteItem = playable as? PlayableItem.Remote
-                if (remoteItem != null && (remoteItem.resolved == null || remoteItem.resolved.audioUrl.isBlank())) {
+                if (remoteItem != null && dependencies.streamAccess.needsResolve(remoteItem)) {
                     ensureRemoteReadyAt(newIndex, startPlaying = true)
                 }
                 prefetchAround(newIndex)
@@ -1450,7 +1450,7 @@ class PlaybackRuntime internal constructor(
         val player = controller ?: return
         if (player.mediaItemCount == 0) return
         val remote = _queue.value.getOrNull(player.currentMediaItemIndex) as? PlayableItem.Remote
-        if (remote != null && (remote.resolved == null || remote.resolved.audioUrl.isBlank())) return
+        if (remote != null && dependencies.streamAccess.needsResolve(remote)) return
         if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED || player.hasPlayerError) {
             player.prepare()
         }

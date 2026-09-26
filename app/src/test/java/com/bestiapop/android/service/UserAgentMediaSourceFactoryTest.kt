@@ -3,11 +3,13 @@ package com.bestiapop.android.service
 import android.app.Application
 import android.net.Uri
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.source.SilenceMediaSource
 import androidx.test.core.app.ApplicationProvider
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.TrackIdentity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -30,5 +32,6 @@ class UserAgentMediaSourceFactoryTest {
             UserAgentMediaSourceFactory(ApplicationProvider.getApplicationContext())
                 .createMediaSource(mediaItem)
         assertNotNull(source)
+        assertTrue("Unresolved placeholder must produce SilenceMediaSource to avoid preload ENOENT", source is SilenceMediaSource)
     }
 }

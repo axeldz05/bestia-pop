@@ -45,11 +45,15 @@ import androidx.media3.session.MediaSessionService
 import com.bestiapop.android.BestiaPopApplication
 import com.bestiapop.android.MainActivity
 import com.bestiapop.android.R
+import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.network.GoogleVideoRange
 import com.bestiapop.android.data.preferences.MAX_VOLUME_BOOST_GAIN_MB
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
+import com.bestiapop.android.data.preferences.centerFrequenciesForBandCount
 import com.bestiapop.android.data.preferences.clampStereoGain
+import com.bestiapop.android.data.preferences.resolveActiveRule
 import com.bestiapop.android.data.system.BACKGROUND_RESTRICTION_CONFIRM_MS
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.data.util.CrashReporter
@@ -91,6 +95,7 @@ class MusicService : MediaLibraryService() {
     private var restrictionConfirmJob: Job? = null
     private var appOpsWatcher: AppOpsManager.OnOpChangedListener? = null
     private var serviceWakeLock: PowerManager.WakeLock? = null
+    private val equalizerAudioProcessor = EqualizerAudioProcessor()
     private val stereoBalanceProcessor = StereoBalanceAudioProcessor()
     private val audioStore by lazy { MusicFileStore(this) }
     private val libraryBrowseProvider by lazy {
@@ -149,6 +154,7 @@ class MusicService : MediaLibraryService() {
         serviceScope.launch {
             playbackPreferences.settingsFlow.collectLatest { settings ->
                 latestPlaybackSettings = settings
+                applyEqualizer(settings)
                 applyStereoBalance(settings)
                 applyBoost(settings)
                 updateCrossfadeLoop()
@@ -224,6 +230,7 @@ class MusicService : MediaLibraryService() {
         newPlayer.addListener(playerListener)
         mediaLibrarySession?.player = newPlayer
 
+        applyEqualizer(latestPlaybackSettings)
         applyStereoBalance(latestPlaybackSettings)
         applyBoost(latestPlaybackSettings)
 
@@ -278,7 +285,7 @@ class MusicService : MediaLibraryService() {
                         .Builder(context)
                         .setEnableFloatOutput(false)
                         .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
-                        .setAudioProcessors(arrayOf(stereoBalanceProcessor))
+                        .setAudioProcessors(arrayOf(equalizerAudioProcessor, stereoBalanceProcessor))
                         .build()
             }
 
@@ -438,6 +445,7 @@ class MusicService : MediaLibraryService() {
             ) {
                 val p = player ?: return
                 PlaybackDiagnostics.logMediaItemTransition(mediaItem, reason)
+                applyEqualizer(latestPlaybackSettings, mediaItem)
                 if (latestPlaybackSettings.crossfadeEnabled) {
                     if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
                         reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
@@ -552,6 +560,46 @@ class MusicService : MediaLibraryService() {
                     delay(40L)
                 }
             }
+    }
+
+    private fun applyEqualizer(
+        settings: PlaybackSettings,
+        mediaItem: MediaItem? = player?.currentMediaItem,
+    ) {
+        val eq = settings.equalizerSettings
+        equalizerAudioProcessor.isEnabled = eq.enabled
+        if (!eq.enabled) return
+
+        val activeRule =
+            if (eq.dynamicEnabled && mediaItem != null) {
+                val metadata = mediaItem.mediaMetadata
+                val title = metadata.title?.toString().orEmpty()
+                val artist = metadata.artist?.toString().orEmpty()
+                val album = metadata.albumTitle?.toString().orEmpty()
+                if (title.isNotEmpty() || artist.isNotEmpty() || album.isNotEmpty()) {
+                    val trackMeta =
+                        TrackIdentity(
+                            title = title,
+                            artist = artist,
+                            album = album,
+                        )
+                    resolveActiveRule(trackMeta, eq.dynamicRules)
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+
+        val (bandCount, gains) =
+            if (activeRule != null) {
+                activeRule.bandCount to activeRule.bandGainsDb
+            } else {
+                eq.bandCount to eq.bandGainsDb
+            }
+
+        val freqs = centerFrequenciesForBandCount(bandCount)
+        equalizerAudioProcessor.updateBands(freqs, gains)
     }
 
     private fun applyStereoBalance(settings: PlaybackSettings) {

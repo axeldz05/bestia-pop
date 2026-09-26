@@ -98,6 +98,10 @@ class UiNavigationCoordinator(
         openSettingsSection("playback")
     }
 
+    fun openEqualizer() {
+        openSettingsSection("equalizer")
+    }
+
     private fun openSettingsSection(section: String) {
         navIndexBeforeTransient = _navigation.value.selectedNavIndex
         _pendingSettingsSection.value = section

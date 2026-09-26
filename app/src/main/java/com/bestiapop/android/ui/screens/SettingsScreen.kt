@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Lyrics
@@ -68,6 +69,7 @@ private enum class SettingsSection {
     Playback,
     Lyrics,
     Sound,
+    Equalizer,
     Downloads,
     LibraryTags,
     Telemetry,
@@ -94,6 +96,11 @@ fun SettingsScreen(
                 section = SettingsSection.Playback
                 viewModel.consumePendingSettingsSection()
             }
+
+            "equalizer" -> {
+                section = SettingsSection.Equalizer
+                viewModel.consumePendingSettingsSection()
+            }
         }
     }
 
@@ -118,6 +125,7 @@ fun SettingsScreen(
                 onOpenPlayback = { section = SettingsSection.Playback },
                 onOpenLyrics = { section = SettingsSection.Lyrics },
                 onOpenSound = { section = SettingsSection.Sound },
+                onOpenEqualizer = { section = SettingsSection.Equalizer },
                 onOpenDownloads = { section = SettingsSection.Downloads },
                 onOpenLibraryTags = { section = SettingsSection.LibraryTags },
                 onOpenTelemetry = { section = SettingsSection.Telemetry },
@@ -158,6 +166,12 @@ fun SettingsScreen(
         SettingsSection.Sound -> {
             SettingsSectionPage("Sonido", onBack = closeSection) {
                 VolumeBoostSettingsScreen(viewModel = viewModel)
+            }
+        }
+
+        SettingsSection.Equalizer -> {
+            SettingsSectionPage("Ecualizador", onBack = closeSection) {
+                EqualizerScreen(viewModel = viewModel)
             }
         }
 
@@ -214,6 +228,7 @@ private fun SettingsHome(
     onOpenPlayback: () -> Unit,
     onOpenLyrics: () -> Unit,
     onOpenSound: () -> Unit,
+    onOpenEqualizer: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenLibraryTags: () -> Unit,
     onOpenTelemetry: () -> Unit,
@@ -310,6 +325,12 @@ private fun SettingsHome(
                     "Amplificar y balance estéreo",
                     Icons.AutoMirrored.Filled.VolumeUp,
                     onOpenSound,
+                ),
+                SettingsHomeEntry(
+                    "Ecualizador",
+                    "Ajuste de 5 a 12 bandas y preajustes",
+                    Icons.Default.Equalizer,
+                    onOpenEqualizer,
                 ),
                 SettingsHomeEntry(
                     "Descargas",

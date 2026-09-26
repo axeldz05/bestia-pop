@@ -22,6 +22,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -37,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,7 +114,9 @@ fun NowPlayingScreen(
     val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsStateWithLifecycle()
     val isFetchingLyrics by viewModel.isFetchingLyrics.collectAsStateWithLifecycle()
     val lyricsFetchError by viewModel.lyricsFetchError.collectAsStateWithLifecycle()
+    val playbackSettings by viewModel.playbackSettings.collectAsStateWithLifecycle()
     var actionsMenuExpanded by remember { mutableStateOf(false) }
+    var showEqualizerScreen by rememberSaveable { mutableStateOf(false) }
     val songDialogs =
         rememberSongActionDialogs(
             viewModel = viewModel,
@@ -480,7 +484,22 @@ fun NowPlayingScreen(
                                             }
                                         }
 
-                                        Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                                        Row(
+                                            modifier = Modifier.align(Alignment.CenterEnd),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            IconButton(onClick = { showEqualizerScreen = true }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Equalizer,
+                                                    contentDescription = "Ecualizador",
+                                                    tint =
+                                                        if (playbackSettings.equalizerSettings.enabled) {
+                                                            MaterialTheme.colorScheme.primary
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+                                                        },
+                                                )
+                                            }
                                             IconButton(onClick = { actionsMenuExpanded = true }) {
                                                 Icon(
                                                     imageVector = Icons.Default.MoreVert,
@@ -665,6 +684,19 @@ fun NowPlayingScreen(
                             .fillMaxSize()
                             .sheetLayout(queueSheetState),
                 )
+            }
+
+            if (showEqualizerScreen) {
+                BackHandler { showEqualizerScreen = false }
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    EqualizerScreen(
+                        viewModel = viewModel,
+                        onBack = { showEqualizerScreen = false },
+                    )
+                }
             }
         }
     }

@@ -218,7 +218,7 @@ class LibraryScanCoordinator(
 
     /**
      * Hidden, low-priority background traversal that slowly verifies local songs on disk
-     * and prunes corrupted or missing songs in batches. 
+     * and prunes corrupted or missing songs in batches.
      */
     fun startSilentCorruptFileCrawler(onSongsPruned: suspend (List<Song>) -> Unit = {}) {
         if (silentPruneJob?.isActive == true) return

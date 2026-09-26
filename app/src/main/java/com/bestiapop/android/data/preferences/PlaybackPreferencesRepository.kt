@@ -48,6 +48,7 @@ data class PlaybackSettings(
     val openNowPlayingOnPlay: Boolean = true,
     val crossfadeEnabled: Boolean = false,
     val crossfadeDurationSeconds: Int = DEFAULT_CROSSFADE_DURATION_SECONDS,
+    val equalizerSettings: EqualizerSettings = EqualizerSettings(),
 )
 
 const val DEFAULT_STREAM_SKIP_GRACE_SECONDS = 3
@@ -171,6 +172,12 @@ class PlaybackPreferencesRepository internal constructor(
         val OPEN_NOW_PLAYING_ON_PLAY = booleanPreferencesKey("open_now_playing_on_play")
         val CROSSFADE_ENABLED = booleanPreferencesKey("crossfade_enabled")
         val CROSSFADE_DURATION_SECONDS = intPreferencesKey("crossfade_duration_seconds")
+        val EQUALIZER_ENABLED = booleanPreferencesKey("equalizer_enabled")
+        val EQUALIZER_DYNAMIC_ENABLED = booleanPreferencesKey("equalizer_dynamic_enabled")
+        val EQUALIZER_BAND_COUNT = intPreferencesKey("equalizer_band_count")
+        val EQUALIZER_BAND_GAINS = stringPreferencesKey("equalizer_band_gains")
+        val EQUALIZER_PRESET_NAME = stringPreferencesKey("equalizer_preset_name")
+        val EQUALIZER_DYNAMIC_RULES = stringPreferencesKey("equalizer_dynamic_rules")
         val OEM_SCREEN_OFF_CLEANUP_HINT_DISMISSED =
             booleanPreferencesKey("oem_screen_off_cleanup_hint_dismissed")
     }
@@ -182,6 +189,9 @@ class PlaybackPreferencesRepository internal constructor(
 
     val settingsFlow: Flow<PlaybackSettings> =
         dataStore.data.map { prefs ->
+            val eqBandCount =
+                (prefs[Keys.EQUALIZER_BAND_COUNT] ?: DEFAULT_EQUALIZER_BAND_COUNT)
+                    .coerceIn(MIN_EQUALIZER_BANDS, MAX_EQUALIZER_BANDS)
             PlaybackSettings(
                 volumeBoostEnabled = prefs[Keys.VOLUME_BOOST_ENABLED] ?: false,
                 volumeBoostAmount = clampVolumeBoostAmount(prefs[Keys.VOLUME_BOOST_AMOUNT] ?: 0f),
@@ -206,6 +216,15 @@ class PlaybackPreferencesRepository internal constructor(
                 crossfadeDurationSeconds =
                     clampCrossfadeDurationSeconds(
                         prefs[Keys.CROSSFADE_DURATION_SECONDS] ?: DEFAULT_CROSSFADE_DURATION_SECONDS,
+                    ),
+                equalizerSettings =
+                    EqualizerSettings(
+                        enabled = prefs[Keys.EQUALIZER_ENABLED] ?: false,
+                        dynamicEnabled = prefs[Keys.EQUALIZER_DYNAMIC_ENABLED] ?: true,
+                        bandCount = eqBandCount,
+                        bandGainsDb = decodeBandGains(prefs[Keys.EQUALIZER_BAND_GAINS], eqBandCount),
+                        presetName = prefs[Keys.EQUALIZER_PRESET_NAME] ?: EQUALIZER_PRESET_FLAT,
+                        dynamicRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]),
                     ),
             )
         }
@@ -297,5 +316,44 @@ class PlaybackPreferencesRepository internal constructor(
 
     suspend fun dismissOemScreenOffCleanupHint() {
         dataStore.put(Keys.OEM_SCREEN_OFF_CLEANUP_HINT_DISMISSED, true)
+    }
+
+    suspend fun setEqualizerSettings(settings: EqualizerSettings) {
+        dataStore.edit { prefs ->
+            prefs[Keys.EQUALIZER_ENABLED] = settings.enabled
+            prefs[Keys.EQUALIZER_DYNAMIC_ENABLED] = settings.dynamicEnabled
+            prefs[Keys.EQUALIZER_BAND_COUNT] =
+                settings.bandCount.coerceIn(MIN_EQUALIZER_BANDS, MAX_EQUALIZER_BANDS)
+            prefs[Keys.EQUALIZER_BAND_GAINS] = encodeBandGains(settings.bandGainsDb)
+            prefs[Keys.EQUALIZER_PRESET_NAME] = settings.presetName
+            prefs[Keys.EQUALIZER_DYNAMIC_RULES] = encodeDynamicRules(settings.dynamicRules)
+        }
+    }
+
+    suspend fun setDynamicEqualizerEnabled(enabled: Boolean) {
+        dataStore.put(Keys.EQUALIZER_DYNAMIC_ENABLED, enabled)
+    }
+
+    suspend fun saveDynamicEqualizerRule(rule: DynamicEqualizerRule) {
+        dataStore.edit { prefs ->
+            val currentRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]).toMutableList()
+            val index =
+                currentRules.indexOfFirst {
+                    it.id == rule.id || (it.targetType == rule.targetType && it.targetKey == rule.targetKey)
+                }
+            if (index >= 0) {
+                currentRules[index] = rule
+            } else {
+                currentRules.add(0, rule)
+            }
+            prefs[Keys.EQUALIZER_DYNAMIC_RULES] = encodeDynamicRules(currentRules)
+        }
+    }
+
+    suspend fun removeDynamicEqualizerRule(ruleId: String) {
+        dataStore.edit { prefs ->
+            val currentRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]).filterNot { it.id == ruleId }
+            prefs[Keys.EQUALIZER_DYNAMIC_RULES] = encodeDynamicRules(currentRules)
+        }
     }
 }

@@ -68,6 +68,12 @@ import com.bestiapop.android.data.preferences.DEFAULT_STREAM_SKIP_GRACE_SECONDS
 import com.bestiapop.android.data.preferences.DiscoverSourcePreference
 import com.bestiapop.android.data.preferences.DownloadPreferencesRepository
 import com.bestiapop.android.data.preferences.DownloadSettings
+import com.bestiapop.android.data.preferences.DynamicEqualizerRule
+import com.bestiapop.android.data.preferences.EQUALIZER_PRESETS
+import com.bestiapop.android.data.preferences.EQUALIZER_PRESET_CUSTOM
+import com.bestiapop.android.data.preferences.EQUALIZER_PRESET_FLAT
+import com.bestiapop.android.data.preferences.EqualizerSettings
+import com.bestiapop.android.data.preferences.EqualizerTargetType
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.data.preferences.FastScrollSide
 import com.bestiapop.android.data.preferences.GenreTaxonomyRepository
@@ -83,6 +89,10 @@ import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.LyricsPreferencesRepository
 import com.bestiapop.android.data.preferences.LyricsSettings
+import com.bestiapop.android.data.preferences.MAX_EQUALIZER_BANDS
+import com.bestiapop.android.data.preferences.MAX_EQUALIZER_GAIN_DB
+import com.bestiapop.android.data.preferences.MIN_EQUALIZER_BANDS
+import com.bestiapop.android.data.preferences.MIN_EQUALIZER_GAIN_DB
 import com.bestiapop.android.data.preferences.NAV_DISCOVER
 import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
@@ -98,6 +108,10 @@ import com.bestiapop.android.data.preferences.TelemetryPreferencesRepository
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
+import com.bestiapop.android.data.preferences.adaptGainsForNewBandCount
+import com.bestiapop.android.data.preferences.centerFrequenciesForBandCount
+import com.bestiapop.android.data.preferences.createRuleForTarget
+import com.bestiapop.android.data.preferences.evaluatePresetGains
 import com.bestiapop.android.data.system.BACKGROUND_RESTRICTION_CONFIRM_MS
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.data.system.BackgroundExecutionStatus
@@ -1075,6 +1089,102 @@ class MusicPlayerViewModel(
     fun openDownloadSettings() = uiNavigationCoordinator.openDownloadSettings()
 
     fun openPlaybackSettings() = uiNavigationCoordinator.openPlaybackSettings()
+
+    fun openEqualizer() = uiNavigationCoordinator.openEqualizer()
+
+    fun setEqualizerSettings(settings: EqualizerSettings) {
+        persistPlayback { setEqualizerSettings(settings) }
+    }
+
+    fun setEqualizerEnabled(enabled: Boolean) {
+        val current = playbackSettings.value.equalizerSettings
+        setEqualizerSettings(current.copy(enabled = enabled))
+    }
+
+    fun setEqualizerBandCount(count: Int) {
+        val current = playbackSettings.value.equalizerSettings
+        val clamped = count.coerceIn(MIN_EQUALIZER_BANDS, MAX_EQUALIZER_BANDS)
+        if (clamped == current.bandCount) return
+        val newGains =
+            adaptGainsForNewBandCount(
+                currentGains = current.bandGainsDb,
+                currentCount = current.bandCount,
+                newCount = clamped,
+                presetName = current.presetName,
+            )
+        setEqualizerSettings(
+            current.copy(
+                bandCount = clamped,
+                bandGainsDb = newGains,
+            ),
+        )
+    }
+
+    fun setEqualizerBandGain(
+        bandIndex: Int,
+        gainDb: Float,
+    ) {
+        val current = playbackSettings.value.equalizerSettings
+        val gains = current.bandGainsDb.toMutableList()
+        if (bandIndex !in gains.indices) return
+        gains[bandIndex] = gainDb.coerceIn(MIN_EQUALIZER_GAIN_DB, MAX_EQUALIZER_GAIN_DB)
+        setEqualizerSettings(
+            current.copy(
+                bandGainsDb = gains,
+                presetName = EQUALIZER_PRESET_CUSTOM,
+            ),
+        )
+    }
+
+    fun setEqualizerPreset(presetName: String) {
+        val current = playbackSettings.value.equalizerSettings
+        val preset = EQUALIZER_PRESETS.firstOrNull { it.name == presetName }
+        val newGains =
+            if (preset != null) {
+                val freqs = centerFrequenciesForBandCount(current.bandCount)
+                evaluatePresetGains(preset, freqs)
+            } else {
+                current.bandGainsDb
+            }
+        setEqualizerSettings(current.copy(bandGainsDb = newGains, presetName = presetName))
+    }
+
+    fun resetEqualizer() {
+        val current = playbackSettings.value.equalizerSettings
+        val zeros = List(current.bandCount) { 0f }
+        setEqualizerSettings(current.copy(bandGainsDb = zeros, presetName = EQUALIZER_PRESET_FLAT))
+    }
+
+    fun setDynamicEqualizerEnabled(enabled: Boolean) {
+        val current = playbackSettings.value.equalizerSettings
+        setEqualizerSettings(current.copy(dynamicEnabled = enabled))
+    }
+
+    fun applyEqualizerRule(
+        targetType: EqualizerTargetType,
+        track: TrackMeta?,
+        customName: String? = null,
+    ): Boolean {
+        val currentEq = playbackSettings.value.equalizerSettings
+        val rule = createRuleForTarget(targetType, track, currentEq, customName) ?: return false
+        persistPlayback { saveDynamicEqualizerRule(rule) }
+        return true
+    }
+
+    fun removeEqualizerRule(ruleId: String) {
+        persistPlayback { removeDynamicEqualizerRule(ruleId) }
+    }
+
+    fun loadRuleIntoEqualizer(rule: DynamicEqualizerRule) {
+        val current = playbackSettings.value.equalizerSettings
+        setEqualizerSettings(
+            current.copy(
+                bandCount = rule.bandCount,
+                bandGainsDb = rule.bandGainsDb,
+                presetName = rule.presetName,
+            ),
+        )
+    }
 
     fun returnFromTransientSettings(): Boolean = uiNavigationCoordinator.returnFromTransientSettings()
 

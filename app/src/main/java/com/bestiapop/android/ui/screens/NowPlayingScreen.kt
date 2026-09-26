@@ -410,7 +410,7 @@ fun NowPlayingScreen(
                                             modifier =
                                                 Modifier
                                                     .fillMaxWidth()
-                                                    .padding(horizontal = 36.dp),
+                                                    .padding(horizontal = 84.dp),
                                         ) {
                                             Text(
                                                 text = item.title,
@@ -439,27 +439,31 @@ fun NowPlayingScreen(
                                                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
-                                                    modifier = artistModifier,
+                                                    modifier = artistModifier.weight(1f, fill = false),
                                                 )
-                                                Text(
-                                                    text = " • ",
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                                                )
+                                                if (item.artist.isNotBlank() && albumLabel.isNotBlank()) {
+                                                    Text(
+                                                        text = " • ",
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                                                    )
+                                                }
                                                 val albumModifier =
                                                     if (effectiveAlbumName != null) {
                                                         Modifier.clickable { navigateToAlbum(effectiveAlbumName) }
                                                     } else {
                                                         Modifier
                                                     }
-                                                Text(
-                                                    text = albumLabel,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = albumModifier,
-                                                )
+                                                if (albumLabel.isNotBlank()) {
+                                                    Text(
+                                                        text = albumLabel,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = albumModifier.weight(1f, fill = false),
+                                                    )
+                                                }
                                             }
                                             if (resolvingRemote) {
                                                 Spacer(modifier = Modifier.height(4.dp))
@@ -489,7 +493,10 @@ fun NowPlayingScreen(
                                             modifier = Modifier.align(Alignment.CenterEnd),
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            IconButton(onClick = { showEqualizerScreen = true }) {
+                                            IconButton(
+                                                onClick = { showEqualizerScreen = true },
+                                                modifier = Modifier.size(40.dp),
+                                            ) {
                                                 Icon(
                                                     imageVector = Icons.Default.Equalizer,
                                                     contentDescription = "Ecualizador",
@@ -501,7 +508,10 @@ fun NowPlayingScreen(
                                                         },
                                                 )
                                             }
-                                            IconButton(onClick = { actionsMenuExpanded = true }) {
+                                            IconButton(
+                                                onClick = { actionsMenuExpanded = true },
+                                                modifier = Modifier.size(40.dp),
+                                            ) {
                                                 Icon(
                                                     imageVector = Icons.Default.MoreVert,
                                                     contentDescription = "Acciones de la canción",

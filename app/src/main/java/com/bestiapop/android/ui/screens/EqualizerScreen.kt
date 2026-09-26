@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -63,6 +65,7 @@ import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -84,6 +87,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -108,6 +112,7 @@ import com.bestiapop.android.ui.components.ScreenBackHeader
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.round
+import kotlin.math.roundToInt
 
 @Composable
 fun EqualizerScreen(
@@ -127,10 +132,20 @@ fun EqualizerScreen(
             if (eqSettings.dynamicEnabled) resolveActiveRule(currentPlayable, eqSettings.dynamicRules) else null
         }
 
+    val insetsModifier =
+        if (onBack != null) {
+            Modifier
+                .statusBarsPadding()
+                .navigationBarsPadding()
+        } else {
+            Modifier
+        }
+
     Column(
         modifier =
             modifier
                 .fillMaxSize()
+                .then(insetsModifier)
                 .background(MaterialTheme.colorScheme.background),
     ) {
         if (onBack != null) {
@@ -215,6 +230,7 @@ fun EqualizerScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.weight(1f, fill = false),
                         ) {
                             Surface(
                                 shape = CircleShape,
@@ -245,6 +261,8 @@ fun EqualizerScreen(
                                     text = "Ecualizador",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onBackground,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
                                     text =
@@ -255,6 +273,8 @@ fun EqualizerScreen(
                                         },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
@@ -460,7 +480,10 @@ fun EqualizerScreen(
                         val artistAssigned = activeRule?.targetType == EqualizerTargetType.ARTIST
 
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             // Song button
@@ -480,7 +503,6 @@ fun EqualizerScreen(
                                     )
                                 },
                                 enabled = eqSettings.enabled && playable?.title?.isNotBlank() == true,
-                                modifier = Modifier.weight(1f),
                             )
 
                             // Album button
@@ -500,7 +522,6 @@ fun EqualizerScreen(
                                     )
                                 },
                                 enabled = eqSettings.enabled && playable?.album?.isNotBlank() == true,
-                                modifier = Modifier.weight(1f),
                             )
 
                             // Artist button
@@ -520,7 +541,6 @@ fun EqualizerScreen(
                                     )
                                 },
                                 enabled = eqSettings.enabled && playable?.artist?.isNotBlank() == true,
-                                modifier = Modifier.weight(1f),
                             )
                         }
 
@@ -629,16 +649,20 @@ fun EqualizerScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
                             Text(
                                 text = "Bandas de ecualización",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                 color = MaterialTheme.colorScheme.onBackground,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 text = "Configurable de 5 a 12 bandas",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
 
@@ -1007,45 +1031,121 @@ private fun EqualizerFadersRow(
 ) {
     val scrollState = rememberScrollState()
     val isScrollable = bands.size > 5
+    var prevBandCount by remember { mutableIntStateOf(bands.size) }
+
+    LaunchedEffect(bands.size) {
+        if (bands.size > prevBandCount && scrollState.maxValue > 0) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+        prevBandCount = bands.size
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
         shape = RoundedCornerShape(16.dp),
         modifier = modifier,
     ) {
-        val rowModifier =
-            if (isScrollable) {
-                Modifier
-                    .horizontalScroll(scrollState)
-                    .padding(horizontal = 8.dp, vertical = 12.dp)
-            } else {
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 12.dp)
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        ) {
+            // Card Header with band count and horizontal scroll indicator cue
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Bandas individuales",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (isScrollable) {
+                    Text(
+                        text = "Desliza horizontalmente ↔",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
-        Row(
-            modifier = rowModifier,
-            horizontalArrangement =
+            Spacer(modifier = Modifier.height(6.dp))
+
+            val rowModifier =
                 if (isScrollable) {
-                    Arrangement.spacedBy(8.dp)
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(scrollState)
+                        .padding(horizontal = 12.dp)
                 } else {
-                    Arrangement.SpaceEvenly
-                },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            bands.forEach { band ->
-                EqualizerVerticalFader(
-                    band = band,
-                    enabled = enabled,
-                    onGainChange = { gain -> onGainChange(band.index, gain) },
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                }
+
+            Row(
+                modifier = rowModifier,
+                horizontalArrangement =
+                    if (isScrollable) {
+                        Arrangement.spacedBy(10.dp)
+                    } else {
+                        Arrangement.SpaceEvenly
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                bands.forEach { band ->
+                    EqualizerVerticalFader(
+                        band = band,
+                        enabled = enabled,
+                        onGainChange = { gain -> onGainChange(band.index, gain) },
+                        modifier =
+                            if (isScrollable) {
+                                Modifier.width(62.dp)
+                            } else {
+                                Modifier.weight(1f)
+                            },
+                    )
+                }
+            }
+
+            if (isScrollable) {
+                Spacer(modifier = Modifier.height(10.dp))
+                // Subtle horizontal scroll indicator at bottom of card
+                Box(
                     modifier =
-                        if (isScrollable) {
-                            Modifier.width(58.dp)
-                        } else {
-                            Modifier.weight(1f)
-                        },
-                )
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val maxScroll = scrollState.maxValue.coerceAtLeast(1)
+                    val scrollFraction = (scrollState.value.toFloat() / maxScroll.toFloat()).coerceIn(0f, 1f)
+                    val trackWidth = 72.dp
+                    val thumbWidth = 24.dp
+
+                    Box(
+                        modifier =
+                            Modifier
+                                .width(trackWidth)
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.18f)),
+                    ) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .width(thumbWidth)
+                                    .height(4.dp)
+                                    .offset {
+                                        val maxOffsetPx = (trackWidth - thumbWidth).toPx()
+                                        IntOffset((scrollFraction * maxOffsetPx).roundToInt(), 0)
+                                    }.clip(RoundedCornerShape(2.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)),
+                        )
+                    }
+                }
             }
         }
     }
@@ -1058,9 +1158,14 @@ private fun EqualizerVerticalFader(
     onGainChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val density = LocalDensity.current
     val trackHeight = 170.dp
-    val trackHeightPx = with(LocalDensity.current) { trackHeight.toPx() }
+    val trackHeightPx = with(density) { trackHeight.toPx() }
+    val paddingPx = with(density) { 10.dp.toPx() }
+    val viewConfig = LocalViewConfiguration.current
+    val touchSlop = viewConfig.touchSlop
     var lastTapTimeMs by remember { mutableLongStateOf(0L) }
+    var isDraggingVertical by remember { mutableStateOf(false) }
 
     val gainAnimated by animateFloatAsState(
         targetValue = band.gainDb,
@@ -1083,10 +1188,15 @@ private fun EqualizerVerticalFader(
 
         Text(
             text = gainText,
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+            style =
+                MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = if (isDraggingVertical) FontWeight.ExtraBold else FontWeight.Bold,
+                    fontSize = 11.sp,
+                ),
             color =
                 when {
                     !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    isDraggingVertical -> MaterialTheme.colorScheme.primary
                     band.gainDb > 0.05f -> MaterialTheme.colorScheme.primary
                     band.gainDb < -0.05f -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -1102,28 +1212,61 @@ private fun EqualizerVerticalFader(
             modifier =
                 Modifier
                     .height(trackHeight)
-                    .width(42.dp)
-                    .pointerInput(enabled) {
+                    .width(44.dp)
+                    .pointerInput(enabled, trackHeightPx) {
                         if (!enabled) return@pointerInput
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
-                            val now = System.currentTimeMillis()
-                            if (now - lastTapTimeMs < 300L) {
-                                // Double-tap resets this band to 0 dB
-                                onGainChange(0f)
-                                lastTapTimeMs = 0L
-                            } else {
-                                lastTapTimeMs = now
-                                updateGainFromY(down.position.y, trackHeightPx, onGainChange)
-                            }
+                            val downX = down.position.x
+                            val downY = down.position.y
+                            val downTime = System.currentTimeMillis()
+                            var isVerticalDrag = false
+                            var isHorizontalDrag = false
 
                             while (true) {
                                 val event = awaitPointerEvent()
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                if (!change.pressed) break
-                                updateGainFromY(change.position.y, trackHeightPx, onGainChange)
-                                change.consume()
+                                if (!change.pressed) {
+                                    // Pointer released (Up)
+                                    if (!isVerticalDrag && !isHorizontalDrag) {
+                                        val now = System.currentTimeMillis()
+                                        if (now - downTime < 500L) {
+                                            if (now - lastTapTimeMs < 300L) {
+                                                // Double-tap resets this band to 0 dB
+                                                onGainChange(0f)
+                                                lastTapTimeMs = 0L
+                                            } else {
+                                                lastTapTimeMs = now
+                                                updateGainFromY(change.position.y, trackHeightPx, paddingPx, onGainChange)
+                                            }
+                                            change.consume()
+                                        }
+                                    }
+                                    break
+                                }
+
+                                val dx = change.position.x - downX
+                                val dy = change.position.y - downY
+
+                                if (!isVerticalDrag && !isHorizontalDrag) {
+                                    if (abs(dx) > touchSlop && abs(dx) >= abs(dy)) {
+                                        // Horizontal swipe across bands: let parent horizontalScroll handle it!
+                                        isHorizontalDrag = true
+                                        // Do not consume. Exit gesture loop immediately.
+                                        break
+                                    } else if (abs(dy) > touchSlop && abs(dy) > abs(dx)) {
+                                        // Vertical adjustment: this fader takes control!
+                                        isVerticalDrag = true
+                                        isDraggingVertical = true
+                                        updateGainFromY(change.position.y, trackHeightPx, paddingPx, onGainChange)
+                                        change.consume()
+                                    }
+                                } else if (isVerticalDrag) {
+                                    updateGainFromY(change.position.y, trackHeightPx, paddingPx, onGainChange)
+                                    change.consume()
+                                }
                             }
+                            isDraggingVertical = false
                         }
                     },
             contentAlignment = Alignment.Center,
@@ -1187,6 +1330,9 @@ private fun EqualizerVerticalFader(
             }
 
             // Draggable Thumb Knob
+            val thumbSize = if (isDraggingVertical) 26.dp else 24.dp
+            val thumbElevation = if (isDraggingVertical) 6.dp else 3.dp
+
             Surface(
                 shape = CircleShape,
                 color =
@@ -1195,10 +1341,10 @@ private fun EqualizerVerticalFader(
                     } else {
                         MaterialTheme.colorScheme.surfaceVariant
                     },
-                shadowElevation = 4.dp,
+                shadowElevation = thumbElevation,
                 modifier =
                     Modifier
-                        .size(24.dp)
+                        .size(thumbSize)
                         .offset {
                             val centerOffset = (thumbYOffset - (totalHeight / 2f) + 10.dp).roundToPx()
                             IntOffset(0, centerOffset)
@@ -1237,11 +1383,13 @@ private fun EqualizerVerticalFader(
 private fun updateGainFromY(
     y: Float,
     trackHeightPx: Float,
+    paddingPx: Float,
     onGainChange: (Float) -> Unit,
 ) {
     if (trackHeightPx <= 0f) return
-    val clampedY = y.coerceIn(0f, trackHeightPx)
-    val fractionFromTop = (clampedY / trackHeightPx).coerceIn(0f, 1f)
+    val usableHeightPx = (trackHeightPx - 2f * paddingPx).coerceAtLeast(1f)
+    val clampedY = (y - paddingPx).coerceIn(0f, usableHeightPx)
+    val fractionFromTop = (clampedY / usableHeightPx).coerceIn(0f, 1f)
     // 0 = top (+12 dB), 1 = bottom (-12 dB)
     var gain = MAX_EQUALIZER_GAIN_DB - fractionFromTop * (MAX_EQUALIZER_GAIN_DB - MIN_EQUALIZER_GAIN_DB)
 

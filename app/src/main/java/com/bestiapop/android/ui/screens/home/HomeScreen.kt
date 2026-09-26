@@ -65,6 +65,7 @@ import com.bestiapop.android.ui.screens.discover.DiscoverTopRelatedActions
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.PlaylistDetailNav
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -156,7 +157,17 @@ fun HomeScreen(
 
     val isSearchActive = searchQuery.isNotBlank()
 
-    val cleanSearchQuery = remember(searchQuery) { searchQuery.trim() }
+    var debouncedLocalQuery by remember { mutableStateOf(searchQuery) }
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isBlank()) {
+            debouncedLocalQuery = ""
+        } else {
+            delay(60)
+            debouncedLocalQuery = searchQuery
+        }
+    }
+
+    val cleanSearchQuery = remember(debouncedLocalQuery) { debouncedLocalQuery.trim() }
     val normalizedSearchQuery = remember(cleanSearchQuery) { TrackMatchKeys.normalize(cleanSearchQuery) }
     val searchTokens = remember(normalizedSearchQuery) { normalizedSearchQuery.split(' ').filter { it.isNotEmpty() } }
 
@@ -283,7 +294,6 @@ fun HomeScreen(
                 value = searchQuery,
                 onValueChange = { query ->
                     searchQuery = query
-                    viewModel.setCatalogSearchDraft(query)
                     if (!isOfflineMode) {
                         viewModel.searchCatalogDebounced(query = query)
                     }
@@ -319,6 +329,7 @@ fun HomeScreen(
                 keyboardActions =
                     KeyboardActions(
                         onSearch = {
+                            viewModel.setCatalogSearchDraft(searchQuery)
                             viewModel.commitActiveSearchToHistory(searchQuery)
                             if (!isOfflineMode && searchQuery.isNotBlank()) {
                                 viewModel.submitCatalogSearch(searchQuery.trim())

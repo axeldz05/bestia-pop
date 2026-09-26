@@ -3,12 +3,15 @@ package com.bestiapop.android.service
 import androidx.media3.common.Player
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.RepeatMode
+import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.data.model.withFreshQueueEntryIds
 import com.bestiapop.android.data.playback.PlaybackChangeHint
 import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.playback.PlaybackQueueSlots
 import com.bestiapop.android.data.preferences.PlaybackModeClear
 import com.bestiapop.android.data.preferences.PlaybackModeRestore
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -172,6 +175,40 @@ internal class PlaybackQueueCoordinator(
         if (changed) {
             onSetQueue(newQ)
             syncChangedTimelineItems(q, newQ)
+        }
+    }
+
+    fun upgradeMatchingRemoteQueueEntries(song: Song) {
+        val q = getQueue()
+        val songKeys = TrackMatchKeys.candidateMatchKeys(song.artist, song.title).toSet()
+        if (songKeys.isEmpty()) return
+        var changed = false
+        val newQ =
+            q.map { item ->
+                if (item is PlayableItem.Remote) {
+                    val itemKeys = TrackMatchKeys.candidateMatchKeys(item.artist, item.title)
+                    if (itemKeys.any { it in songKeys }) {
+                        changed = true
+                        song.toPlayableItem(
+                            queueEntryId = item.queueEntryId,
+                            artworkUri = item.artworkUri ?: song.artworkUri,
+                        )
+                    } else {
+                        item
+                    }
+                } else {
+                    item
+                }
+            }
+        if (!changed) return
+        onSetQueue(newQ)
+        syncChangedTimelineItems(q, newQ)
+        val current = getCurrentItem()
+        if (current is PlayableItem.Remote) {
+            val matching = newQ.firstOrNull { it.queueEntryId == current.queueEntryId }
+            if (matching != null && matching is PlayableItem.Local) {
+                onSetCurrentItem(matching, false, PlaybackChangeHint.METADATA_UPDATE)
+            }
         }
     }
 

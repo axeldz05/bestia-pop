@@ -85,9 +85,8 @@ fun List<CatalogTrackCandidate>.toPlayableItems(
     map { candidate ->
         val track = candidate.effectiveTrack
         val ytQuery =
-            track.audioUrl.takeIf { it.isNotBlank() }
-                ?: track.id.takeIf { it.isNotBlank() }
-                ?: "${candidate.artist} ${candidate.title}".trim()
+            com.bestiapop.android.data.network.YouTubeExtractor
+                .resolveYouTubeQueryOrId(track)
         com.bestiapop.android.data.model.PlayableItem.fromLibraryOrRemote(
             local =
                 com.bestiapop.android.domain.util.TrackMatchKeys

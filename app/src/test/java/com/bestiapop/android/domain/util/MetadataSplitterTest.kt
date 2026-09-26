@@ -151,12 +151,23 @@ class MetadataSplitterTest {
     }
 
     @Test
-    fun artistIdentityKey_keepsPureNonLatinDistinct() {
-        // Pure CJK names without Latin content keep their original-script key
-        // They cannot dynamically resolve to a Latin romanization
-        assertNotEquals(
+    fun artistIdentityKey_unifiesKnownCrossScriptAliases() {
+        assertEquals(
             MetadataSplitter.artistIdentityKey("きのこ帝国"),
             MetadataSplitter.artistIdentityKey("Kinokoteikoku"),
+        )
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("きのこ帝国"),
+            MetadataSplitter.artistIdentityKey("Kinoko Teikoku"),
+        )
+    }
+
+    @Test
+    fun artistIdentityKey_keepsUnaliasedPureNonLatinDistinct() {
+        // Pure CJK names without Latin content and without known alias keep their original-script key
+        assertNotEquals(
+            MetadataSplitter.artistIdentityKey("羊文学"),
+            MetadataSplitter.artistIdentityKey("Hitsujibungaku"),
         )
     }
 

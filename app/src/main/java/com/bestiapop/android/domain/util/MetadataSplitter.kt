@@ -74,6 +74,56 @@ object MetadataSplitter {
         return IdentifyQueryVariants.latinLetters(text)
     }
 
+    private val KNOWN_ARTIST_ALIAS_GROUPS: List<Pair<String, Set<String>>> =
+        listOf(
+            "kinokoteikoku" to setOf("きのこ帝国", "Kinokoteikoku", "Kinoko Teikoku"),
+        )
+
+    private val CANONICAL_ARTIST_KEYS: Map<String, String> =
+        run {
+            val map = mutableMapOf<String, String>()
+            for ((canonical, variants) in KNOWN_ARTIST_ALIAS_GROUPS) {
+                map[canonical] = canonical
+                for (variant in variants) {
+                    map[variant.lowercase().replace(" ", "")] = canonical
+                    map[variant.lowercase()] = canonical
+                    map[variant] = canonical
+                }
+            }
+            map
+        }
+
+    private val ARTIST_ALIASES_MAP: Map<String, Set<String>> =
+        run {
+            val map = mutableMapOf<String, Set<String>>()
+            for ((canonical, variants) in KNOWN_ARTIST_ALIAS_GROUPS) {
+                val allForms = variants + canonical
+                for (item in allForms) {
+                    map[item.lowercase().replace(" ", "")] = allForms
+                    map[item.lowercase()] = allForms
+                    map[item] = allForms
+                }
+            }
+            map
+        }
+
+    /**
+     * Returns known alias representations for an artist, or an empty set if unaliased.
+     */
+    fun artistAliases(name: String): Set<String> {
+        val trimmed = name.trim()
+        val compact = trimmed.lowercase().replace(" ", "")
+        return ARTIST_ALIASES_MAP[compact]
+            ?: ARTIST_ALIASES_MAP[trimmed.lowercase()]
+            ?: ARTIST_ALIASES_MAP[trimmed]
+            ?: emptySet()
+    }
+
+    /**
+     * All known alias entries for search haystack expansion.
+     */
+    fun allKnownArtistAliases(): List<Pair<String, Set<String>>> = KNOWN_ARTIST_ALIAS_GROUPS
+
     // --- Public identity-key API ----------------------------------------------
 
     /**
@@ -86,10 +136,16 @@ object MetadataSplitter {
      * becomes the canonical key so that `"Elephant Gym 大象體操"` and
      * `"Elephant Gym"` share the same key — without hardcoded alias tables.
      *
-     * Pure non-Latin names (e.g. `きのこ帝国`) keep their original-script key;
-     * the search haystack already includes transliterated Latin for findability.
+     * Known cross-script aliases (e.g. `きのこ帝国` ↔ `Kinokoteikoku`) map to a shared canonical key.
+     * Arbitrary unaliased pure non-Latin names keep their original-script key.
      */
     fun artistIdentityKey(name: String): String {
+        val trimmed = name.trim()
+        val compactKey = trimmed.lowercase().replace(" ", "")
+        CANONICAL_ARTIST_KEYS[compactKey]?.let { return it }
+        CANONICAL_ARTIST_KEYS[trimmed.lowercase()]?.let { return it }
+        CANONICAL_ARTIST_KEYS[trimmed]?.let { return it }
+
         val folded =
             foldDiacritics(name)
                 .lowercase()

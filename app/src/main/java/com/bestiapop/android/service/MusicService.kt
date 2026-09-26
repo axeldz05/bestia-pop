@@ -37,7 +37,6 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ShuffleOrder
-import androidx.media3.exoplayer.source.SilenceMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -1172,10 +1171,6 @@ internal class UserAgentMediaSourceFactory(
     override fun getSupportedTypes(): IntArray = intArrayOf(C.CONTENT_TYPE_OTHER, C.CONTENT_TYPE_HLS, C.CONTENT_TYPE_DASH)
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
-        val uri = mediaItem.localConfiguration?.uri
-        if (uri == null || uri == Uri.EMPTY || uri.toString().isBlank()) {
-            return SilenceMediaSource(300_000_000L)
-        }
         val tag = mediaItem.streamPlaybackTag()
         val httpFactory =
             DefaultHttpDataSource

@@ -90,6 +90,16 @@ object TrackMatchKeys {
         return matchesQuery(haystack, normalizedQuery, tokens)
     }
 
+    fun foldRomajiVowels(text: String): String {
+        if (text.isEmpty()) return ""
+        return text
+            .replace("ou", "o")
+            .replace("oo", "o")
+            .replace("oh", "o")
+            .replace("ei", "e")
+            .replace("ee", "e")
+    }
+
     /**
      * Level 1 primitive: Checks if [haystack] matches pre-computed [normalizedQuery] and [queryTokens].
      * Avoids re-normalizing the query or re-splitting tokens when filtering collections.
@@ -103,7 +113,46 @@ object TrackMatchKeys {
         val normalizedHaystack = normalize(haystack)
         if (normalizedHaystack.contains(normalizedQuery)) return true
         val tokens = if (queryTokens.isNotEmpty()) queryTokens else normalizedQuery.split(' ').filter { it.isNotEmpty() }
-        return tokens.size > 1 && tokens.all { token -> normalizedHaystack.contains(token) }
+        if (tokens.size > 1 && tokens.all { token -> normalizedHaystack.contains(token) }) return true
+
+        // 1. Romaji vowel folding check (e.g. teikoku <-> tekoku, tokyo <-> toukyou)
+        val foldedHaystack = foldRomajiVowels(normalizedHaystack)
+        val foldedQuery = foldRomajiVowels(normalizedQuery)
+        if (foldedHaystack != normalizedHaystack || foldedQuery != normalizedQuery) {
+            if (foldedHaystack.contains(foldedQuery)) return true
+            val foldedTokens =
+                if (queryTokens.isNotEmpty()) {
+                    queryTokens.map { foldRomajiVowels(it) }
+                } else {
+                    foldedQuery.split(' ').filter { it.isNotEmpty() }
+                }
+            if (foldedTokens.size > 1 && foldedTokens.all { token -> foldedHaystack.contains(token) }) return true
+        }
+
+        // 2. Japanese & non-Latin aliases expansion
+        for ((_, aliases) in MetadataSplitter.allKnownArtistAliases()) {
+            val matchingAlias = aliases.firstOrNull { normalizedHaystack.contains(normalize(it)) }
+            if (matchingAlias != null) {
+                for (alias in aliases) {
+                    val normAlias = normalize(alias)
+                    if (normAlias == normalize(matchingAlias)) continue
+                    val expanded = normalizedHaystack.replace(normalize(matchingAlias), normAlias)
+                    if (expanded.contains(normalizedQuery) || foldRomajiVowels(expanded).contains(foldedQuery)) return true
+                }
+            }
+        }
+
+        // 3. Transliteration for non-Latin scripts if present
+        if (hasNonAscii(haystack)) {
+            val transliterated = normalize(NaturalTextOrder.transliterateToLatin(haystack))
+            if (transliterated.isNotEmpty() && transliterated != normalizedHaystack) {
+                if (transliterated.contains(normalizedQuery) || transliterated.contains(foldedQuery)) return true
+                val foldedTrans = foldRomajiVowels(transliterated)
+                if (foldedTrans.contains(normalizedQuery) || foldedTrans.contains(foldedQuery)) return true
+            }
+        }
+
+        return false
     }
 
     fun matchKey(
@@ -179,7 +228,7 @@ object TrackMatchKeys {
             variants.add(trimmed.dropLast(1) + (if (trimmed.last().isUpperCase()) "II" else "ii"))
         }
 
-        // 3. Romaji long vowels: ou <-> o, oo <-> o, oh <-> o
+        // 3. Romaji long vowels: ou <-> o, oo <-> o, oh <-> o, ei <-> e, ee <-> e
         if (trimmed.contains("ou", ignoreCase = true)) {
             variants.add(trimmed.replace("ou", "o").replace("OU", "O").replace("Ou", "O"))
         }
@@ -188,6 +237,12 @@ object TrackMatchKeys {
         }
         if (trimmed.contains("oh", ignoreCase = true)) {
             variants.add(trimmed.replace("oh", "o").replace("OH", "O").replace("Oh", "O"))
+        }
+        if (trimmed.contains("ei", ignoreCase = true)) {
+            variants.add(trimmed.replace("ei", "e").replace("EI", "E").replace("Ei", "E"))
+        }
+        if (trimmed.contains("ee", ignoreCase = true)) {
+            variants.add(trimmed.replace("ee", "e").replace("EE", "E").replace("Ee", "E"))
         }
 
         // 4. Consonant variations: jyo <-> jo / zyo, jya <-> ja, jyu <-> ju, shi <-> si, chi <-> ti, tsu <-> tu, fu <-> hu
@@ -262,9 +317,16 @@ object TrackMatchKeys {
                 if (transHira.isNotBlank()) artistVariants.add(transHira)
             }
         }
+        for (alias in MetadataSplitter.artistAliases(artist)) {
+            artistVariants.add(alias)
+            val transAlias = NaturalTextOrder.transliterateToLatin(alias)
+            if (transAlias.isNotBlank()) artistVariants.add(transAlias)
+        }
         val baseArtists = ArrayList(artistVariants)
         for (a in baseArtists) {
             artistVariants.addAll(phoneticTextVariants(a))
+            val folded = foldRomajiVowels(normalize(a))
+            if (folded.isNotEmpty()) artistVariants.add(folded)
         }
 
         val out = LinkedHashSet<String>()

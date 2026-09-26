@@ -385,4 +385,32 @@ class TrackMatchKeysTest {
         assertTrue(TrackMatchKeys.matchesQuery("Any Song", ""))
         assertTrue(TrackMatchKeys.matchesQuery("Any Song", "   "))
     }
+
+    @Test
+    fun foldRomajiVowels_foldsLongVowels() {
+        assertEquals("tekoku", TrackMatchKeys.foldRomajiVowels("teikoku"))
+        assertEquals("tokyo", TrackMatchKeys.foldRomajiVowels("toukyou"))
+        assertEquals("kore", TrackMatchKeys.foldRomajiVowels("koree"))
+        assertEquals("osaka", TrackMatchKeys.foldRomajiVowels("oosaka"))
+        assertEquals("tono", TrackMatchKeys.foldRomajiVowels("tohno"))
+    }
+
+    @Test
+    fun matchesQuery_supportsRomajiVowelFolding() {
+        // "kinokotekoku" query matches "Kinokoteikoku"
+        assertTrue(TrackMatchKeys.matchesQuery("Kinokoteikoku", "kinokotekoku"))
+        // "kinokoteikoku" query matches "Kinokotekoku"
+        assertTrue(TrackMatchKeys.matchesQuery("Kinokotekoku", "kinokoteikoku"))
+        // Song haystack with folded vowels
+        assertTrue(TrackMatchKeys.matchesQuery("Chronostasis Kinokoteikoku eureka", "kinokotekoku"))
+    }
+
+    @Test
+    fun matchesQuery_supportsKnownCrossScriptAliases() {
+        // "kinokotekoku" query matches Kanji artist "きのこ帝国"
+        assertTrue(TrackMatchKeys.matchesQuery("きのこ帝国", "kinokotekoku"))
+        assertTrue(TrackMatchKeys.matchesQuery("きのこ帝国", "kinokoteikoku"))
+        // Combined song haystack matches
+        assertTrue(TrackMatchKeys.matchesQuery("Whirlpool きのこ帝国 eureka", "kinokotekoku"))
+    }
 }

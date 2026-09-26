@@ -1094,6 +1094,10 @@ class PlaybackRuntime internal constructor(
         queueCoordinator.updateAlbumArtworkInQueue(albumKey, artworkUri)
     }
 
+    fun upgradeMatchingRemoteQueueEntries(song: Song) {
+        queueCoordinator.upgradeMatchingRemoteQueueEntries(song)
+    }
+
     fun removeFromQueue(queueEntryId: String): Boolean = queueCoordinator.removeFromQueue(queueEntryId)
 
     fun removeFromQueue(index: Int) {
@@ -1364,13 +1368,16 @@ class PlaybackRuntime internal constructor(
                         PlaybackChangeHint.NEW_PLAYBACK
                     },
             )
-            ensurePreparedForPlayback()
-            if (playWhenReadyIntent) {
-                val remoteItem = playable as? PlayableItem.Remote
-                if (remoteItem != null && dependencies.streamAccess.needsResolve(remoteItem)) {
+            val remoteItem = playable as? PlayableItem.Remote
+            if (remoteItem != null && dependencies.streamAccess.needsResolve(remoteItem)) {
+                if (playWhenReadyIntent) {
                     ensureRemoteReadyAt(newIndex, startPlaying = true)
                 }
-                prefetchAround(newIndex)
+            } else {
+                ensurePreparedForPlayback()
+                if (playWhenReadyIntent) {
+                    prefetchAround(newIndex)
+                }
             }
             if (radioActive.value) {
                 radioCoordinator.rememberRadioPlayed(playable)

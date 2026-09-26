@@ -545,12 +545,15 @@ object YouTubeExtractor {
      */
     fun resolveYouTubeQueryOrId(track: OnlineCatalogTrack): String {
         extractYouTubeId(track.id)?.let { return it }
-        extractYouTubeId(track.audioUrl)?.let { return track.audioUrl.trim() }
-        val audioHint = track.audioUrl.trim()
-        if (audioHint.isNotBlank() && !audioHint.startsWith("http", ignoreCase = true) &&
-            audioHint.any { it.isLetter() } && !ISRC_REGEX.matches(audioHint)
+        val audioTrimmed = track.audioUrl.trim()
+        if (audioTrimmed.contains("youtube.com") || audioTrimmed.contains("youtu.be")) {
+            return audioTrimmed
+        }
+        extractYouTubeId(audioTrimmed)?.let { return audioTrimmed }
+        if (audioTrimmed.isNotBlank() && !audioTrimmed.startsWith("http", ignoreCase = true) &&
+            audioTrimmed.any { it.isLetter() } && !ISRC_REGEX.matches(audioTrimmed)
         ) {
-            return audioHint
+            return audioTrimmed
         }
         return track.youtubeSearchQuery().ifBlank { track.id }
     }

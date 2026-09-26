@@ -420,9 +420,7 @@ internal class PlaybackStreamRecoveryCoordinator(
                         }
                         if (refreshed != null && applyResolvedRemote(remote, refreshed) >= 0) {
                             val resumePos = getPlaybackPositionMs().coerceAtLeast(0L)
-                            if (resumePos > 0L) {
-                                expectedController.seekTo(index, resumePos)
-                            }
+                            expectedController.seekTo(index, resumePos)
                             expectedController.prepare()
                             if (isPlayWhenReadyIntent()) expectedController.play()
                             activeFailure = null
@@ -593,9 +591,13 @@ internal class PlaybackStreamRecoveryCoordinator(
         }
         val slot = getQueue().indexOfFirst { it.queueEntryId == queueEntryId }
         if (slot < 0) return
-        if (slot != expectedController.currentMediaItemIndex ||
-            expectedController.playbackState == Player.STATE_IDLE
-        ) {
+        val isCurrentItem = slot == expectedController.currentMediaItemIndex
+        val needsSeek =
+            !isCurrentItem ||
+                expectedController.playbackState == Player.STATE_IDLE ||
+                expectedController.playbackState == Player.STATE_ENDED ||
+                expectedController.hasPlayerError
+        if (needsSeek) {
             if (!isPlayWhenReadyIntent()) return
             setLastMediaItemIndex(slot)
             onSetPlaybackPositionMs(0L)

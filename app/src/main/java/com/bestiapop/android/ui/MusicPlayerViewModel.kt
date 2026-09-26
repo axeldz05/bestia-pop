@@ -1366,6 +1366,7 @@ class MusicPlayerViewModel(
             processDownloadRuntime.events.collect { event ->
                 when (event) {
                     is ProcessDownloadEvent.Completed -> {
+                        playbackRuntime.upgradeMatchingRemoteQueueEntries(event.song)
                         rematchDiscoverAfterLibraryChange(extraSong = event.song)
                         if (event.source == ActiveDownloadSource.CATALOG ||
                             event.source == ActiveDownloadSource.LINK ||

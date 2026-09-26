@@ -6,10 +6,13 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.firstArtworkUri
+import com.bestiapop.android.domain.util.GenreTaxonomy
 import com.bestiapop.android.domain.util.IdentifyQueryVariants
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.MetadataSplitter
 import com.bestiapop.android.domain.util.NaturalTextOrder
+import com.bestiapop.android.domain.util.PhoneticMatchHelper
+import com.bestiapop.android.domain.util.SearchQueryParser
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.albumGroupingKey
 import com.bestiapop.android.domain.util.albumIdentityKey
@@ -275,12 +278,51 @@ class GetLibrarySongsUseCase {
         if (query.isBlank()) return songs
         val normalizedQuery = TrackMatchKeys.normalize(query)
         if (normalizedQuery.isEmpty()) return emptyList()
-        val queryTokens = normalizedQuery.split(' ').filter { it.isNotEmpty() }
-        if (queryTokens.isEmpty()) return emptyList()
-        return songs.filter { song ->
-            val haystack = haystackById?.get(song.id) ?: searchHaystack(song)
-            TrackMatchKeys.matchesQuery(haystack, normalizedQuery, queryTokens)
+        val parsed = SearchQueryParser.parse(query)
+        val textTokens = if (parsed.textTokens.isNotEmpty()) parsed.textTokens else normalizedQuery.split(' ').filter { it.isNotEmpty() }
+        val effectiveTextQuery = parsed.textQuery.ifEmpty { normalizedQuery }
+
+        // 1. Primary haystack matching + temporal constraints
+        val primaryMatches =
+            songs.filter { song ->
+                if (parsed.hasYearConstraint && !parsed.matchesYear(song.year)) {
+                    return@filter false
+                }
+                if (parsed.hasYearConstraint && parsed.textTokens.isEmpty()) {
+                    return@filter true
+                }
+                val haystack = haystackById?.get(song.id) ?: searchHaystack(song)
+                TrackMatchKeys.matchesQuery(haystack, effectiveTextQuery, textTokens)
+            }
+        if (primaryMatches.isNotEmpty()) return primaryMatches
+
+        // 2. Secondary fallback: Lyrics search (if multi-word or long phrase candidate)
+        if (parsed.isLyricSearchCandidate) {
+            val lyricMatches =
+                songs.filter { song ->
+                    val lyrics = song.lyrics?.trim()
+                    if (lyrics.isNullOrBlank() || lyrics.equals("null", ignoreCase = true)) {
+                        false
+                    } else {
+                        val normLyrics = TrackMatchKeys.normalize(lyrics)
+                        textTokens.all { normLyrics.contains(it) }
+                    }
+                }
+            if (lyricMatches.isNotEmpty()) return lyricMatches
         }
+
+        // 3. Secondary fallback: Phonetic & fuzzy typo search ("gans an rous" -> "guns n roses")
+        if (textTokens.isNotEmpty()) {
+            val phoneticMatches =
+                songs.filter { song ->
+                    PhoneticMatchHelper.matchesPhonetically(effectiveTextQuery, "${song.artist} ${song.title}") ||
+                        PhoneticMatchHelper.matchesPhonetically(effectiveTextQuery, song.title) ||
+                        PhoneticMatchHelper.matchesPhonetically(effectiveTextQuery, song.artist)
+                }
+            if (phoneticMatches.isNotEmpty()) return phoneticMatches
+        }
+
+        return emptyList()
     }
 
     private fun sortSongs(
@@ -361,7 +403,10 @@ class GetLibrarySongsUseCase {
             .toListItems()
 
     internal fun searchHaystack(song: Song): String {
-        val raw = "${song.title} ${song.artist} ${song.album} ${song.genre}"
+        val yearPart = if (song.year > 0) " ${song.year}" else ""
+        val genreAliases = GenreTaxonomy.expandAliases(song.genre).joinToString(" ")
+        val genrePart = if (genreAliases.isNotEmpty()) " $genreAliases" else ""
+        val raw = "${song.title} ${song.artist} ${song.album} ${song.genre}$yearPart$genrePart"
         val base = TrackMatchKeys.normalize(IdentifyQueryVariants.searchTokens(raw))
         // Expand with transliterated Latin for non-Latin artist/title/album names
         val transliterated =

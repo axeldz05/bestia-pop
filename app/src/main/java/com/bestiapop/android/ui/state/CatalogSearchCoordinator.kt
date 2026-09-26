@@ -7,6 +7,7 @@ import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.domain.util.CollectionUtils
+import com.bestiapop.android.domain.util.GenreTaxonomy
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.matchKey
@@ -29,6 +30,7 @@ class CatalogSearchCoordinator(
     private val isOnline: () -> Boolean,
     private val onNotifyToast: (String) -> Unit,
     private val onSaveRecentSearch: (String) -> Unit,
+    private val onDiscoveredGenres: ((List<String>) -> Unit)? = null,
 ) {
     private val _state = MutableStateFlow(CatalogSearchUiState())
     val state: StateFlow<CatalogSearchUiState> = _state.asStateFlow()
@@ -174,10 +176,16 @@ class CatalogSearchCoordinator(
                                     emptyList()
                                 }
                             }
-                        val tracks = tracksDeferred.await()
+                        var tracks = tracksDeferred.await()
                         val albums = albumsDeferred.await()
                         val artists = artistsDeferred.await()
                         val playlists = playlistsDeferred.await()
+                        if (tracks.isEmpty() && albums.isEmpty() && artists.isEmpty() && effectiveQuery.isNotEmpty()) {
+                            val ytTracks = YouTubeExtractor.searchYouTube(effectiveQuery)
+                            if (ytTracks.isNotEmpty()) {
+                                tracks = ytTracks
+                            }
+                        }
                         updateIfCurrent(generation) {
                             it.copy(
                                 tracks = tracks,
@@ -207,9 +215,15 @@ class CatalogSearchCoordinator(
                             if (cleanQ.isEmpty()) {
                                 genres
                             } else {
-                                genres.filter { TrackMatchKeys.containsNormalized(it.name, cleanQ) }
+                                genres.filter {
+                                    TrackMatchKeys.containsNormalized(it.name, cleanQ) ||
+                                        GenreTaxonomy.matchesGenre(it.name, cleanQ)
+                                }
                             }
                         updateIfCurrent(generation) { it.copy(genres = results) }
+                        if (genres.isNotEmpty()) {
+                            onDiscoveredGenres?.invoke(genres.map { it.name })
+                        }
                     }
 
                     CatalogCategory.CHARTS -> {

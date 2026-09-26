@@ -70,6 +70,7 @@ import com.bestiapop.android.data.preferences.DownloadPreferencesRepository
 import com.bestiapop.android.data.preferences.DownloadSettings
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.data.preferences.FastScrollSide
+import com.bestiapop.android.data.preferences.GenreTaxonomyRepository
 import com.bestiapop.android.data.preferences.IdentifyReviewStore
 import com.bestiapop.android.data.preferences.JapanesePhoneticMode
 import com.bestiapop.android.data.preferences.LibraryBlobsSettings
@@ -211,6 +212,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -756,6 +758,7 @@ class MusicPlayerViewModel(
     val lyricsFetchError: StateFlow<String?> = lyricsCoordinator.fetchError
 
     private val searchHistoryPreferences = SearchHistoryPreferencesRepository(application)
+    val genreTaxonomyRepository = GenreTaxonomyRepository(application)
 
     val recentSearches: StateFlow<List<String>> =
         searchHistoryPreferences.recentSearchesFlow
@@ -853,6 +856,11 @@ class MusicPlayerViewModel(
             isOnline = { connectivityObserver.isCurrentlyOnline() },
             onNotifyToast = ::toast,
             onSaveRecentSearch = ::addRecentSearch,
+            onDiscoveredGenres = { genres ->
+                viewModelScope.launch(Dispatchers.IO) {
+                    genreTaxonomyRepository.resolveUnknownGenres(genres)
+                }
+            },
         )
     val catalogSearch: StateFlow<CatalogSearchUiState> = catalogSearchCoordinator.state
 
@@ -1170,6 +1178,16 @@ class MusicPlayerViewModel(
 
         viewModelScope.launch {
             libraryScanCoordinator.warnIfDatabaseWasDowngraded()
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            genreTaxonomyRepository.initialize()
+            repository.allSongsFlow.collectLatest { songs ->
+                if (songs.isNotEmpty()) {
+                    val genres = songs.map { it.genre }.filter { it.isNotBlank() && it != Song.UNKNOWN_GENRE }
+                    genreTaxonomyRepository.resolveUnknownGenres(genres)
+                }
+            }
         }
 
         viewModelScope.launch(Dispatchers.IO) {

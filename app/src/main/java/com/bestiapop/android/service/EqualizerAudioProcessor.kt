@@ -106,7 +106,7 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
             return
         }
 
-        val rate = currentSampleRate.toFloat()
+        val rate = currentSampleRate.toFloat().coerceAtLeast(8000f)
         val q = 1.0f + (count - 5).coerceAtLeast(0) * 0.12f
         var activeCount = 0
         val tempB0 = FloatArray(count)
@@ -230,8 +230,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                             val out = b0[b] * sample + stateL1[idx]
                             var next1 = b1[b] * sample - a1[b] * out + stateL2[idx]
                             var next2 = b2[b] * sample - a2[b] * out
-                            if (next1 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) next1 = 0f
-                            if (next2 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) next2 = 0f
+                            if (next1 >= -DENORMAL_THRESHOLD && next1 <= DENORMAL_THRESHOLD) next1 = 0f
+                            if (next2 >= -DENORMAL_THRESHOLD && next2 <= DENORMAL_THRESHOLD) next2 = 0f
                             stateL1[idx] = next1
                             stateL2[idx] = next2
                             sample = out
@@ -256,8 +256,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                             val outL = coeffB0 * sampleL + stateL1[idx]
                             var nextL1 = coeffB1 * sampleL - coeffA1 * outL + stateL2[idx]
                             var nextL2 = coeffB2 * sampleL - coeffA2 * outL
-                            if (nextL1 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) nextL1 = 0f
-                            if (nextL2 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) nextL2 = 0f
+                            if (nextL1 >= -DENORMAL_THRESHOLD && nextL1 <= DENORMAL_THRESHOLD) nextL1 = 0f
+                            if (nextL2 >= -DENORMAL_THRESHOLD && nextL2 <= DENORMAL_THRESHOLD) nextL2 = 0f
                             stateL1[idx] = nextL1
                             stateL2[idx] = nextL2
                             sampleL = outL
@@ -265,8 +265,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                             val outR = coeffB0 * sampleR + stateR1[idx]
                             var nextR1 = coeffB1 * sampleR - coeffA1 * outR + stateR2[idx]
                             var nextR2 = coeffB2 * sampleR - coeffA2 * outR
-                            if (nextR1 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) nextR1 = 0f
-                            if (nextR2 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) nextR2 = 0f
+                            if (nextR1 >= -DENORMAL_THRESHOLD && nextR1 <= DENORMAL_THRESHOLD) nextR1 = 0f
+                            if (nextR2 >= -DENORMAL_THRESHOLD && nextR2 <= DENORMAL_THRESHOLD) nextR2 = 0f
                             stateR1[idx] = nextR1
                             stateR2[idx] = nextR2
                             sampleR = outR
@@ -292,8 +292,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                                         val out = b0[b] * sample + stateL1[idx]
                                         var next1 = b1[b] * sample - a1[b] * out + stateL2[idx]
                                         var next2 = b2[b] * sample - a2[b] * out
-                                        if (next1 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) next1 = 0f
-                                        if (next2 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) next2 = 0f
+                                        if (next1 >= -DENORMAL_THRESHOLD && next1 <= DENORMAL_THRESHOLD) next1 = 0f
+                                        if (next2 >= -DENORMAL_THRESHOLD && next2 <= DENORMAL_THRESHOLD) next2 = 0f
                                         stateL1[idx] = next1
                                         stateL2[idx] = next2
                                         sample = out
@@ -308,8 +308,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                                         val out = b0[b] * sample + stateR1[idx]
                                         var next1 = b1[b] * sample - a1[b] * out + stateR2[idx]
                                         var next2 = b2[b] * sample - a2[b] * out
-                                        if (next1 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) next1 = 0f
-                                        if (next2 in -DENORMAL_THRESHOLD..DENORMAL_THRESHOLD) next2 = 0f
+                                        if (next1 >= -DENORMAL_THRESHOLD && next1 <= DENORMAL_THRESHOLD) next1 = 0f
+                                        if (next2 >= -DENORMAL_THRESHOLD && next2 <= DENORMAL_THRESHOLD) next2 = 0f
                                         stateR1[idx] = next1
                                         stateR2[idx] = next2
                                         sample = out

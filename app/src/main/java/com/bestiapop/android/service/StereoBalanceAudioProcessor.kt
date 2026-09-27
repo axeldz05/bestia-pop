@@ -53,7 +53,7 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
         val effLeft = leftGain * boostGain
         val effRight = rightGain * boostGain
 
-        if (effLeft in 0.999f..1.001f && effRight in 0.999f..1.001f) {
+        if (effLeft >= 0.999f && effLeft <= 1.001f && effRight >= 0.999f && effRight <= 1.001f) {
             val output = replaceOutputBuffer(size)
             output.put(inputBuffer)
             output.flip()
@@ -66,16 +66,23 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
         when (channels) {
             1 -> {
                 val monoGain = (effLeft + effRight) * 0.5f
-                var i = position
-                while (i < limit) {
-                    val sample = inputBuffer.getShort(i)
+                while (inputBuffer.hasRemaining()) {
+                    val sample = inputBuffer.short
                     output.putShort(scaleSample(sample, monoGain))
-                    i += 2
+                }
+            }
+
+            2 -> {
+                while (inputBuffer.hasRemaining()) {
+                    val sampleL = inputBuffer.short
+                    val sampleR = inputBuffer.short
+                    output.putShort(scaleSample(sampleL, effLeft))
+                    output.putShort(scaleSample(sampleR, effRight))
                 }
             }
 
             else -> {
-                // Interleaved L/R (and ignore extra channels beyond stereo pair).
+                // Interleaved multi-channel (> 2 channels): process stereo pair L and R, pass through remaining channels.
                 var i = position
                 var channel = 0
                 while (i < limit) {
@@ -90,10 +97,10 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
                     i += 2
                     channel++
                 }
+                inputBuffer.position(limit)
             }
         }
 
-        inputBuffer.position(limit)
         output.flip()
     }
 
@@ -101,7 +108,7 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
         sample: Short,
         gain: Float,
     ): Short {
-        if (gain in 0.999f..1.001f) return sample
+        if (gain >= 0.999f && gain <= 1.001f) return sample
         if (gain <= 0.001f) return 0
         if (gain < 1.0f) {
             return (sample * gain).toInt().toShort()

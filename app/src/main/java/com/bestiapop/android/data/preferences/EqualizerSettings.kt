@@ -1,6 +1,7 @@
 package com.bestiapop.android.data.preferences
 
 import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.domain.util.MetadataSplitter
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import org.json.JSONArray
 import org.json.JSONObject
@@ -418,7 +419,10 @@ fun DynamicEqualizerRule.matchesTrack(track: TrackMeta?): Boolean {
         }
 
         EqualizerTargetType.ARTIST -> {
-            normArtist.isNotEmpty() && targetKey == normArtist
+            if (normArtist.isEmpty()) return false
+            if (targetKey == normArtist) return true
+            val candidates = MetadataSplitter.splitArtists(artist)
+            candidates.any { TrackMatchKeys.normalize(it) == targetKey }
         }
 
         EqualizerTargetType.CUSTOM_PRESET -> {

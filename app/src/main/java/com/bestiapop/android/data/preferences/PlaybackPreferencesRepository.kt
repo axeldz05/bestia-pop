@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.bestiapop.android.data.model.RepeatMode
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 private val Context.playbackDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -182,16 +184,29 @@ class PlaybackPreferencesRepository internal constructor(
             booleanPreferencesKey("oem_screen_off_cleanup_hint_dismissed")
     }
 
+    companion object {
+        private val inMemoryEqualizerOverlay = MutableStateFlow<EqualizerSettings?>(null)
+    }
+
     val oemScreenOffCleanupHintDismissed: Flow<Boolean> =
         dataStore.data.map { prefs ->
             prefs[Keys.OEM_SCREEN_OFF_CLEANUP_HINT_DISMISSED] ?: false
         }
 
     val settingsFlow: Flow<PlaybackSettings> =
-        dataStore.data.map { prefs ->
+        combine(dataStore.data, inMemoryEqualizerOverlay) { prefs, overlay ->
             val eqBandCount =
                 (prefs[Keys.EQUALIZER_BAND_COUNT] ?: DEFAULT_EQUALIZER_BAND_COUNT)
                     .coerceIn(MIN_EQUALIZER_BANDS, MAX_EQUALIZER_BANDS)
+            val persistedEq =
+                EqualizerSettings(
+                    enabled = prefs[Keys.EQUALIZER_ENABLED] ?: false,
+                    dynamicEnabled = prefs[Keys.EQUALIZER_DYNAMIC_ENABLED] ?: true,
+                    bandCount = eqBandCount,
+                    bandGainsDb = decodeBandGains(prefs[Keys.EQUALIZER_BAND_GAINS], eqBandCount),
+                    presetName = prefs[Keys.EQUALIZER_PRESET_NAME] ?: EQUALIZER_PRESET_FLAT,
+                    dynamicRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]),
+                )
             PlaybackSettings(
                 volumeBoostEnabled = prefs[Keys.VOLUME_BOOST_ENABLED] ?: false,
                 volumeBoostAmount = clampVolumeBoostAmount(prefs[Keys.VOLUME_BOOST_AMOUNT] ?: 0f),
@@ -217,17 +232,13 @@ class PlaybackPreferencesRepository internal constructor(
                     clampCrossfadeDurationSeconds(
                         prefs[Keys.CROSSFADE_DURATION_SECONDS] ?: DEFAULT_CROSSFADE_DURATION_SECONDS,
                     ),
-                equalizerSettings =
-                    EqualizerSettings(
-                        enabled = prefs[Keys.EQUALIZER_ENABLED] ?: false,
-                        dynamicEnabled = prefs[Keys.EQUALIZER_DYNAMIC_ENABLED] ?: true,
-                        bandCount = eqBandCount,
-                        bandGainsDb = decodeBandGains(prefs[Keys.EQUALIZER_BAND_GAINS], eqBandCount),
-                        presetName = prefs[Keys.EQUALIZER_PRESET_NAME] ?: EQUALIZER_PRESET_FLAT,
-                        dynamicRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]),
-                    ),
+                equalizerSettings = overlay ?: persistedEq,
             )
         }
+
+    fun setEqualizerSettingsLive(settings: EqualizerSettings) {
+        inMemoryEqualizerOverlay.value = settings
+    }
 
     suspend fun setVolumeBoostEnabled(enabled: Boolean) {
         dataStore.put(Keys.VOLUME_BOOST_ENABLED, enabled)
@@ -319,6 +330,7 @@ class PlaybackPreferencesRepository internal constructor(
     }
 
     suspend fun setEqualizerSettings(settings: EqualizerSettings) {
+        inMemoryEqualizerOverlay.value = settings
         dataStore.edit { prefs ->
             prefs[Keys.EQUALIZER_ENABLED] = settings.enabled
             prefs[Keys.EQUALIZER_DYNAMIC_ENABLED] = settings.dynamicEnabled
@@ -328,6 +340,9 @@ class PlaybackPreferencesRepository internal constructor(
             prefs[Keys.EQUALIZER_PRESET_NAME] = settings.presetName
             prefs[Keys.EQUALIZER_DYNAMIC_RULES] = encodeDynamicRules(settings.dynamicRules)
         }
+        if (inMemoryEqualizerOverlay.value == settings) {
+            inMemoryEqualizerOverlay.value = null
+        }
     }
 
     suspend fun setDynamicEqualizerEnabled(enabled: Boolean) {
@@ -335,6 +350,7 @@ class PlaybackPreferencesRepository internal constructor(
     }
 
     suspend fun saveDynamicEqualizerRule(rule: DynamicEqualizerRule) {
+        inMemoryEqualizerOverlay.value = null
         dataStore.edit { prefs ->
             val currentRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]).toMutableList()
             val index =
@@ -351,6 +367,7 @@ class PlaybackPreferencesRepository internal constructor(
     }
 
     suspend fun removeDynamicEqualizerRule(ruleId: String) {
+        inMemoryEqualizerOverlay.value = null
         dataStore.edit { prefs ->
             val currentRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]).filterNot { it.id == ruleId }
             prefs[Keys.EQUALIZER_DYNAMIC_RULES] = encodeDynamicRules(currentRules)

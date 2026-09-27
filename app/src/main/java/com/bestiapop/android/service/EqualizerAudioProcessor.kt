@@ -19,6 +19,7 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
     companion object {
         private const val SOFT_SATURATION_THRESHOLD = 21_400f
         private const val SOFT_SATURATION_CAPACITY = 32_767f - SOFT_SATURATION_THRESHOLD
+        private const val DENORMAL_THRESHOLD = 1e-15f
         const val MAX_SUPPORTED_BANDS = 12
     }
 
@@ -31,11 +32,21 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
         val isPassThrough: Boolean,
     )
 
+    private class CompiledBiquadBank(
+        val bandCount: Int,
+        val b0: FloatArray,
+        val b1: FloatArray,
+        val b2: FloatArray,
+        val a1: FloatArray,
+        val a2: FloatArray,
+        val isPassThrough: BooleanArray,
+    )
+
     @Volatile
     var isEnabled: Boolean = false
 
     @Volatile
-    private var activeCoefficients: Array<BiquadCoefficients> = emptyArray()
+    private var compiledBank: CompiledBiquadBank? = null
 
     @Volatile
     private var hasActiveFilters: Boolean = false
@@ -80,25 +91,54 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
     ) {
         val count = minOf(frequencies.size, gainsDb.size, MAX_SUPPORTED_BANDS)
         if (count == 0) {
-            activeCoefficients = emptyArray()
+            compiledBank = null
             hasActiveFilters = false
+            clearFilterStates()
             return
+        }
+
+        // Clean any states of discontinued bands
+        if (count < MAX_SUPPORTED_BANDS) {
+            stateL1.fill(0f, count, MAX_SUPPORTED_BANDS)
+            stateL2.fill(0f, count, MAX_SUPPORTED_BANDS)
+            stateR1.fill(0f, count, MAX_SUPPORTED_BANDS)
+            stateR2.fill(0f, count, MAX_SUPPORTED_BANDS)
         }
 
         val q = 1.0f + (count - 5).coerceAtLeast(0) * 0.12f
         var nonPassThroughFound = false
-        val newCoeffs =
-            Array(count) { i ->
-                val freq = frequencies[i].toFloat()
-                val gain = gainsDb[i]
-                val coeff = calculatePeakingBiquad(gain, freq, currentSampleRate.toFloat(), q)
-                if (!coeff.isPassThrough) {
-                    nonPassThroughFound = true
-                }
-                coeff
-            }
+        val b0 = FloatArray(count)
+        val b1 = FloatArray(count)
+        val b2 = FloatArray(count)
+        val a1 = FloatArray(count)
+        val a2 = FloatArray(count)
+        val isPassThrough = BooleanArray(count)
 
-        activeCoefficients = newCoeffs
+        for (i in 0 until count) {
+            val freq = frequencies[i].toFloat()
+            val gain = gainsDb[i]
+            val coeff = calculatePeakingBiquad(gain, freq, currentSampleRate.toFloat(), q)
+            b0[i] = coeff.b0
+            b1[i] = coeff.b1
+            b2[i] = coeff.b2
+            a1[i] = coeff.a1
+            a2[i] = coeff.a2
+            isPassThrough[i] = coeff.isPassThrough
+            if (!coeff.isPassThrough) {
+                nonPassThroughFound = true
+            }
+        }
+
+        compiledBank =
+            CompiledBiquadBank(
+                bandCount = count,
+                b0 = b0,
+                b1 = b1,
+                b2 = b2,
+                a1 = a1,
+                a2 = a2,
+                isPassThrough = isPassThrough,
+            )
         hasActiveFilters = nonPassThroughFound
     }
 
@@ -142,8 +182,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
         val size = limit - position
         if (size == 0) return
 
-        val coeffs = activeCoefficients
-        if (!isEnabled || !hasActiveFilters || coeffs.isEmpty()) {
+        val bank = compiledBank
+        if (!isEnabled || !hasActiveFilters || bank == null || bank.bandCount == 0) {
             val output = replaceOutputBuffer(size)
             output.put(inputBuffer)
             output.flip()
@@ -152,7 +192,13 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
 
         val output = replaceOutputBuffer(size)
         val channels = inputAudioFormat.channelCount
-        val bandCount = coeffs.size
+        val bandCount = bank.bandCount
+        val b0 = bank.b0
+        val b1 = bank.b1
+        val b2 = bank.b2
+        val a1 = bank.a1
+        val a2 = bank.a2
+        val pass = bank.isPassThrough
 
         when (channels) {
             1 -> {
@@ -160,11 +206,14 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                 while (i < limit) {
                     var sample = inputBuffer.getShort(i).toFloat()
                     for (b in 0 until bandCount) {
-                        val coeff = coeffs[b]
-                        if (coeff.isPassThrough) continue
-                        val out = coeff.b0 * sample + stateL1[b]
-                        stateL1[b] = coeff.b1 * sample - coeff.a1 * out + stateL2[b]
-                        stateL2[b] = coeff.b2 * sample - coeff.a2 * out
+                        if (pass[b]) continue
+                        val out = b0[b] * sample + stateL1[b]
+                        var next1 = b1[b] * sample - a1[b] * out + stateL2[b]
+                        var next2 = b2[b] * sample - a2[b] * out
+                        if (kotlin.math.abs(next1) < DENORMAL_THRESHOLD) next1 = 0f
+                        if (kotlin.math.abs(next2) < DENORMAL_THRESHOLD) next2 = 0f
+                        stateL1[b] = next1
+                        stateL2[b] = next2
                         sample = out
                     }
                     output.putShort(softSaturate(sample))
@@ -179,17 +228,30 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                     var sampleR = inputBuffer.getShort(i + 2).toFloat()
 
                     for (b in 0 until bandCount) {
-                        val coeff = coeffs[b]
-                        if (coeff.isPassThrough) continue
+                        if (pass[b]) continue
 
-                        val outL = coeff.b0 * sampleL + stateL1[b]
-                        stateL1[b] = coeff.b1 * sampleL - coeff.a1 * outL + stateL2[b]
-                        stateL2[b] = coeff.b2 * sampleL - coeff.a2 * outL
+                        val coeffB0 = b0[b]
+                        val coeffB1 = b1[b]
+                        val coeffB2 = b2[b]
+                        val coeffA1 = a1[b]
+                        val coeffA2 = a2[b]
+
+                        val outL = coeffB0 * sampleL + stateL1[b]
+                        var nextL1 = coeffB1 * sampleL - coeffA1 * outL + stateL2[b]
+                        var nextL2 = coeffB2 * sampleL - coeffA2 * outL
+                        if (kotlin.math.abs(nextL1) < DENORMAL_THRESHOLD) nextL1 = 0f
+                        if (kotlin.math.abs(nextL2) < DENORMAL_THRESHOLD) nextL2 = 0f
+                        stateL1[b] = nextL1
+                        stateL2[b] = nextL2
                         sampleL = outL
 
-                        val outR = coeff.b0 * sampleR + stateR1[b]
-                        stateR1[b] = coeff.b1 * sampleR - coeff.a1 * outR + stateR2[b]
-                        stateR2[b] = coeff.b2 * sampleR - coeff.a2 * outR
+                        val outR = coeffB0 * sampleR + stateR1[b]
+                        var nextR1 = coeffB1 * sampleR - coeffA1 * outR + stateR2[b]
+                        var nextR2 = coeffB2 * sampleR - coeffA2 * outR
+                        if (kotlin.math.abs(nextR1) < DENORMAL_THRESHOLD) nextR1 = 0f
+                        if (kotlin.math.abs(nextR2) < DENORMAL_THRESHOLD) nextR2 = 0f
+                        stateR1[b] = nextR1
+                        stateR2[b] = nextR2
                         sampleR = outR
                     }
 
@@ -210,11 +272,14 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                             0 -> {
                                 var sample = rawSample
                                 for (b in 0 until bandCount) {
-                                    val coeff = coeffs[b]
-                                    if (coeff.isPassThrough) continue
-                                    val out = coeff.b0 * sample + stateL1[b]
-                                    stateL1[b] = coeff.b1 * sample - coeff.a1 * out + stateL2[b]
-                                    stateL2[b] = coeff.b2 * sample - coeff.a2 * out
+                                    if (pass[b]) continue
+                                    val out = b0[b] * sample + stateL1[b]
+                                    var next1 = b1[b] * sample - a1[b] * out + stateL2[b]
+                                    var next2 = b2[b] * sample - a2[b] * out
+                                    if (kotlin.math.abs(next1) < DENORMAL_THRESHOLD) next1 = 0f
+                                    if (kotlin.math.abs(next2) < DENORMAL_THRESHOLD) next2 = 0f
+                                    stateL1[b] = next1
+                                    stateL2[b] = next2
                                     sample = out
                                 }
                                 softSaturate(sample)
@@ -223,11 +288,14 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                             1 -> {
                                 var sample = rawSample
                                 for (b in 0 until bandCount) {
-                                    val coeff = coeffs[b]
-                                    if (coeff.isPassThrough) continue
-                                    val out = coeff.b0 * sample + stateR1[b]
-                                    stateR1[b] = coeff.b1 * sample - coeff.a1 * out + stateR2[b]
-                                    stateR2[b] = coeff.b2 * sample - coeff.a2 * out
+                                    if (pass[b]) continue
+                                    val out = b0[b] * sample + stateR1[b]
+                                    var next1 = b1[b] * sample - a1[b] * out + stateR2[b]
+                                    var next2 = b2[b] * sample - a2[b] * out
+                                    if (kotlin.math.abs(next1) < DENORMAL_THRESHOLD) next1 = 0f
+                                    if (kotlin.math.abs(next2) < DENORMAL_THRESHOLD) next2 = 0f
+                                    stateR1[b] = next1
+                                    stateR2[b] = next2
                                     sample = out
                                 }
                                 softSaturate(sample)
@@ -267,7 +335,7 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
     internal fun softSaturate(value: Float): Short {
         val absVal = if (value < 0f) -value else value
         if (absVal <= SOFT_SATURATION_THRESHOLD) {
-            return value.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            return value.toInt().toShort()
         }
         val excess = absVal - SOFT_SATURATION_THRESHOLD
         val compressed =

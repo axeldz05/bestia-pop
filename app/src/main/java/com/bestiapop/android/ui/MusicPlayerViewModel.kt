@@ -1093,8 +1093,28 @@ class MusicPlayerViewModel(
 
     fun openEqualizer() = uiNavigationCoordinator.openEqualizer()
 
+    private var equalizerDebounceJob: Job? = null
+
+    private fun persistEqualizerSettings(
+        settings: EqualizerSettings,
+        debounceMs: Long = 0L,
+    ) {
+        playbackPreferences.setEqualizerSettingsLive(settings)
+        equalizerDebounceJob?.cancel()
+        if (debounceMs <= 0L) {
+            equalizerDebounceJob = null
+            persistPlayback { setEqualizerSettings(settings) }
+        } else {
+            equalizerDebounceJob =
+                viewModelScope.launch {
+                    delay(debounceMs)
+                    playbackPreferences.setEqualizerSettings(settings)
+                }
+        }
+    }
+
     fun setEqualizerSettings(settings: EqualizerSettings) {
-        persistPlayback { setEqualizerSettings(settings) }
+        persistEqualizerSettings(settings, debounceMs = 0L)
     }
 
     fun setEqualizerEnabled(enabled: Boolean) {
@@ -1102,9 +1122,33 @@ class MusicPlayerViewModel(
         setEqualizerSettings(current.copy(enabled = enabled))
     }
 
-    fun setEqualizerBandCount(count: Int) {
+    fun setEqualizerBandCount(
+        count: Int,
+        activeRule: DynamicEqualizerRule? = null,
+    ) {
         val current = playbackSettings.value.equalizerSettings
         val clamped = count.coerceIn(MIN_EQUALIZER_BANDS, MAX_EQUALIZER_BANDS)
+        if (activeRule != null && current.dynamicEnabled) {
+            if (clamped == activeRule.bandCount) return
+            val newGains =
+                adaptGainsForNewBandCount(
+                    currentGains = activeRule.bandGainsDb,
+                    currentCount = activeRule.bandCount,
+                    newCount = clamped,
+                    presetName = activeRule.presetName,
+                )
+            val updatedRule =
+                activeRule.copy(
+                    bandCount = clamped,
+                    bandGainsDb = newGains,
+                )
+            val updatedRules =
+                current.dynamicRules.map {
+                    if (it.id == updatedRule.id) updatedRule else it
+                }
+            setEqualizerSettings(current.copy(dynamicRules = updatedRules))
+            return
+        }
         if (clamped == current.bandCount) return
         val newGains =
             adaptGainsForNewBandCount(
@@ -1124,22 +1168,69 @@ class MusicPlayerViewModel(
     fun setEqualizerBandGain(
         bandIndex: Int,
         gainDb: Float,
+        activeRule: DynamicEqualizerRule? = null,
     ) {
         val current = playbackSettings.value.equalizerSettings
+        val clampedGain = gainDb.coerceIn(MIN_EQUALIZER_GAIN_DB, MAX_EQUALIZER_GAIN_DB)
+        if (activeRule != null && current.dynamicEnabled) {
+            val gains = activeRule.bandGainsDb.toMutableList()
+            if (bandIndex !in gains.indices) return
+            if (gains[bandIndex] == clampedGain) return
+            gains[bandIndex] = clampedGain
+            val updatedRule =
+                activeRule.copy(
+                    bandGainsDb = gains,
+                    presetName = EQUALIZER_PRESET_CUSTOM,
+                )
+            val updatedRules =
+                current.dynamicRules.map {
+                    if (it.id == updatedRule.id) updatedRule else it
+                }
+            persistEqualizerSettings(
+                current.copy(dynamicRules = updatedRules),
+                debounceMs = 250L,
+            )
+            return
+        }
         val gains = current.bandGainsDb.toMutableList()
         if (bandIndex !in gains.indices) return
-        gains[bandIndex] = gainDb.coerceIn(MIN_EQUALIZER_GAIN_DB, MAX_EQUALIZER_GAIN_DB)
-        setEqualizerSettings(
+        if (gains[bandIndex] == clampedGain) return
+        gains[bandIndex] = clampedGain
+        persistEqualizerSettings(
             current.copy(
                 bandGainsDb = gains,
                 presetName = EQUALIZER_PRESET_CUSTOM,
             ),
+            debounceMs = 250L,
         )
     }
 
-    fun setEqualizerPreset(presetName: String) {
+    fun setEqualizerPreset(
+        presetName: String,
+        activeRule: DynamicEqualizerRule? = null,
+    ) {
         val current = playbackSettings.value.equalizerSettings
         val preset = EQUALIZER_PRESETS.firstOrNull { it.name == presetName }
+        if (activeRule != null && current.dynamicEnabled) {
+            val newGains =
+                if (preset != null) {
+                    val freqs = centerFrequenciesForBandCount(activeRule.bandCount)
+                    evaluatePresetGains(preset, freqs)
+                } else {
+                    activeRule.bandGainsDb
+                }
+            val updatedRule =
+                activeRule.copy(
+                    bandGainsDb = newGains,
+                    presetName = presetName,
+                )
+            val updatedRules =
+                current.dynamicRules.map {
+                    if (it.id == updatedRule.id) updatedRule else it
+                }
+            setEqualizerSettings(current.copy(dynamicRules = updatedRules))
+            return
+        }
         val newGains =
             if (preset != null) {
                 val freqs = centerFrequenciesForBandCount(current.bandCount)
@@ -1150,8 +1241,22 @@ class MusicPlayerViewModel(
         setEqualizerSettings(current.copy(bandGainsDb = newGains, presetName = presetName))
     }
 
-    fun resetEqualizer() {
+    fun resetEqualizer(activeRule: DynamicEqualizerRule? = null) {
         val current = playbackSettings.value.equalizerSettings
+        if (activeRule != null && current.dynamicEnabled) {
+            val zeros = List(activeRule.bandCount) { 0f }
+            val updatedRule =
+                activeRule.copy(
+                    bandGainsDb = zeros,
+                    presetName = EQUALIZER_PRESET_FLAT,
+                )
+            val updatedRules =
+                current.dynamicRules.map {
+                    if (it.id == updatedRule.id) updatedRule else it
+                }
+            setEqualizerSettings(current.copy(dynamicRules = updatedRules))
+            return
+        }
         val zeros = List(current.bandCount) { 0f }
         setEqualizerSettings(current.copy(bandGainsDb = zeros, presetName = EQUALIZER_PRESET_FLAT))
     }
@@ -1173,7 +1278,9 @@ class MusicPlayerViewModel(
     }
 
     fun removeEqualizerRule(ruleId: String) {
-        persistPlayback { removeDynamicEqualizerRule(ruleId) }
+        val current = playbackSettings.value.equalizerSettings
+        val updatedRules = current.dynamicRules.filterNot { it.id == ruleId }
+        setEqualizerSettings(current.copy(dynamicRules = updatedRules))
     }
 
     fun loadRuleIntoEqualizer(rule: DynamicEqualizerRule) {
@@ -3069,6 +3176,7 @@ class MusicPlayerViewModel(
     }
 
     override fun onCleared() {
+        equalizerDebounceJob?.cancel()
         playbackRuntime.detachUi()
         super.onCleared()
     }

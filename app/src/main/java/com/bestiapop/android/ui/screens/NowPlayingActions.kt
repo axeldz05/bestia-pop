@@ -21,6 +21,7 @@ data class NowPlayingNavigationActions(
     val onGoToLocalPlaylist: (Long) -> Unit,
     val onGoToListenBrainz: (String) -> Unit,
     val onGoToCfRecommendations: () -> Unit,
+    val onOpenEqualizer: () -> Unit = {},
 )
 
 /**
@@ -91,6 +92,7 @@ fun NowPlayingActionsMenu(
         onGoToLocalPlaylist = actions.navigation.onGoToLocalPlaylist,
         onGoToListenBrainz = actions.navigation.onGoToListenBrainz,
         onGoToCfRecommendations = actions.navigation.onGoToCfRecommendations,
+        onOpenEqualizer = actions.navigation.onOpenEqualizer,
         onAddToPlaylist = actions.song.onAddToPlaylist,
         onIdentify = actions.song.onIdentify,
         onEditSong = actions.song.onEditSong,
@@ -118,6 +120,7 @@ fun NowPlayingActionsMenu(
     onGoToLocalPlaylist: (Long) -> Unit,
     onGoToListenBrainz: (String) -> Unit,
     onGoToCfRecommendations: () -> Unit,
+    onOpenEqualizer: () -> Unit = {},
     onAddToPlaylist: () -> Unit,
     onIdentify: () -> Unit,
     onEditSong: () -> Unit,
@@ -205,6 +208,13 @@ fun NowPlayingActionsMenu(
             onClick = {
                 onDismiss()
                 onStartRadio()
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Ecualizador") },
+            onClick = {
+                onDismiss()
+                onOpenEqualizer()
             },
         )
     }

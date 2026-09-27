@@ -501,8 +501,17 @@ internal class PlaybackQueueCoordinator(
                 player.seekTo(prevIndex, 0L)
             } else {
                 when {
-                    player.hasPreviousMediaItem() -> player.seekToPreviousMediaItem()
-                    player.mediaItemCount > 1 -> player.seekTo(player.mediaItemCount - 1, 0L)
+                    player.hasPreviousMediaItem() -> {
+                        player.seekToPreviousMediaItem()
+                    }
+
+                    player.mediaItemCount > 1 && getRepeatMode() != RepeatMode.OFF -> {
+                        player.seekTo(player.mediaItemCount - 1, 0L)
+                    }
+
+                    else -> {
+                        player.seekTo(0L)
+                    }
                 }
             }
         } else {

@@ -48,8 +48,12 @@ class PlaybackCrossfadeTest {
 
     @Test
     fun calculateCrossfadeVolume_handlesInvalidOrUnknownDuration() {
-        assertEquals(1f, calculateCrossfadeVolume(0L, 0L, 3), 0.001f)
-        assertEquals(1f, calculateCrossfadeVolume(0L, -1L, 3), 0.001f)
+        // Unknown or resolving duration: fade-in proceeds smoothly over fadeMs (3s = 3000ms)
+        assertEquals(0f, calculateCrossfadeVolume(0L, 0L, 3), 0.001f)
+        assertEquals(0.5f, calculateCrossfadeVolume(1500L, -1L, 3), 0.001f)
+        assertEquals(1f, calculateCrossfadeVolume(3000L, -1L, 3), 0.001f)
+        assertEquals(1f, calculateCrossfadeVolume(5000L, -1L, 3), 0.001f)
+        // Negative position returns 1f
         assertEquals(1f, calculateCrossfadeVolume(-10L, 100_000L, 3), 0.001f)
     }
 

@@ -140,8 +140,12 @@ internal class PlaybackAnalyticsCoordinator(
                         val index = player.currentMediaItemIndex
                         val updated = current.withIdentity { copy(durationMs = duration) }
                         val live = getQueue().toMutableList()
-                        if (index in live.indices) {
-                            live[index] = updated
+                        val targetIndex =
+                            live
+                                .indexOfFirst { it.queueEntryId == current.queueEntryId }
+                                .takeIf { it >= 0 } ?: index
+                        if (targetIndex in live.indices) {
+                            live[targetIndex] = updated
                             setQueue(live)
                             setCurrentItem(
                                 updated,

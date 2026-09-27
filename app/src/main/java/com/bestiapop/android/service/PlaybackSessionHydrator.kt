@@ -60,7 +60,7 @@ internal class PlaybackSessionHydrator(
     private val sessionRestoreMutex = Mutex()
     private var lastPersistedPositionAtMs = 0L
     private var seekPersistenceJob: Job? = null
-    private val persistenceRequests = Channel<PlaybackPersistenceRequest>(Channel.UNLIMITED)
+    private val persistenceRequests = Channel<PlaybackPersistenceRequest>(Channel.CONFLATED)
 
     init {
         scope.launch {

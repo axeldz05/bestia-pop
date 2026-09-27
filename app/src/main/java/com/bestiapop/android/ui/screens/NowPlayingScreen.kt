@@ -551,6 +551,7 @@ fun NowPlayingScreen(
                                                                     onGoToCfRecommendations = {
                                                                         goToDiscover { viewModel.openCfRecommendationsDetail() }
                                                                     },
+                                                                    onOpenEqualizer = viewModel::openEqualizer,
                                                                 ),
                                                             song =
                                                                 NowPlayingSongActions.from(

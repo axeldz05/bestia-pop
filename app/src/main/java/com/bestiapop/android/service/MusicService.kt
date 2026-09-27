@@ -541,8 +541,8 @@ class MusicService : MediaLibraryService() {
                     if (kotlin.math.abs(p.volume - targetVolume) > 0.01f) {
                         p.volume = targetVolume
                     }
+                    val fadeMs = (crossfadeDurationSeconds * 1000L).coerceIn(500L, 10000L)
                     if (durationMs > 1500L && positionMs >= 0L) {
-                        val fadeMs = (crossfadeDurationSeconds * 1000L).coerceIn(500L, 10000L)
                         val effectiveFadeMs = minOf(fadeMs, durationMs / 3).coerceAtLeast(500L)
                         val timeUntilFadeOut = (durationMs - effectiveFadeMs) - positionMs
                         if (positionMs in effectiveFadeMs until (durationMs - effectiveFadeMs) && timeUntilFadeOut > 100L) {
@@ -551,8 +551,12 @@ class MusicService : MediaLibraryService() {
                             delay(timeUntilFadeOut)
                             continue
                         }
-                    } else if (durationMs <= 1500L || positionMs < 0L) {
-                        // Duration not yet known or short track: avoid spinning at 25Hz while metadata resolves.
+                    } else if (durationMs in 1L..1500L || positionMs < 0L) {
+                        // Short track or negative position: avoid spinning at 25Hz.
+                        delay(1000L)
+                        continue
+                    } else if (durationMs <= 0L && positionMs >= fadeMs) {
+                        // Duration not yet known, but already reached 1.0f full volume: avoid spinning at 25Hz while metadata resolves.
                         delay(1000L)
                         continue
                     }

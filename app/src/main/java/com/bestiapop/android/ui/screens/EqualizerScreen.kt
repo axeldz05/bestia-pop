@@ -132,6 +132,27 @@ fun EqualizerScreen(
             if (eqSettings.dynamicEnabled) resolveActiveRule(currentPlayable, eqSettings.dynamicRules) else null
         }
 
+    val effectiveBands =
+        remember(activeRule, eqSettings) {
+            if (activeRule != null && eqSettings.dynamicEnabled) {
+                activeRule.bands
+            } else {
+                eqSettings.bands
+            }
+        }
+    val effectiveBandCount =
+        if (activeRule != null && eqSettings.dynamicEnabled) {
+            activeRule.bandCount
+        } else {
+            eqSettings.bandCount
+        }
+    val effectivePresetName =
+        if (activeRule != null && eqSettings.dynamicEnabled) {
+            activeRule.presetName
+        } else {
+            eqSettings.presetName
+        }
+
     val insetsModifier =
         if (onBack != null) {
             Modifier
@@ -267,7 +288,7 @@ fun EqualizerScreen(
                                 Text(
                                     text =
                                         if (eqSettings.enabled) {
-                                            "${eqSettings.bandCount} bandas activas"
+                                            "$effectiveBandCount bandas activas"
                                         } else {
                                             "Desactivado (sin procesar)"
                                         },
@@ -282,7 +303,7 @@ fun EqualizerScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AnimatedVisibility(visible = eqSettings.enabled) {
                                 TextButton(
-                                    onClick = viewModel::resetEqualizer,
+                                    onClick = { viewModel.resetEqualizer(activeRule) },
                                     contentPadding = PaddingValues(horizontal = 8.dp),
                                 ) {
                                     Icon(
@@ -438,7 +459,7 @@ fun EqualizerScreen(
 
                 // Visual Frequency Response Curve
                 EqualizerCurveVisualizer(
-                    bands = eqSettings.bands,
+                    bands = effectiveBands,
                     enabled = eqSettings.enabled,
                     modifier =
                         Modifier
@@ -490,7 +511,9 @@ fun EqualizerScreen(
                             FilterChip(
                                 selected = songAssigned,
                                 onClick = {
-                                    if (playable != null) {
+                                    if (songAssigned) {
+                                        activeRule?.let { viewModel.removeEqualizerRule(it.id) }
+                                    } else if (playable != null) {
                                         viewModel.applyEqualizerRule(EqualizerTargetType.SONG, playable)
                                     }
                                 },
@@ -509,7 +532,9 @@ fun EqualizerScreen(
                             FilterChip(
                                 selected = albumAssigned,
                                 onClick = {
-                                    if (playable != null) {
+                                    if (albumAssigned) {
+                                        activeRule?.let { viewModel.removeEqualizerRule(it.id) }
+                                    } else if (playable != null) {
                                         viewModel.applyEqualizerRule(EqualizerTargetType.ALBUM, playable)
                                     }
                                 },
@@ -528,7 +553,9 @@ fun EqualizerScreen(
                             FilterChip(
                                 selected = artistAssigned,
                                 onClick = {
-                                    if (playable != null) {
+                                    if (artistAssigned) {
+                                        activeRule?.let { viewModel.removeEqualizerRule(it.id) }
+                                    } else if (playable != null) {
                                         viewModel.applyEqualizerRule(EqualizerTargetType.ARTIST, playable)
                                     }
                                 },
@@ -593,10 +620,10 @@ fun EqualizerScreen(
                     contentPadding = PaddingValues(horizontal = 2.dp),
                 ) {
                     items(EQUALIZER_PRESETS) { preset ->
-                        val isSelected = eqSettings.presetName == preset.name
+                        val isSelected = effectivePresetName == preset.name
                         FilterChip(
                             selected = isSelected,
-                            onClick = { viewModel.setEqualizerPreset(preset.name) },
+                            onClick = { viewModel.setEqualizerPreset(preset.name, activeRule) },
                             label = {
                                 Text(
                                     text = preset.name,
@@ -611,7 +638,7 @@ fun EqualizerScreen(
                             shape = RoundedCornerShape(12.dp),
                         )
                     }
-                    if (eqSettings.presetName == EQUALIZER_PRESET_CUSTOM) {
+                    if (effectivePresetName == EQUALIZER_PRESET_CUSTOM) {
                         item {
                             FilterChip(
                                 selected = true,
@@ -671,15 +698,15 @@ fun EqualizerScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             IconButton(
-                                onClick = { viewModel.setEqualizerBandCount(eqSettings.bandCount - 1) },
-                                enabled = eqSettings.bandCount > MIN_EQUALIZER_BANDS,
+                                onClick = { viewModel.setEqualizerBandCount(effectiveBandCount - 1, activeRule) },
+                                enabled = effectiveBandCount > MIN_EQUALIZER_BANDS,
                                 modifier = Modifier.size(34.dp),
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Remove,
                                     contentDescription = "Menos bandas",
                                     tint =
-                                        if (eqSettings.bandCount > MIN_EQUALIZER_BANDS) {
+                                        if (effectiveBandCount > MIN_EQUALIZER_BANDS) {
                                             MaterialTheme.colorScheme.primary
                                         } else {
                                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
@@ -693,7 +720,7 @@ fun EqualizerScreen(
                                 modifier = Modifier.padding(horizontal = 4.dp),
                             ) {
                                 Text(
-                                    text = "${eqSettings.bandCount}",
+                                    text = "$effectiveBandCount",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
@@ -701,15 +728,15 @@ fun EqualizerScreen(
                             }
 
                             IconButton(
-                                onClick = { viewModel.setEqualizerBandCount(eqSettings.bandCount + 1) },
-                                enabled = eqSettings.bandCount < MAX_EQUALIZER_BANDS,
+                                onClick = { viewModel.setEqualizerBandCount(effectiveBandCount + 1, activeRule) },
+                                enabled = effectiveBandCount < MAX_EQUALIZER_BANDS,
                                 modifier = Modifier.size(34.dp),
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Add,
                                     contentDescription = "Más bandas",
                                     tint =
-                                        if (eqSettings.bandCount < MAX_EQUALIZER_BANDS) {
+                                        if (effectiveBandCount < MAX_EQUALIZER_BANDS) {
                                             MaterialTheme.colorScheme.primary
                                         } else {
                                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
@@ -724,10 +751,10 @@ fun EqualizerScreen(
 
                 // Vertical Sliders (Faders)
                 EqualizerFadersRow(
-                    bands = eqSettings.bands,
+                    bands = effectiveBands,
                     enabled = eqSettings.enabled,
                     onGainChange = { bandIndex, gainDb ->
-                        viewModel.setEqualizerBandGain(bandIndex, gainDb)
+                        viewModel.setEqualizerBandGain(bandIndex, gainDb, activeRule)
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -1171,6 +1198,7 @@ private fun EqualizerVerticalFader(
         targetValue = band.gainDb,
         label = "gainAnimated",
     )
+    val displayGain = if (isDraggingVertical) band.gainDb else gainAnimated
 
     Column(
         modifier =
@@ -1181,8 +1209,8 @@ private fun EqualizerVerticalFader(
         // Gain readout at top
         val gainText =
             when {
-                band.gainDb > 0.05f -> "+${String.format(Locale.US, "%.1f", band.gainDb)}"
-                band.gainDb < -0.05f -> String.format(Locale.US, "%.1f", band.gainDb)
+                displayGain > 0.05f -> "+${String.format(Locale.US, "%.1f", displayGain)}"
+                displayGain < -0.05f -> String.format(Locale.US, "%.1f", displayGain)
                 else -> "0.0"
             }
 
@@ -1197,8 +1225,8 @@ private fun EqualizerVerticalFader(
                 when {
                     !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     isDraggingVertical -> MaterialTheme.colorScheme.primary
-                    band.gainDb > 0.05f -> MaterialTheme.colorScheme.primary
-                    band.gainDb < -0.05f -> MaterialTheme.colorScheme.tertiary
+                    displayGain > 0.05f -> MaterialTheme.colorScheme.primary
+                    displayGain < -0.05f -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
             maxLines = 1,
@@ -1297,15 +1325,15 @@ private fun EqualizerVerticalFader(
             // Active bar from center (0 dB) to current thumb position
             val normalizedFraction =
                 (
-                    (gainAnimated - MIN_EQUALIZER_GAIN_DB) /
+                    (displayGain - MIN_EQUALIZER_GAIN_DB) /
                         (MAX_EQUALIZER_GAIN_DB - MIN_EQUALIZER_GAIN_DB)
                 ).coerceIn(0f, 1f)
             // Invert because Y = 0 is top
             val thumbYOffset = (totalHeight - 20.dp) * (1f - normalizedFraction)
 
-            val barHeight = abs(gainAnimated / MAX_EQUALIZER_GAIN_DB) * (totalHeight.value / 2f - 10f)
+            val barHeight = abs(displayGain / MAX_EQUALIZER_GAIN_DB) * (totalHeight.value / 2f - 10f)
             val barYOffset =
-                if (gainAnimated >= 0) {
+                if (displayGain >= 0) {
                     midY - barHeight.dp
                 } else {
                     midY
@@ -1320,7 +1348,7 @@ private fun EqualizerVerticalFader(
                             .offset { IntOffset(0, (barYOffset - midY).roundToPx()) }
                             .clip(RoundedCornerShape(3.dp))
                             .background(
-                                if (gainAnimated >= 0) {
+                                if (displayGain >= 0) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.tertiary

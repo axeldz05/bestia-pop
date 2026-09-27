@@ -1,6 +1,5 @@
 package com.bestiapop.android.ui.components
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,11 +8,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -67,12 +64,8 @@ fun SimilarPlaylistPreviewDialog(
                     enabled = !state.loading,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ResponsiveActionRow(
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     RadioModeChip(
                         label = "Solo conocidos",
@@ -144,19 +137,21 @@ fun SimilarPlaylistPreviewDialog(
         },
         confirmButton = {
             TextButton(onClick = onCreatePlaylist, enabled = canConfirm) {
-                Text("Crear playlist")
+                SingleLineText("Crear playlist")
             }
         },
         dismissButton = {
-            Row {
+            ResponsiveActionRow(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 TextButton(onClick = onEnqueue, enabled = canConfirm) {
-                    Text("Encolar")
+                    SingleLineText("Encolar")
                 }
                 TextButton(onClick = onPlay, enabled = canConfirm) {
-                    Text("Reproducir")
+                    SingleLineText("Reproducir")
                 }
                 TextButton(onClick = onDismiss) {
-                    Text("Cancelar")
+                    SingleLineText("Cancelar")
                 }
             }
         },
@@ -170,11 +165,11 @@ private fun RadioModeChip(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    FilterChip(
+    ResponsiveFilterChip(
         selected = selected,
         onClick = onClick,
         enabled = enabled,
-        label = { Text(label) },
+        label = label,
     )
 }
 

@@ -68,7 +68,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.DownloadMessages
@@ -94,6 +93,7 @@ import com.bestiapop.android.ui.components.PlaylistHeader
 import com.bestiapop.android.ui.components.PlaylistHeaderActions
 import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
 import com.bestiapop.android.ui.components.ScreenBackHeader
+import com.bestiapop.android.ui.components.SingleLineText
 import com.bestiapop.android.ui.components.SongItemActions
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongQueueActions
@@ -341,12 +341,12 @@ fun PlaylistsScreen(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         ) {
-                            Text("Eliminar")
+                            SingleLineText("Eliminar")
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { playlistToDelete = null }) {
-                            Text("Cancelar")
+                            SingleLineText("Cancelar")
                         }
                     },
                 )
@@ -587,7 +587,7 @@ private fun PlaylistDetailScreen(
                                         OutlinedButton(onClick = { onAddSongsRequest(playlist) }) {
                                             Icon(imageVector = Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Añadir canciones ahora")
+                                            SingleLineText("Añadir canciones ahora")
                                         }
                                     }
                                 }

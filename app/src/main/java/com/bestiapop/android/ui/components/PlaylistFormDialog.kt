@@ -157,10 +157,7 @@ fun PlaylistFormDialog(
             }
         },
         confirmButton = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            ResponsiveActionRow {
                 if (onSaveAndOpen != null) {
                     OutlinedButton(
                         onClick = {
@@ -170,7 +167,7 @@ fun PlaylistFormDialog(
                         },
                         enabled = nameInput.isNotBlank(),
                     ) {
-                        Text(confirmText)
+                        SingleLineText(confirmText)
                     }
                     Button(
                         onClick = {
@@ -186,7 +183,7 @@ fun PlaylistFormDialog(
                             modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(confirmAndOpenText ?: "$confirmText y entrar")
+                        SingleLineText(confirmAndOpenText ?: "$confirmText y entrar")
                     }
                 } else {
                     Button(
@@ -197,14 +194,14 @@ fun PlaylistFormDialog(
                         },
                         enabled = nameInput.isNotBlank(),
                     ) {
-                        Text(confirmText)
+                        SingleLineText(confirmText)
                     }
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancelar")
+                SingleLineText("Cancelar")
             }
         },
     )

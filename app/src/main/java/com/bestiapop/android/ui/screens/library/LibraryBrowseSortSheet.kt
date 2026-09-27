@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,12 +34,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.ui.components.ResponsiveActionRow
+import com.bestiapop.android.ui.components.ResponsiveFilterChip
+import com.bestiapop.android.ui.components.SingleLineText
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
-import com.bestiapop.android.ui.theme.ListDensity
 
 /**
  * Single place for library shape (browse) + order. Chips remain the fast path for shape;
@@ -97,21 +97,18 @@ fun LibraryBrowseSortSheet(
             )
             Spacer(modifier = Modifier.height(8.dp))
             filters.chunked(3).forEach { rowFilters ->
-                Row(
+                ResponsiveActionRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     rowFilters.forEach { filter ->
-                        FilterChip(
+                        ResponsiveFilterChip(
                             selected = browseFilter == filter,
                             onClick = { onBrowseFilterChange(filter) },
-                            label = { Text(filter.chipLabel()) },
+                            label = filter.chipLabel(),
                             modifier =
-                                Modifier
-                                    .height(ListDensity.filterChipHeight)
-                                    .semantics {
-                                        contentDescription = "Ver como ${filter.chipLabel()}"
-                                    },
+                                Modifier.semantics {
+                                    contentDescription = "Ver como ${filter.chipLabel()}"
+                                },
                         )
                     }
                 }
@@ -353,12 +350,10 @@ fun LibraryFilterButton(
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(16.dp),
             )
-            Text(
+            SingleLineText(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }

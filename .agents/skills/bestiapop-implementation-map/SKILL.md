@@ -125,6 +125,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | ListenBrainz integration coordinator | `ui/state/ListenBrainzIntegrationCoordinator.kt` (`tokenValidation`, `openListenBrainzPlaylist`, `closeListenBrainzPlaylist`, `saveListenBrainzPlaylistAsLocal`, `importListenBrainzPlaylistWithDownloads`, `downloadPlaylistPendingTracks`, `rematchDiscoverAfterLibraryChange`; centraliza cuentas, tokens, playlists remotas y sincronización de ListenBrainz fuera de `MusicPlayerViewModel`) |
 | Now playing playback state & actions | `ui/state/NowPlayingPlaybackState.kt` (`RadioPlaybackState` agrupando modo, loading y status label; `NowPlayingTransportActions` agrupando callbacks de transporte para evitar prop-drilling) |
 | Theme Compose | `ui/theme/Theme.kt`, `ThemePresets.kt`, `ListDensity.kt` (row/artwork/chip density tokens) |
+| Responsive UI widgets | `ui/components/ResponsiveUiWidgets.kt` (`SingleLineText`, `ResponsiveFilterChip` L1/L2, `ResponsiveActionRow`, `responsiveSearchHeight`) |
 
 ## Domain
 

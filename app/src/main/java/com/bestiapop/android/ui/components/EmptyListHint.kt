@@ -63,7 +63,7 @@ fun EmptyListHint(
             if (!actionLabel.isNullOrBlank() && onAction != null) {
                 Spacer(modifier = Modifier.height(8.dp))
                 TextButton(onClick = onAction) {
-                    Text(actionLabel)
+                    SingleLineText(actionLabel)
                 }
             }
         }

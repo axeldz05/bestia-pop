@@ -3,7 +3,6 @@ package com.bestiapop.android.ui.screens.discover
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -29,7 +27,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,9 +62,10 @@ import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.ItemSwipeBox
 import com.bestiapop.android.ui.components.MediaCardDownloadSpinner
+import com.bestiapop.android.ui.components.ResponsiveActionRow
+import com.bestiapop.android.ui.components.ResponsiveFilterChip
 import com.bestiapop.android.ui.components.artistAlbumLabel
 import com.bestiapop.android.ui.components.isAlbumDownloading
-import com.bestiapop.android.ui.theme.ListDensity
 
 /**
  * Level 2: Actions for the top related section (artists, albums, tracks).
@@ -173,36 +171,31 @@ fun DiscoverHomeFeedView(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         // Section: Fuente del catálogo (Ambos / Deezer / ListenBrainz)
-        Row(
+        ResponsiveActionRow(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "Fuente:",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            FilterChip(
+            ResponsiveFilterChip(
                 selected = source == DiscoverSourcePreference.BOTH,
                 onClick = { onSourceChange(DiscoverSourcePreference.BOTH) },
-                label = { Text("Ambos") },
-                modifier = Modifier.height(ListDensity.filterChipHeight),
+                label = "Ambos",
             )
-            FilterChip(
+            ResponsiveFilterChip(
                 selected = source == DiscoverSourcePreference.DEEZER,
                 onClick = { onSourceChange(DiscoverSourcePreference.DEEZER) },
-                label = { Text("Deezer") },
-                modifier = Modifier.height(ListDensity.filterChipHeight),
+                label = "Deezer",
             )
-            FilterChip(
+            ResponsiveFilterChip(
                 selected = source == DiscoverSourcePreference.LISTENBRAINZ,
                 onClick = { onSourceChange(DiscoverSourcePreference.LISTENBRAINZ) },
-                label = { Text("ListenBrainz") },
-                modifier = Modifier.height(ListDensity.filterChipHeight),
+                label = "ListenBrainz",
             )
         }
 
@@ -441,27 +434,23 @@ fun DiscoverTopRelatedSection(
             Spacer(modifier = Modifier.height(10.dp))
 
             // Tabs
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ResponsiveActionRow(
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                FilterChip(
+                ResponsiveFilterChip(
                     selected = selectedTabIndex == 0,
                     onClick = { selectedTabIndex = 0 },
-                    label = { Text("Artistas (${feed.topArtists.size})") },
+                    label = "Artistas (${feed.topArtists.size})",
                 )
-                FilterChip(
+                ResponsiveFilterChip(
                     selected = selectedTabIndex == 1,
                     onClick = { selectedTabIndex = 1 },
-                    label = { Text("Álbumes (${feed.topAlbums.size})") },
+                    label = "Álbumes (${feed.topAlbums.size})",
                 )
-                FilterChip(
+                ResponsiveFilterChip(
                     selected = selectedTabIndex == 2,
                     onClick = { selectedTabIndex = 2 },
-                    label = { Text("Canciones (${feed.topTracks.size})") },
+                    label = "Canciones (${feed.topTracks.size})",
                 )
             }
 

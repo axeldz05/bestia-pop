@@ -16,4 +16,5 @@ object ListDensity {
     val subtitleStyle = DefaultTypography.bodySmall
     val corner = 10.dp
     val filterChipHeight = 36.dp
+    val searchBarMinHeight = 52.dp
 }

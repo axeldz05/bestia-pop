@@ -157,12 +157,12 @@ fun ColorPickerDialog(
                     onConfirm(updatedData)
                 },
             ) {
-                Text("Guardar Tema")
+                SingleLineText("Guardar Tema")
             }
         },
         dismissButton = {
             OutlinedButton(onClick = onDismiss) {
-                Text("Cancelar")
+                SingleLineText("Cancelar")
             }
         },
     )

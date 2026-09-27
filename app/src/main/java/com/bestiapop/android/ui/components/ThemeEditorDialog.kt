@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -368,13 +369,16 @@ fun ThemeEditorDialog(
                             contentPadding =
                                 androidx.compose.foundation.layout
                                     .PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp),
+                            modifier = Modifier.heightIn(min = 28.dp),
                             colors =
                                 ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary,
                                 ),
                         ) {
-                            Text("Ajustar seguro", style = MaterialTheme.typography.labelSmall)
+                            SingleLineText(
+                                text = "Ajustar seguro",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
                         }
                     }
                 }
@@ -630,7 +634,10 @@ fun ThemeEditorDialog(
                             modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Auto-armonizar", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                        SingleLineText(
+                            text = "Auto-armonizar",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        )
                     }
                 }
             }
@@ -647,7 +654,7 @@ fun ThemeEditorDialog(
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
             ) {
-                Text("Guardar Tema")
+                SingleLineText("Guardar Tema")
             }
         },
         dismissButton = {
@@ -655,7 +662,7 @@ fun ThemeEditorDialog(
                 onClick = onDismiss,
                 shape = RoundedCornerShape(12.dp),
             ) {
-                Text("Cancelar")
+                SingleLineText("Cancelar")
             }
         },
     )

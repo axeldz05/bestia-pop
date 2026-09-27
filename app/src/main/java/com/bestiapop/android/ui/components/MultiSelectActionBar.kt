@@ -1,7 +1,6 @@
 package com.bestiapop.android.ui.components
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -159,15 +157,13 @@ fun MultiSelectActionBar(
                             vertical = ListDensity.rowVerticalPadding,
                         ),
                 ) {
-                    Text("Seleccionar todo")
+                    SingleLineText("Seleccionar todo")
                 }
             }
 
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
+            ResponsiveActionRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.Top,
             ) {
                 MultiSelectAction(
@@ -322,7 +318,7 @@ fun PlaylistAdditionActionBar(
                                 vertical = ListDensity.rowVerticalPadding,
                             ),
                     ) {
-                        Text(
+                        SingleLineText(
                             text = "Todo",
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,

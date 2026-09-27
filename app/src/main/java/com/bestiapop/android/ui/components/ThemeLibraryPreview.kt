@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bestiapop.android.data.model.Song
@@ -122,7 +122,7 @@ fun ThemeLibraryPreview(
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.height(30.dp),
+                    modifier = Modifier.heightIn(min = 30.dp),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp),
@@ -206,7 +206,7 @@ fun ThemeLibraryPreview(
                         contentPadding =
                             androidx.compose.foundation.layout
                                 .PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(32.dp),
+                        modifier = Modifier.heightIn(min = 32.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
@@ -214,7 +214,10 @@ fun ThemeLibraryPreview(
                             modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Reproducir", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                        SingleLineText(
+                            text = "Reproducir",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        )
                     }
 
                     Button(
@@ -228,7 +231,7 @@ fun ThemeLibraryPreview(
                         contentPadding =
                             androidx.compose.foundation.layout
                                 .PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(32.dp),
+                        modifier = Modifier.heightIn(min = 32.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Shuffle,
@@ -236,7 +239,10 @@ fun ThemeLibraryPreview(
                             modifier = Modifier.size(14.dp),
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Aleatorio", style = MaterialTheme.typography.labelSmall)
+                        SingleLineText(
+                            text = "Aleatorio",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
                     }
                 }
 
@@ -305,19 +311,15 @@ fun ThemeLibraryPreview(
                             Spacer(modifier = Modifier.width(10.dp))
 
                             Column {
-                                Text(
+                                SingleLineText(
                                     text = previewSongs.firstOrNull()?.title ?: "Reproduciendo",
                                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
-                                Text(
+                                SingleLineText(
                                     text = previewSongs.firstOrNull()?.artist ?: "BestiaPop",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
@@ -427,22 +429,18 @@ private fun PreviewSongRow(
                 Spacer(modifier = Modifier.width(10.dp))
 
                 Column {
-                    Text(
+                    SingleLineText(
                         text = song.title,
                         style =
                             MaterialTheme.typography.bodySmall.copy(
                                 fontWeight = if (isCurrentPlaying) FontWeight.Bold else FontWeight.Medium,
                             ),
                         color = titleColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
+                    SingleLineText(
                         text = "${song.artist} • ${song.album}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         fontSize = 10.sp,
                     )
                 }

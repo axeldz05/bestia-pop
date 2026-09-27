@@ -105,7 +105,10 @@ fun DownloadOutlinedActionButton(
             modifier = Modifier.size(16.dp),
         )
         Spacer(modifier = Modifier.width(4.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall)
+        SingleLineText(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+        )
     }
 }
 
@@ -520,11 +523,7 @@ fun DownloadMissingTracksButton(
     ) {
         Icon(imageVector = icon, contentDescription = null)
         Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = label,
-            maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-        )
+        SingleLineText(label)
     }
 }
 

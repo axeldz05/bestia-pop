@@ -58,6 +58,7 @@ import com.bestiapop.android.data.util.LyricsPhoneticProcessor
 import com.bestiapop.android.data.util.SyncedLyrics
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.PlaybackScrubber
+import com.bestiapop.android.ui.components.SingleLineText
 import com.bestiapop.android.ui.state.NowPlayingTransportActions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -221,12 +222,12 @@ fun NowPlayingLyricsView(
                                     viewModel.confirmGoogleTranslate(song, plainLines)
                                 },
                             ) {
-                                Text("Traducir con Google")
+                                SingleLineText("Traducir con Google")
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = viewModel::cancelGoogleTranslatePrompt) {
-                                Text("Cancelar")
+                                SingleLineText("Cancelar")
                             }
                         },
                     )
@@ -309,7 +310,7 @@ fun NowPlayingLyricsView(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                             }
-                            Text(
+                            SingleLineText(
                                 text = if (translationState.isTranslationActive) "Original" else "Traducir",
                                 style = MaterialTheme.typography.labelMedium,
                             )

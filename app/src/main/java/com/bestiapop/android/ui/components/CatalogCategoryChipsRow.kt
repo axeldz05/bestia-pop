@@ -1,13 +1,8 @@
 package com.bestiapop.android.ui.components
 
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -15,16 +10,13 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Whatshot
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.CatalogCategory
-import com.bestiapop.android.ui.theme.ListDensity
 
 /**
  * Reusable horizontal category chips selector for online catalog and discovery feeds.
@@ -59,19 +51,18 @@ fun CatalogCategoryChipsRow(
     showIcons: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    ResponsiveActionRow(
         modifier =
             modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         categories.forEach { category ->
-            FilterChip(
+            ResponsiveFilterChip(
                 selected = selectedCategory == category,
                 onClick = { onSelectCategory(category) },
-                label = { Text(category.displayLabel(), fontWeight = FontWeight.Bold) },
+                label = category.displayLabel(),
+                labelFontWeight = FontWeight.Bold,
                 leadingIcon =
                     if (showIcons) {
                         {
@@ -85,7 +76,6 @@ fun CatalogCategoryChipsRow(
                         null
                     },
                 shape = RoundedCornerShape(20.dp),
-                modifier = Modifier.height(ListDensity.filterChipHeight),
             )
         }
     }

@@ -137,10 +137,8 @@ fun CollectionDetailHero(
         Spacer(modifier = Modifier.height(12.dp))
 
         // Action Buttons Row
-        Row(
+        ResponsiveActionRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
             FilledTonalButton(
                 onClick = onPlay,
@@ -149,7 +147,7 @@ fun CollectionDetailHero(
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Play")
+                SingleLineText("Play")
             }
 
             FilledTonalButton(
@@ -242,10 +240,7 @@ fun ArtistDetailHero(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            ResponsiveActionRow {
                 FilledTonalButton(
                     onClick = onPlay,
                     enabled = playEnabled,
@@ -253,7 +248,7 @@ fun ArtistDetailHero(
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Play")
+                    SingleLineText("Play")
                 }
 
                 FilledTonalButton(
@@ -271,7 +266,7 @@ fun ArtistDetailHero(
                 ) {
                     Icon(Icons.Default.Radio, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Radio")
+                    SingleLineText("Radio")
                 }
 
                 actionButtons?.invoke(this)

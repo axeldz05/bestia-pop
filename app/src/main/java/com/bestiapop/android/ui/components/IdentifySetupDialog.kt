@@ -41,7 +41,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.IdentifyApplyField
 import com.bestiapop.android.data.model.IdentifyApplyFields
@@ -248,12 +247,12 @@ fun IdentifySetupDialog(
                         onlyGaps && gapSongsCount == 0 -> "Todo completo (0)"
                         else -> "Identificar ($effectiveCount)"
                     }
-                Text(buttonText)
+                SingleLineText(buttonText)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancelar")
+                SingleLineText("Cancelar")
             }
         },
     )
@@ -275,19 +274,15 @@ private fun IdentifySongPreviewRow(song: Song) {
         )
         Spacer(modifier = Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
+            SingleLineText(
                 text = song.title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-            Text(
+            SingleLineText(
                 text = joinMeta(song.artist, song.album, sep = " • "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }

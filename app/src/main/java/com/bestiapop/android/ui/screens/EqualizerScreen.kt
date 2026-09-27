@@ -946,6 +946,7 @@ private fun EqualizerCurveVisualizer(
     val fillPath = remember { Path() }
     val xCoords = remember { FloatArray(MAX_EQUALIZER_BANDS) }
     val yCoords = remember { FloatArray(MAX_EQUALIZER_BANDS) }
+    val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(10f, 10f)) }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -965,7 +966,7 @@ private fun EqualizerCurveVisualizer(
                 start = Offset(0f, midY),
                 end = Offset(width, midY),
                 strokeWidth = 1.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)),
+                pathEffect = dashEffect,
             )
 
             // +12 dB and -12 dB limits
@@ -1440,6 +1441,18 @@ fun EqualizerMiniCurveVisualizer(
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+    val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(4f, 4f)) }
+    val curvePath = remember { Path() }
+    val fillPath = remember { Path() }
+    val xCoords = remember { FloatArray(MAX_EQUALIZER_BANDS) }
+    val yCoords = remember { FloatArray(MAX_EQUALIZER_BANDS) }
+    val gradientColors =
+        remember(primaryColor) {
+            listOf(
+                primaryColor.copy(alpha = 0.25f),
+                primaryColor.copy(alpha = 0.02f),
+            )
+        }
 
     Canvas(modifier = modifier) {
         val width = size.width
@@ -1452,47 +1465,53 @@ fun EqualizerMiniCurveVisualizer(
             start = Offset(0f, midY),
             end = Offset(width, midY),
             strokeWidth = 1f,
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)),
+            pathEffect = dashEffect,
         )
 
-        if (bands.isEmpty()) return@Canvas
+        val bandCount = bands.size
+        if (bandCount == 0) return@Canvas
 
         val range = (MAX_EQUALIZER_GAIN_DB - MIN_EQUALIZER_GAIN_DB)
-        val points =
-            bands.mapIndexed { index, band ->
-                val x =
-                    if (bands.size > 1) {
-                        (index.toFloat() / (bands.size - 1)) * width
-                    } else {
-                        width / 2f
-                    }
-                val gainClamped = band.gainDb.coerceIn(MIN_EQUALIZER_GAIN_DB, MAX_EQUALIZER_GAIN_DB)
-                val normalized = (gainClamped - MIN_EQUALIZER_GAIN_DB) / range
-                val y = height - (normalized * height * 0.85f + height * 0.075f)
-                Offset(x, y)
-            }
+        val usableHeight = height * 0.85f
+        val bottomBase = height * 0.075f
+
+        for (i in 0 until bandCount) {
+            xCoords[i] =
+                if (bandCount > 1) {
+                    (i.toFloat() / (bandCount - 1)) * width
+                } else {
+                    width / 2f
+                }
+            val gainClamped = bands[i].gainDb.coerceIn(MIN_EQUALIZER_GAIN_DB, MAX_EQUALIZER_GAIN_DB)
+            val normalized = (gainClamped - MIN_EQUALIZER_GAIN_DB) / range
+            yCoords[i] = height - (normalized * usableHeight + bottomBase)
+        }
 
         // Build smooth curve path
-        val curvePath = Path()
-        val fillPath = Path()
+        curvePath.reset()
+        fillPath.reset()
 
-        curvePath.moveTo(points.first().x, points.first().y)
+        curvePath.moveTo(xCoords[0], yCoords[0])
         fillPath.moveTo(0f, midY)
-        fillPath.lineTo(points.first().x, points.first().y)
+        fillPath.lineTo(xCoords[0], yCoords[0])
 
-        for (i in 0 until points.size - 1) {
-            val p0 = points[maxOf(0, i - 1)]
-            val p1 = points[i]
-            val p2 = points[i + 1]
-            val p3 = points[minOf(points.size - 1, i + 2)]
+        for (i in 0 until bandCount - 1) {
+            val p0x = xCoords[maxOf(0, i - 1)]
+            val p0y = yCoords[maxOf(0, i - 1)]
+            val p1x = xCoords[i]
+            val p1y = yCoords[i]
+            val p2x = xCoords[i + 1]
+            val p2y = yCoords[i + 1]
+            val p3x = xCoords[minOf(bandCount - 1, i + 2)]
+            val p3y = yCoords[minOf(bandCount - 1, i + 2)]
 
-            val cp1x = p1.x + (p2.x - p0.x) / 6f
-            val cp1y = p1.y + (p2.y - p0.y) / 6f
-            val cp2x = p2.x - (p3.x - p1.x) / 6f
-            val cp2y = p2.y - (p3.y - p1.y) / 6f
+            val cp1x = p1x + (p2x - p0x) / 6f
+            val cp1y = p1y + (p2y - p0y) / 6f
+            val cp2x = p2x - (p3x - p1x) / 6f
+            val cp2y = p2y - (p3y - p1y) / 6f
 
-            curvePath.cubicTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
-            fillPath.cubicTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
+            curvePath.cubicTo(cp1x, cp1y, cp2x, cp2y, p2x, p2y)
+            fillPath.cubicTo(cp1x, cp1y, cp2x, cp2y, p2x, p2y)
         }
 
         fillPath.lineTo(width, midY)
@@ -1502,11 +1521,7 @@ fun EqualizerMiniCurveVisualizer(
             path = fillPath,
             brush =
                 Brush.verticalGradient(
-                    colors =
-                        listOf(
-                            primaryColor.copy(alpha = 0.25f),
-                            primaryColor.copy(alpha = 0.02f),
-                        ),
+                    colors = gradientColors,
                     startY = 0f,
                     endY = height,
                 ),

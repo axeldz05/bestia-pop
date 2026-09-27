@@ -169,6 +169,26 @@ class EqualizerSettingsTest {
     }
 
     @Test
+    fun dynamicEqualizerRule_matchesAlbumRuleWithFeaturedArtist() {
+        val trackWithFeatured =
+            TrackIdentity(
+                title = "Under Pressure",
+                artist = "Queen feat. David Bowie",
+                album = "Hot Space",
+            )
+        val albumRule =
+            DynamicEqualizerRule(
+                targetType = EqualizerTargetType.ALBUM,
+                targetKey =
+                    com.bestiapop.android.domain.util.TrackMatchKeys
+                        .composeKey("queen", "hot space"),
+                targetName = "Hot Space",
+                targetArtist = "Queen",
+            )
+        assertTrue("Album rule should match track with featured artist", albumRule.matchesTrack(trackWithFeatured))
+    }
+
+    @Test
     fun resolveActiveRule_respectsPrecedence() {
         val track =
             TrackIdentity(

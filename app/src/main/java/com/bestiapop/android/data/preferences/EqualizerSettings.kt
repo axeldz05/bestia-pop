@@ -3,6 +3,7 @@ package com.bestiapop.android.data.preferences
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.domain.util.MetadataSplitter
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.albumIdentityKey
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -41,6 +42,20 @@ enum class EqualizerTargetType(
     CUSTOM_PRESET("Preset"),
 }
 
+fun buildEqualizerBands(
+    bandCount: Int,
+    bandGainsDb: List<Float>,
+): List<EqualizerBand> {
+    val freqs = centerFrequenciesForBandCount(bandCount)
+    return freqs.mapIndexed { index, freq ->
+        EqualizerBand(
+            index = index,
+            centerFrequencyHz = freq,
+            gainDb = bandGainsDb.getOrElse(index) { 0f },
+        )
+    }
+}
+
 data class DynamicEqualizerRule(
     val id: String = UUID.randomUUID().toString(),
     val targetType: EqualizerTargetType,
@@ -52,17 +67,7 @@ data class DynamicEqualizerRule(
     val presetName: String = EQUALIZER_PRESET_CUSTOM,
     val createdAt: Long = System.currentTimeMillis(),
 ) {
-    val bands: List<EqualizerBand>
-        get() {
-            val freqs = centerFrequenciesForBandCount(bandCount)
-            return freqs.mapIndexed { index, freq ->
-                EqualizerBand(
-                    index = index,
-                    centerFrequencyHz = freq,
-                    gainDb = bandGainsDb.getOrElse(index) { 0f },
-                )
-            }
-        }
+    val bands: List<EqualizerBand> = buildEqualizerBands(bandCount, bandGainsDb)
 }
 
 data class EqualizerSettings(
@@ -73,17 +78,7 @@ data class EqualizerSettings(
     val presetName: String = EQUALIZER_PRESET_FLAT,
     val dynamicRules: List<DynamicEqualizerRule> = emptyList(),
 ) {
-    val bands: List<EqualizerBand>
-        get() {
-            val freqs = centerFrequenciesForBandCount(bandCount)
-            return freqs.mapIndexed { index, freq ->
-                EqualizerBand(
-                    index = index,
-                    centerFrequencyHz = freq,
-                    gainDb = bandGainsDb.getOrElse(index) { 0f },
-                )
-            }
-        }
+    val bands: List<EqualizerBand> = buildEqualizerBands(bandCount, bandGainsDb)
 }
 
 val EQUALIZER_PRESETS: List<EqualizerPreset> =
@@ -408,14 +403,45 @@ fun DynamicEqualizerRule.matchesTrack(track: TrackMeta?): Boolean {
     return when (targetType) {
         EqualizerTargetType.SONG -> {
             if (normTitle.isEmpty()) return false
-            val compositeKey = if (normArtist.isNotEmpty()) TrackMatchKeys.matchKey(normArtist, normTitle) else normTitle
+            val compositeKey = if (normArtist.isNotEmpty()) TrackMatchKeys.composeKey(normArtist, normTitle) else normTitle
             targetKey == compositeKey || (targetKey == normTitle && normArtist.isEmpty())
         }
 
         EqualizerTargetType.ALBUM -> {
             if (normAlbum.isEmpty()) return false
-            val compositeKey = if (normArtist.isNotEmpty()) TrackMatchKeys.matchKey(normArtist, normAlbum) else normAlbum
-            targetKey == compositeKey || (targetKey == normAlbum && normArtist.isEmpty())
+            val compositeKey = if (normArtist.isNotEmpty()) TrackMatchKeys.composeKey(normArtist, normAlbum) else normAlbum
+            if (targetKey == compositeKey || (targetKey == normAlbum && normArtist.isEmpty())) return true
+            // Support featured/collaborating artists on album tracks
+            val primaryArtist =
+                MetadataSplitter
+                    .splitArtists(artist)
+                    .firstOrNull()
+                    ?.trim()
+                    .orEmpty()
+            if (primaryArtist.isNotEmpty() && primaryArtist != artist) {
+                val primaryCompositeKey = TrackMatchKeys.composeKey(TrackMatchKeys.normalize(primaryArtist), normAlbum)
+                if (targetKey == primaryCompositeKey) return true
+            }
+            // Support canonical album identity
+            val identityAlbum = albumIdentityKey(album)
+            if (identityAlbum.isNotEmpty()) {
+                val albumOnlyKey = if (targetKey.contains('|')) targetKey.substringAfter('|') else targetKey
+                if (albumOnlyKey == normAlbum || albumOnlyKey == identityAlbum) {
+                    if (targetArtist.isBlank()) return true
+                    val rulePrimary =
+                        MetadataSplitter
+                            .splitArtists(targetArtist)
+                            .firstOrNull()
+                            ?.trim()
+                            .orEmpty()
+                    if (rulePrimary.isNotEmpty() &&
+                        (rulePrimary.equals(artist, ignoreCase = true) || rulePrimary.equals(primaryArtist, ignoreCase = true))
+                    ) {
+                        return true
+                    }
+                }
+            }
+            false
         }
 
         EqualizerTargetType.ARTIST -> {
@@ -469,13 +495,13 @@ fun createRuleForTarget(
         when (targetType) {
             EqualizerTargetType.SONG -> {
                 if (title.isBlank()) return null
-                val key = if (normArtist.isNotEmpty()) TrackMatchKeys.matchKey(normArtist, normTitle) else normTitle
+                val key = if (normArtist.isNotEmpty()) TrackMatchKeys.composeKey(normArtist, normTitle) else normTitle
                 Triple(key, title, artist)
             }
 
             EqualizerTargetType.ALBUM -> {
                 if (album.isBlank()) return null
-                val key = if (normArtist.isNotEmpty()) TrackMatchKeys.matchKey(normArtist, normAlbum) else normAlbum
+                val key = if (normArtist.isNotEmpty()) TrackMatchKeys.composeKey(normArtist, normAlbum) else normAlbum
                 Triple(key, album, artist)
             }
 

@@ -151,12 +151,28 @@ class MusicService : MediaLibraryService() {
 
         val playbackPreferences = PlaybackPreferencesRepository(this)
         serviceScope.launch {
+            var prevSettings: PlaybackSettings? = null
             playbackPreferences.settingsFlow.collectLatest { settings ->
+                val prev = prevSettings
                 latestPlaybackSettings = settings
-                applyEqualizer(settings)
-                applyStereoBalance(settings)
-                applyBoost(settings)
-                updateCrossfadeLoop(restart = true)
+                prevSettings = settings
+
+                if (prev == null || prev.equalizerSettings != settings.equalizerSettings) {
+                    applyEqualizer(settings)
+                }
+                if (prev == null || prev.stereoLeftGain != settings.stereoLeftGain || prev.stereoRightGain != settings.stereoRightGain) {
+                    applyStereoBalance(settings)
+                }
+                if (prev == null || prev.volumeBoostEnabled != settings.volumeBoostEnabled ||
+                    prev.volumeBoostAmount != settings.volumeBoostAmount
+                ) {
+                    applyBoost(settings)
+                }
+                if (prev == null || prev.crossfadeEnabled != settings.crossfadeEnabled ||
+                    prev.crossfadeDurationSeconds != settings.crossfadeDurationSeconds
+                ) {
+                    updateCrossfadeLoop(restart = true)
+                }
             }
         }
     }

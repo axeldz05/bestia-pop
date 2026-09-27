@@ -351,6 +351,7 @@ class PlaybackPreferencesRepository internal constructor(
     }
 
     suspend fun saveDynamicEqualizerRule(rule: DynamicEqualizerRule) {
+        var updatedRules: List<DynamicEqualizerRule> = emptyList()
         dataStore.edit { prefs ->
             val currentRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]).toMutableList()
             val index =
@@ -362,16 +363,25 @@ class PlaybackPreferencesRepository internal constructor(
             } else {
                 currentRules.add(0, rule)
             }
+            updatedRules = currentRules
             prefs[Keys.EQUALIZER_DYNAMIC_RULES] = encodeDynamicRules(currentRules)
         }
-        inMemoryEqualizerOverlay.value = null
+        val overlay = inMemoryEqualizerOverlay.value
+        if (overlay != null) {
+            inMemoryEqualizerOverlay.value = overlay.copy(dynamicRules = updatedRules)
+        }
     }
 
     suspend fun removeDynamicEqualizerRule(ruleId: String) {
+        var updatedRules: List<DynamicEqualizerRule> = emptyList()
         dataStore.edit { prefs ->
             val currentRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]).filterNot { it.id == ruleId }
+            updatedRules = currentRules
             prefs[Keys.EQUALIZER_DYNAMIC_RULES] = encodeDynamicRules(currentRules)
         }
-        inMemoryEqualizerOverlay.value = null
+        val overlay = inMemoryEqualizerOverlay.value
+        if (overlay != null) {
+            inMemoryEqualizerOverlay.value = overlay.copy(dynamicRules = updatedRules)
+        }
     }
 }

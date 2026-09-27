@@ -40,16 +40,21 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
         val a1: FloatArray,
         val a2: FloatArray,
         val isPassThrough: BooleanArray,
+        val hasActiveFilters: Boolean,
     )
 
     @Volatile
     var isEnabled: Boolean = false
+        set(value) {
+            val changed = field != value
+            field = value
+            if (changed && !value) {
+                clearFilterStates()
+            }
+        }
 
     @Volatile
     private var compiledBank: CompiledBiquadBank? = null
-
-    @Volatile
-    private var hasActiveFilters: Boolean = false
 
     private var currentSampleRate: Int = 44_100
 
@@ -92,7 +97,6 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
         val count = minOf(frequencies.size, gainsDb.size, MAX_SUPPORTED_BANDS)
         if (count == 0) {
             compiledBank = null
-            hasActiveFilters = false
             clearFilterStates()
             return
         }
@@ -138,8 +142,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                 a1 = a1,
                 a2 = a2,
                 isPassThrough = isPassThrough,
+                hasActiveFilters = nonPassThroughFound,
             )
-        hasActiveFilters = nonPassThroughFound
     }
 
     private fun calculatePeakingBiquad(
@@ -183,7 +187,7 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
         if (size == 0) return
 
         val bank = compiledBank
-        if (!isEnabled || !hasActiveFilters || bank == null || bank.bandCount == 0) {
+        if (!isEnabled || bank == null || !bank.hasActiveFilters || bank.bandCount == 0) {
             val output = replaceOutputBuffer(size)
             output.put(inputBuffer)
             output.flip()
@@ -202,9 +206,8 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
 
         when (channels) {
             1 -> {
-                var i = position
-                while (i < limit) {
-                    var sample = inputBuffer.getShort(i).toFloat()
+                while (inputBuffer.hasRemaining()) {
+                    var sample = inputBuffer.short.toFloat()
                     for (b in 0 until bandCount) {
                         if (pass[b]) continue
                         val out = b0[b] * sample + stateL1[b]
@@ -217,15 +220,13 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
                         sample = out
                     }
                     output.putShort(softSaturate(sample))
-                    i += 2
                 }
             }
 
             2 -> {
-                var i = position
-                while (i < limit) {
-                    var sampleL = inputBuffer.getShort(i).toFloat()
-                    var sampleR = inputBuffer.getShort(i + 2).toFloat()
+                while (inputBuffer.hasRemaining()) {
+                    var sampleL = inputBuffer.short.toFloat()
+                    var sampleR = inputBuffer.short.toFloat()
 
                     for (b in 0 until bandCount) {
                         if (pass[b]) continue
@@ -257,7 +258,6 @@ class EqualizerAudioProcessor : BaseAudioProcessor() {
 
                     output.putShort(softSaturate(sampleL))
                     output.putShort(softSaturate(sampleR))
-                    i += 4
                 }
             }
 

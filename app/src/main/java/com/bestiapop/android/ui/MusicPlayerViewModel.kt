@@ -1273,6 +1273,17 @@ class MusicPlayerViewModel(
     ): Boolean {
         val currentEq = playbackSettings.value.equalizerSettings
         val rule = createRuleForTarget(targetType, track, currentEq, customName) ?: return false
+        val currentRules = currentEq.dynamicRules.toMutableList()
+        val index =
+            currentRules.indexOfFirst {
+                it.id == rule.id || (it.targetType == rule.targetType && it.targetKey == rule.targetKey)
+            }
+        if (index >= 0) {
+            currentRules[index] = rule
+        } else {
+            currentRules.add(0, rule)
+        }
+        playbackPreferences.setEqualizerSettingsLive(currentEq.copy(dynamicRules = currentRules))
         persistPlayback { saveDynamicEqualizerRule(rule) }
         return true
     }

@@ -942,6 +942,11 @@ private fun EqualizerCurveVisualizer(
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)
     val zeroLineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
 
+    val strokePath = remember { Path() }
+    val fillPath = remember { Path() }
+    val xCoords = remember { FloatArray(MAX_EQUALIZER_BANDS) }
+    val yCoords = remember { FloatArray(MAX_EQUALIZER_BANDS) }
+
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
         shape = RoundedCornerShape(16.dp),
@@ -977,44 +982,41 @@ private fun EqualizerCurveVisualizer(
                 strokeWidth = 0.5.dp.toPx(),
             )
 
-            if (bands.isEmpty()) return@Canvas
-
             val bandCount = bands.size
-            val points =
-                bands.mapIndexed { index, band ->
-                    val x =
-                        if (bandCount == 1) {
-                            width / 2f
-                        } else {
-                            (index.toFloat() / (bandCount - 1)) * width
-                        }
-                    val normalized =
-                        (
-                            (band.gainDb - MIN_EQUALIZER_GAIN_DB) /
-                                (MAX_EQUALIZER_GAIN_DB - MIN_EQUALIZER_GAIN_DB)
-                        ).coerceIn(0f, 1f)
-                    val y = bottomY - normalized * (bottomY - topY)
-                    Offset(x, y)
-                }
+            if (bandCount == 0) return@Canvas
 
-            val path = Path()
-            path.moveTo(points.first().x, points.first().y)
+            val span = MAX_EQUALIZER_GAIN_DB - MIN_EQUALIZER_GAIN_DB
+            val heightRange = bottomY - topY
 
-            for (i in 0 until points.size - 1) {
-                val p0 = points[i]
-                val p1 = points[i + 1]
-                val midX = (p0.x + p1.x) / 2f
-                path.cubicTo(midX, p0.y, midX, p1.y, p1.x, p1.y)
+            for (i in 0 until bandCount) {
+                xCoords[i] =
+                    if (bandCount == 1) {
+                        width / 2f
+                    } else {
+                        (i.toFloat() / (bandCount - 1)) * width
+                    }
+                val normalized = ((bands[i].gainDb - MIN_EQUALIZER_GAIN_DB) / span).coerceIn(0f, 1f)
+                yCoords[i] = bottomY - normalized * heightRange
+            }
+
+            strokePath.reset()
+            strokePath.moveTo(xCoords[0], yCoords[0])
+
+            for (i in 0 until bandCount - 1) {
+                val x0 = xCoords[i]
+                val y0 = yCoords[i]
+                val x1 = xCoords[i + 1]
+                val y1 = yCoords[i + 1]
+                val midX = (x0 + x1) / 2f
+                strokePath.cubicTo(midX, y0, midX, y1, x1, y1)
             }
 
             // Translucent gradient fill beneath curve
-            val fillPath =
-                Path().apply {
-                    addPath(path)
-                    lineTo(points.last().x, bottomY)
-                    lineTo(points.first().x, bottomY)
-                    close()
-                }
+            fillPath.reset()
+            fillPath.addPath(strokePath)
+            fillPath.lineTo(xCoords[bandCount - 1], bottomY)
+            fillPath.lineTo(xCoords[0], bottomY)
+            fillPath.close()
 
             drawPath(
                 path = fillPath,
@@ -1032,17 +1034,17 @@ private fun EqualizerCurveVisualizer(
 
             // Smooth curve stroke
             drawPath(
-                path = path,
+                path = strokePath,
                 color = curveColor,
                 style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round),
             )
 
             // Dots for each band
-            for (pt in points) {
+            for (i in 0 until bandCount) {
                 drawCircle(
                     color = curveColor,
                     radius = 3.5.dp.toPx(),
-                    center = pt,
+                    center = Offset(xCoords[i], yCoords[i]),
                 )
             }
         }

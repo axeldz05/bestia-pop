@@ -156,7 +156,7 @@ class MusicService : MediaLibraryService() {
                 applyEqualizer(settings)
                 applyStereoBalance(settings)
                 applyBoost(settings)
-                updateCrossfadeLoop()
+                updateCrossfadeLoop(restart = true)
             }
         }
     }
@@ -460,7 +460,7 @@ class MusicService : MediaLibraryService() {
                     }
                 }
                 updateWakeMode()
-                updateCrossfadeLoop()
+                updateCrossfadeLoop(restart = true)
                 if (p.playWhenReady) {
                     if (!p.isPlaying || p.playbackState != Player.STATE_READY) {
                         acquireTransientWakeLock(10_000L)
@@ -475,7 +475,7 @@ class MusicService : MediaLibraryService() {
                 newPosition: Player.PositionInfo,
                 reason: Int,
             ) {
-                updateCrossfadeLoop()
+                updateCrossfadeLoop(restart = true)
             }
 
             override fun onTimelineChanged(
@@ -500,7 +500,7 @@ class MusicService : MediaLibraryService() {
             }
         }
 
-    private fun updateCrossfadeLoop() {
+    private fun updateCrossfadeLoop(restart: Boolean = false) {
         val p = player ?: return
         if (!latestPlaybackSettings.crossfadeEnabled) {
             crossfadeJob?.cancel()
@@ -524,7 +524,12 @@ class MusicService : MediaLibraryService() {
             }
             return
         }
-        if (crossfadeJob?.isActive == true) return
+        if (restart) {
+            crossfadeJob?.cancel()
+            crossfadeJob = null
+        } else if (crossfadeJob?.isActive == true) {
+            return
+        }
 
         crossfadeJob =
             serviceScope.launch {

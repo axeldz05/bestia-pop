@@ -13,6 +13,7 @@ import com.bestiapop.android.data.model.RepeatMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 private val Context.playbackDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -234,7 +235,7 @@ class PlaybackPreferencesRepository internal constructor(
                     ),
                 equalizerSettings = overlay ?: persistedEq,
             )
-        }
+        }.distinctUntilChanged()
 
     fun setEqualizerSettingsLive(settings: EqualizerSettings) {
         inMemoryEqualizerOverlay.value = settings
@@ -350,7 +351,6 @@ class PlaybackPreferencesRepository internal constructor(
     }
 
     suspend fun saveDynamicEqualizerRule(rule: DynamicEqualizerRule) {
-        inMemoryEqualizerOverlay.value = null
         dataStore.edit { prefs ->
             val currentRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]).toMutableList()
             val index =
@@ -364,13 +364,14 @@ class PlaybackPreferencesRepository internal constructor(
             }
             prefs[Keys.EQUALIZER_DYNAMIC_RULES] = encodeDynamicRules(currentRules)
         }
+        inMemoryEqualizerOverlay.value = null
     }
 
     suspend fun removeDynamicEqualizerRule(ruleId: String) {
-        inMemoryEqualizerOverlay.value = null
         dataStore.edit { prefs ->
             val currentRules = decodeDynamicRules(prefs[Keys.EQUALIZER_DYNAMIC_RULES]).filterNot { it.id == ruleId }
             prefs[Keys.EQUALIZER_DYNAMIC_RULES] = encodeDynamicRules(currentRules)
         }
+        inMemoryEqualizerOverlay.value = null
     }
 }

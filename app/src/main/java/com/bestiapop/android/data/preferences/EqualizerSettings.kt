@@ -481,7 +481,16 @@ fun createRuleForTarget(
 
             EqualizerTargetType.ARTIST -> {
                 if (artist.isBlank() || normArtist.isEmpty()) return null
-                Triple(normArtist, artist, "")
+                val primaryArtist =
+                    MetadataSplitter
+                        .splitArtists(artist)
+                        .firstOrNull()
+                        ?.trim()
+                        .takeUnless { it.isNullOrBlank() }
+                        ?: artist
+                val primaryNorm = TrackMatchKeys.normalize(primaryArtist)
+                if (primaryNorm.isEmpty()) return null
+                Triple(primaryNorm, primaryArtist, "")
             }
 
             EqualizerTargetType.CUSTOM_PRESET -> {

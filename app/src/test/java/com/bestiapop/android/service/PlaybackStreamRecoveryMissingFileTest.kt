@@ -490,5 +490,153 @@ class PlaybackStreamRecoveryMissingFileTest {
             assertTrue(coordinator.isCoveredError(unsupportedContainer, remote))
             assertTrue(coordinator.isCoveredError(malformedManifest, remote))
             assertTrue(coordinator.isCoveredError(unsupportedManifest, remote))
+
+            val timeoutError =
+                PlaybackException("Timeout", null, PlaybackException.ERROR_CODE_TIMEOUT)
+            assertTrue(coordinator.isCoveredError(timeoutError, remote))
+            val localSong = testSong(1L, "Local")
+            val localItem = PlayableItem.Local(localSong)
+            assertTrue(coordinator.isCoveredError(timeoutError, localItem))
+        }
+
+    @Test
+    fun consecutiveErrors_tripsCircuitBreakerAfterThreeFailures() =
+        testScope.runTest {
+            val song1 = testSong(1L, "Song 1")
+            val song2 = testSong(2L, "Song 2")
+            val song3 = testSong(3L, "Song 3")
+            val song4 = testSong(4L, "Song 4")
+            val local1 = PlayableItem.Local(song1, queueEntryId = "entry-1")
+            val local2 = PlayableItem.Local(song2, queueEntryId = "entry-2")
+            val local3 = PlayableItem.Local(song3, queueEntryId = "entry-3")
+            val local4 = PlayableItem.Local(song4, queueEntryId = "entry-4")
+
+            var queue = listOf<PlayableItem>(local1, local2, local3, local4)
+            val controller = TestController(queue)
+            var currentItem: PlayableItem? = local1
+            var playWhenReady = true
+            val emittedEvents = mutableListOf<String>()
+
+            val dependencies =
+                PlaybackRuntimeDependencies(
+                    scope = this,
+                    streamAccess =
+                        object : PlaybackRuntimeStreamAccess {
+                            override fun needsResolve(item: PlayableItem.Remote): Boolean = false
+
+                            override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? = item
+
+                            override suspend fun invalidate(item: PlayableItem.Remote) = Unit
+                        },
+                    isOnline = { true },
+                    hasPhysicalFile = { true },
+                    deleteMissingLocalSong = {},
+                    ioDispatcher = testDispatcher,
+                )
+
+            val coordinator =
+                PlaybackStreamRecoveryCoordinator(
+                    scope = this,
+                    dependencies = dependencies,
+                    getQueue = { queue },
+                    onUpdateQueue = { queue = it },
+                    getCurrentItem = { currentItem },
+                    onSetCurrentItem = { item, _, _ -> currentItem = item },
+                    getPlaybackPositionMs = { 0L },
+                    onSetPlaybackPositionMs = {},
+                    onSetIsPlaying = { controller.isPlayingVal = it },
+                    isPlayWhenReadyIntent = { playWhenReady },
+                    onSetPlayWhenReadyIntent = { playWhenReady = it },
+                    getController = { controller },
+                    setLastMediaItemIndex = { controller.currentIndex = it },
+                    onEmitEvent = { emittedEvents.add(it) },
+                    onCancelPendingPlayIntent = {},
+                    ensurePreparedForPlayback = { controller.prepare() },
+                    getPlaybackGeneration = { 1L },
+                )
+
+            // 1st failure
+            controller.currentIndex = 0
+            currentItem = local1
+            coordinator.recoverAfterUnplayable("Error 1")
+            assertEquals(1, coordinator.consecutiveUnplayableErrors)
+            assertTrue(playWhenReady)
+
+            // 2nd failure
+            controller.currentIndex = 1
+            currentItem = local2
+            coordinator.recoverAfterUnplayable("Error 2")
+            assertEquals(2, coordinator.consecutiveUnplayableErrors)
+            assertTrue(playWhenReady)
+
+            // 3rd failure: reaches limit (3) -> trips circuit breaker
+            controller.currentIndex = 2
+            currentItem = local3
+            coordinator.recoverAfterUnplayable("Error 3")
+            assertEquals(3, coordinator.consecutiveUnplayableErrors)
+            assertFalse("Playback intent must be stopped", playWhenReady)
+            assertFalse(controller.isPlaying)
+            assertTrue(emittedEvents.any { it.contains("Reproducción detenida tras varios errores seguidos") })
+        }
+
+    @Test
+    fun consecutiveErrors_resetOnSuccessfulPlaybackAndInvalidation() =
+        testScope.runTest {
+            val song1 = testSong(1L, "Song 1")
+            val local1 = PlayableItem.Local(song1, queueEntryId = "entry-1")
+            val queue = listOf<PlayableItem>(local1)
+            val controller = TestController(queue)
+
+            val dependencies =
+                PlaybackRuntimeDependencies(
+                    scope = this,
+                    streamAccess =
+                        object : PlaybackRuntimeStreamAccess {
+                            override fun needsResolve(item: PlayableItem.Remote): Boolean = false
+
+                            override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? = item
+
+                            override suspend fun invalidate(item: PlayableItem.Remote) = Unit
+                        },
+                    isOnline = { true },
+                    hasPhysicalFile = { true },
+                    deleteMissingLocalSong = {},
+                    ioDispatcher = testDispatcher,
+                )
+
+            val coordinator =
+                PlaybackStreamRecoveryCoordinator(
+                    scope = this,
+                    dependencies = dependencies,
+                    getQueue = { queue },
+                    onUpdateQueue = {},
+                    getCurrentItem = { local1 },
+                    onSetCurrentItem = { _, _, _ -> },
+                    getPlaybackPositionMs = { 0L },
+                    onSetPlaybackPositionMs = {},
+                    onSetIsPlaying = {},
+                    isPlayWhenReadyIntent = { true },
+                    onSetPlayWhenReadyIntent = {},
+                    getController = { controller },
+                    setLastMediaItemIndex = {},
+                    onEmitEvent = {},
+                    onCancelPendingPlayIntent = {},
+                    ensurePreparedForPlayback = {},
+                    getPlaybackGeneration = { 1L },
+                )
+
+            coordinator.recoverAfterUnplayable("Error 1")
+            assertEquals(1, coordinator.consecutiveUnplayableErrors)
+
+            // Progress resets error counter
+            coordinator.clearRejectedQueueEntries()
+            assertEquals(0, coordinator.consecutiveUnplayableErrors)
+
+            coordinator.recoverAfterUnplayable("Error 2")
+            assertEquals(1, coordinator.consecutiveUnplayableErrors)
+
+            // Invalidation resets error counter
+            coordinator.invalidatePlaybackWork(clearRejectedEntries = true)
+            assertEquals(0, coordinator.consecutiveUnplayableErrors)
         }
 }

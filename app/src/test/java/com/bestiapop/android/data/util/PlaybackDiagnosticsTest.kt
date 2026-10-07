@@ -88,10 +88,16 @@ class PlaybackDiagnosticsTest {
 
     @Test
     fun isHandledPlayerError_classifiesRecoverableErrors() {
-        // Local: only file not found is handled
+        // Local: file not found and timeout are handled
         assertTrue(
             PlaybackDiagnostics.isHandledPlayerError(
                 PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+                TrackKind.LOCAL,
+            ),
+        )
+        assertTrue(
+            PlaybackDiagnostics.isHandledPlayerError(
+                PlaybackException.ERROR_CODE_TIMEOUT,
                 TrackKind.LOCAL,
             ),
         )
@@ -102,7 +108,7 @@ class PlaybackDiagnosticsTest {
             ),
         )
 
-        // Remote: container/manifest parsing and network errors are handled
+        // Remote: container/manifest parsing, network errors, and timeout are handled
         assertTrue(
             PlaybackDiagnostics.isHandledPlayerError(
                 PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
@@ -136,6 +142,12 @@ class PlaybackDiagnosticsTest {
         assertTrue(
             PlaybackDiagnostics.isHandledPlayerError(
                 PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+                TrackKind.REMOTE,
+            ),
+        )
+        assertTrue(
+            PlaybackDiagnostics.isHandledPlayerError(
+                PlaybackException.ERROR_CODE_TIMEOUT,
                 TrackKind.REMOTE,
             ),
         )

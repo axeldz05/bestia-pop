@@ -84,6 +84,8 @@ internal class PlaybackStreamRecoveryCoordinator(
     private var remoteRecoveryDeadlineMs = 0L
     private var resolvingTransitionJob: Job? = null
     private var resolvingTransitionQueueEntryId: String? = null
+    internal var consecutiveUnplayableErrors: Int = 0
+        private set
 
     private val ensurePrepared: () -> Unit = ensurePreparedForPlayback
 
@@ -95,7 +97,8 @@ internal class PlaybackStreamRecoveryCoordinator(
         val code = error.errorCode
         if (code == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED ||
             code == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED ||
-            code == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+            code == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+            code == PlaybackException.ERROR_CODE_TIMEOUT
         ) {
             return true
         }
@@ -195,6 +198,7 @@ internal class PlaybackStreamRecoveryCoordinator(
     fun clearRejectedQueueEntries() {
         rejectedQueueEntries.clear()
         activeFailure = null
+        consecutiveUnplayableErrors = 0
     }
 
     fun cancelRemoteRecoveryJob() {
@@ -222,7 +226,10 @@ internal class PlaybackStreamRecoveryCoordinator(
         prefetchJob?.cancel()
         prefetchJob = null
         activeFailure = null
-        if (clearRejectedEntries) rejectedQueueEntries.clear()
+        if (clearRejectedEntries) {
+            rejectedQueueEntries.clear()
+            consecutiveUnplayableErrors = 0
+        }
     }
 
     fun unplayableRemoteMessage(remote: PlayableItem.Remote): String =
@@ -456,6 +463,17 @@ internal class PlaybackStreamRecoveryCoordinator(
         val index = player.currentMediaItemIndex.coerceIn(items.indices)
         val failed = items[index]
         rejectedQueueEntries += failed.queueEntryId
+        consecutiveUnplayableErrors++
+
+        if (consecutiveUnplayableErrors >= MAX_CONSECUTIVE_UNPLAYABLE_ERRORS) {
+            PlaybackDiagnostics.warn(
+                PlaybackDiagnostics.TAG_RUNTIME,
+                "recoverAfterUnplayable: exceeded max consecutive unplayable errors ($consecutiveUnplayableErrors), stopping playback",
+            )
+            pauseAfterConsecutiveErrorsExceeded(player)
+            return
+        }
+
         val nextIndex = (index + 1) % items.size
         resolvePlayableWithFallback(
             startIndex = nextIndex,
@@ -620,6 +638,18 @@ internal class PlaybackStreamRecoveryCoordinator(
             getController() === expectedController &&
             getCurrentItem()?.queueEntryId == triggerQueueEntryId
 
+    private fun pauseAfterConsecutiveErrorsExceeded(expectedController: PlaybackControllerFacade) {
+        if (getController() !== expectedController || !isPlayWhenReadyIntent()) return
+        onSetPlayWhenReadyIntent(false)
+        onCancelPendingPlayIntent()
+        expectedController.pause()
+        onEmitEvent("Reproducción detenida tras varios errores seguidos")
+        reportFallbackExhausted(
+            controller = expectedController,
+            reason = "consecutive_errors_exceeded",
+        )
+    }
+
     private fun pauseAfterFallbackExhausted(
         expectedController: PlaybackControllerFacade,
         firstFailureMessage: String?,
@@ -633,14 +663,19 @@ internal class PlaybackStreamRecoveryCoordinator(
         reportFallbackExhausted(expectedController)
     }
 
-    private fun reportFallbackExhausted(controller: PlaybackControllerFacade) {
+    private fun reportFallbackExhausted(
+        controller: PlaybackControllerFacade,
+        reason: String = "queue_exhausted",
+    ) {
         val failure = activeFailure
         val errorToReport: Throwable =
-            failure?.error ?: IllegalStateException("Playback fallback exhausted: no playable tracks in queue")
+            failure?.error ?: IllegalStateException("Playback fallback exhausted: $reason")
         val isExplicitUncovered = failure != null && !failure.isCovered && failure.error != null
         val contextKeys =
             mutableMapOf(
                 "playback_phase" to "fallback_exhausted",
+                "exhaustion_reason" to reason,
+                "consecutive_unplayable_errors" to consecutiveUnplayableErrors.toString(),
                 "queue_size" to getQueue().size.toString(),
                 "queue_index" to controller.currentMediaItemIndex.toString(),
                 "is_covered" to (!isExplicitUncovered).toString(),
@@ -701,5 +736,6 @@ internal class PlaybackStreamRecoveryCoordinator(
 
     companion object {
         private const val REMOTE_RECOVERY_RETRY_MS = 600L
+        internal const val MAX_CONSECUTIVE_UNPLAYABLE_ERRORS = 3
     }
 }

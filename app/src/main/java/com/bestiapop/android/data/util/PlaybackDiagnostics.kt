@@ -119,7 +119,8 @@ object PlaybackDiagnostics {
     ): Boolean =
         when (kind) {
             TrackKind.LOCAL -> {
-                errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
+                errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
+                    errorCode == PlaybackException.ERROR_CODE_TIMEOUT
             }
 
             TrackKind.REMOTE -> {
@@ -131,7 +132,8 @@ object PlaybackDiagnostics {
                     errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
                     errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
                     errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
-                    errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED
+                    errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ||
+                    errorCode == PlaybackException.ERROR_CODE_TIMEOUT
             }
 
             TrackKind.NONE -> {

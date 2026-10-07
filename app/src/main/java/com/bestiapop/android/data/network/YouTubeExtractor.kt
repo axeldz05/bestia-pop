@@ -240,6 +240,10 @@ object YouTubeExtractor {
         Regex(
             """(?i)\b(?:(?:best|end|intro|first|second)\s+part|looped?|loop|parts?|snippet|shorts?|clip|preview|sample|edit|sped\s*up|slowed(?:\s*\+\s*reverb)?|nightcore|reverb|8d\s*audio|ringtone)\b""",
         )
+    private val FULL_ALBUM_TITLE =
+        Regex(
+            """(?i)(?:\[(?:full\s+)?album\]|\bfull\s+album\b|\balbum\s+completo\b|\bdisco\s+completo\b|\bálbum\s+completo\b|\bcomplete\s+album\b|\b(?:full\s+)?discograph(?:y|ia)\b|전곡\s*(?:듣기)?|\bcomplete\s+ost\b|\bfull\s+ost\b|\b(?:all\s+tracks|full\s+tape)\b)""",
+        )
 
     private val YOUTUBE_ID_EXACT_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{11}$")
     private val YOUTUBE_URL_PATTERN =
@@ -374,6 +378,10 @@ object YouTubeExtractor {
             score -= 200
         }
 
+        if (FULL_ALBUM_TITLE.containsMatchIn(title)) {
+            score -= 350
+        }
+
         // YouTube Music auto-generated uploads are typically album/single audio only.
         if (author.endsWith(" - topic") || author.contains(" - topic")) score += 100
 
@@ -395,6 +403,9 @@ object YouTubeExtractor {
             if (candidateDurationMs < expectedDurationMs * 0.70) {
                 // Fragment, snippet, or short cut (e.g. 143s vs 282s)
                 score -= 180
+            } else if (candidateDurationMs > expectedDurationMs * 2.5) {
+                // Extreme mismatch (e.g. 5m track vs 15m+ / 1h album)
+                score -= 300
             } else if (candidateDurationMs > expectedDurationMs * 1.35) {
                 // Extended / 1-hour loop / full album / stream
                 score -= 180
@@ -406,6 +417,14 @@ object YouTubeExtractor {
                 score += 25
             } else if (diffMs > 60_000L) {
                 score -= 80
+            }
+        } else if (expectedDurationMs == 0L && candidateDurationMs > 0L) {
+            if (candidateDurationMs >= 45 * 60 * 1000L) {
+                score -= 400
+            } else if (candidateDurationMs >= 20 * 60 * 1000L) {
+                score -= 250
+            } else if (candidateDurationMs >= 15 * 60 * 1000L) {
+                score -= 120
             }
         }
 
@@ -437,7 +456,9 @@ object YouTubeExtractor {
         }
 
         // Multi-signal: Expected album bonus
-        if (!expectedAlbum.isNullOrBlank() && !IdentifyRanking.isGenericAlbum(expectedAlbum)) {
+        if (!expectedAlbum.isNullOrBlank() && !IdentifyRanking.isGenericAlbum(expectedAlbum) &&
+            !FULL_ALBUM_TITLE.containsMatchIn(title)
+        ) {
             val albumNorm = TrackMatchKeys.normalize(expectedAlbum)
             val tNorm = TrackMatchKeys.normalize(rawTitle)
             if (albumNorm.length >= 3 && tNorm.contains(albumNorm)) {

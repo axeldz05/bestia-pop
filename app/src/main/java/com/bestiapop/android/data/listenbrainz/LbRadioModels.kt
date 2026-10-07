@@ -28,8 +28,17 @@ data class LbRecordingMetadata(
             artist: String,
             album: String = "",
             recordingMbid: String,
+            durationMs: Long = 0L,
+            artworkUri: String? = null,
         ) = LbRecordingMetadata(
-            identity = TrackIdentity(title = title, artist = artist, album = album),
+            identity =
+                TrackIdentity(
+                    title = title,
+                    artist = artist,
+                    album = album,
+                    durationMs = durationMs,
+                    artworkUri = artworkUri,
+                ),
             recordingMbid = recordingMbid,
         )
     }

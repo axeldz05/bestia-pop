@@ -62,7 +62,7 @@ class ListenBrainzRadioParseTest {
                 """
                 {
                   "e97f805a-ab48-4c52-855e-07049142113d": {
-                    "recording": { "name": "Glory Box", "rels": [] },
+                    "recording": { "name": "Glory Box", "length": 307000, "rels": [] },
                     "artist": { "name": "Portishead" },
                     "release": { "name": "Dummy" }
                   }
@@ -75,6 +75,7 @@ class ListenBrainzRadioParseTest {
         assertEquals("Glory Box", meta.title)
         assertEquals("Portishead", meta.artist)
         assertEquals("Dummy", meta.album)
+        assertEquals(307000L, meta.durationMs)
     }
 
     @Test

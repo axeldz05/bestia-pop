@@ -659,6 +659,10 @@ object ListenBrainzClient {
             val recordingMbid = extractRecordingMbid(trackObj.opt("identifier"))
             val releaseName = trackObj.optString("album").takeIf { it.isNotBlank() }
             val artworkUri = extractTrackArtwork(trackObj)
+            val durationMs =
+                trackObj.optLong("duration", 0L).takeIf { it > 0L }
+                    ?: (trackObj.optDouble("duration", 0.0) * 1000).toLong().takeIf { it > 0L }
+                    ?: 0L
             tracks.add(
                 LbPlaylistTrack(
                     identity =
@@ -667,6 +671,7 @@ object ListenBrainzClient {
                             artist = artist.ifBlank { "Unknown Artist" },
                             album = releaseName.orEmpty(),
                             artworkUri = artworkUri,
+                            durationMs = durationMs,
                         ),
                     recordingMbid = recordingMbid,
                 ),
@@ -923,6 +928,11 @@ object ListenBrainzClient {
                 releaseMbid?.let(::coverArtArchiveUrl)
                     ?: entry.optString("cover_art_url").takeIf { it.isNotBlank() }
                     ?: entry.optString("artwork_url").takeIf { it.isNotBlank() }
+            val durationMs =
+                recordingObj?.optLong("length", 0L)?.takeIf { it > 0L }
+                    ?: entry.optLong("length", 0L).takeIf { it > 0L }
+                    ?: entry.optJSONObject("additional_info")?.optLong("duration_ms", 0L)?.takeIf { it > 0L }
+                    ?: 0L
             result[mbid] =
                 LbRecordingMetadata(
                     identity =
@@ -931,6 +941,7 @@ object ListenBrainzClient {
                             artist = artist,
                             album = releaseName.orEmpty(),
                             artworkUri = artworkUri,
+                            durationMs = durationMs,
                         ),
                     recordingMbid = mbid,
                 )

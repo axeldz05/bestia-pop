@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit
 data class DeezerArtistHit(
     val id: Long,
     val pictureUrl: String?,
+    val name: String? = null,
 )
 
 internal data class MetadataFetcherEndpoints(
@@ -380,8 +381,15 @@ object MetadataFetcher {
                 if (isExactCase) score += 50.0
             } else if (cleanCand.startsWith(cleanQuery, ignoreCase = true) || cleanQuery.startsWith(cleanCand, ignoreCase = true)) {
                 score += 200.0
+            } else {
+                val transQuery = NaturalTextOrder.transliterateToLatin(cleanQuery)
+                val transCand = NaturalTextOrder.transliterateToLatin(cleanCand)
+                if (transQuery.isNotBlank() && transCand.isNotBlank() && transQuery.equals(transCand, ignoreCase = true)) {
+                    score += 500.0
+                }
             }
 
+            score += maxOf(0.0, 50.0 - (i * 5.0))
             score += kotlin.math.ln((nbFan + 1).toDouble()) * 20.0
             score += minOf(nbAlbum, 100) * 2.0
 
@@ -391,6 +399,7 @@ object MetadataFetcher {
                     DeezerArtistHit(
                         id = id,
                         pictureUrl = pickCoverUrl(item.optString("picture_xl"), item.optString("picture_big")),
+                        name = candidateName.takeIf { it.isNotBlank() },
                     )
             }
         }
@@ -1002,7 +1011,7 @@ object MetadataFetcher {
             if (cleanArtist.isEmpty()) return@withContext ArtistDiscography()
             val artistHit =
                 if (deezerArtistId != null && deezerArtistId > 0L) {
-                    DeezerArtistHit(id = deezerArtistId, pictureUrl = null)
+                    DeezerArtistHit(id = deezerArtistId, pictureUrl = null, name = cleanArtist)
                 } else {
                     searchDeezerArtist(cleanArtist)
                 }
@@ -1221,11 +1230,28 @@ object MetadataFetcher {
             .replace(Regex("[^\\p{L}\\p{Nd}]+"), " ")
             .trim()
 
-    private fun isAlbumMatching(
+    internal fun isArtistMatching(
+        a: String,
+        b: String,
+    ): Boolean {
+        if (a == b) return true
+        if (a.contains(b) || b.contains(a)) return true
+        if (TrackMatchKeys.normalize(a) == TrackMatchKeys.normalize(b)) return true
+        val transA = NaturalTextOrder.transliterateToLatin(a)
+        val transB = NaturalTextOrder.transliterateToLatin(b)
+        if (transA.isNotBlank() && transB.isNotBlank()) {
+            if (transA.equals(transB, ignoreCase = true)) return true
+            if (transA.contains(transB, ignoreCase = true) || transB.contains(transA, ignoreCase = true)) return true
+        }
+        return false
+    }
+
+    internal fun isAlbumMatching(
         candidateTitle: String,
         candidateArtist: String,
         targetTitle: String,
         targetArtist: String,
+        artistAlias: String? = null,
     ): Boolean {
         val cTitle = normalizeTextForComparison(candidateTitle)
         val tTitle = normalizeTextForComparison(targetTitle)
@@ -1233,14 +1259,11 @@ object MetadataFetcher {
 
         val cArtist = normalizeTextForComparison(candidateArtist)
         val tArtist = normalizeTextForComparison(targetArtist)
+        val alias = artistAlias?.let { normalizeTextForComparison(it) }?.takeIf { it.isNotBlank() }
         if (cArtist.isNotBlank() && tArtist.isNotBlank()) {
-            val artistMatch =
-                cArtist == tArtist ||
-                    cArtist.contains(tArtist) ||
-                    tArtist.contains(cArtist) ||
-                    TrackMatchKeys.normalize(cArtist) == TrackMatchKeys.normalize(tArtist) ||
-                    NaturalTextOrder.transliterateToLatin(cArtist).equals(NaturalTextOrder.transliterateToLatin(tArtist), ignoreCase = true)
-            if (!artistMatch) return false
+            val matchesTarget = isArtistMatching(cArtist, tArtist)
+            val matchesAlias = alias != null && (isArtistMatching(cArtist, alias) || isArtistMatching(tArtist, alias))
+            if (!matchesTarget && !matchesAlias) return false
         }
 
         val cleanCandidate = cTitle.removeSuffix(" ep").removeSuffix(" single").trim()
@@ -1262,14 +1285,26 @@ object MetadataFetcher {
     private fun searchDeezerAlbum(
         cleanArtist: String,
         cleanAlbum: String,
+        artistAlias: String? = null,
     ): Pair<String, String?>? {
         val artistQuery = cleanArtist.trimEnd('.', ' ', '-', ':')
         val query = if (artistQuery.isNotBlank()) "artist:\"$artistQuery\" album:\"$cleanAlbum\"" else "album:\"$cleanAlbum\""
         var url = endpoint(endpoints.deezerBaseUrl, "search/album?q=${encodeQuery(query)}&limit=5")
         var data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+        if ((data == null || data.length() == 0) && !artistAlias.isNullOrBlank()) {
+            val aliasQuery = artistAlias.trimEnd('.', ' ', '-', ':')
+            val aliasSearchQuery = "artist:\"$aliasQuery\" album:\"$cleanAlbum\""
+            url = endpoint(endpoints.deezerBaseUrl, "search/album?q=${encodeQuery(aliasSearchQuery)}&limit=5")
+            data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+        }
         if (data == null || data.length() == 0) {
             val fallbackQuery = if (artistQuery.isNotBlank()) "$artistQuery $cleanAlbum" else cleanAlbum
             url = endpoint(endpoints.deezerBaseUrl, "search/album?q=${encodeQuery(fallbackQuery)}&limit=5")
+            data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+        }
+        if ((data == null || data.length() == 0) && !artistAlias.isNullOrBlank()) {
+            val aliasFallbackQuery = "${artistAlias.trim()} $cleanAlbum"
+            url = endpoint(endpoints.deezerBaseUrl, "search/album?q=${encodeQuery(aliasFallbackQuery)}&limit=5")
             data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
         }
         val transAlbum = NaturalTextOrder.transliterateToLatin(cleanAlbum)
@@ -1285,7 +1320,14 @@ object MetadataFetcher {
             val title = obj.optString("title").trim()
             val artistObj = obj.optJSONObject("artist")
             val artist = artistObj?.optString("name").orEmpty().trim()
-            if (isAlbumMatching(candidateTitle = title, candidateArtist = artist, targetTitle = cleanAlbum, targetArtist = cleanArtist)) {
+            if (isAlbumMatching(
+                    candidateTitle = title,
+                    candidateArtist = artist,
+                    targetTitle = cleanAlbum,
+                    targetArtist = cleanArtist,
+                    artistAlias = artistAlias,
+                )
+            ) {
                 val id = obj.optLong("id").takeIf { it > 0 }?.toString() ?: continue
                 val cover = pickCoverUrl(obj.optString("cover_xl"), obj.optString("cover_big"))
                 return Pair(id, cover)
@@ -1298,6 +1340,7 @@ object MetadataFetcher {
         results: JSONArray?,
         cleanArtist: String,
         cleanAlbum: String,
+        artistAlias: String? = null,
     ): Pair<Long, String?>? {
         if (results == null || results.length() == 0) return null
         for (i in 0 until results.length()) {
@@ -1311,6 +1354,7 @@ object MetadataFetcher {
                     candidateArtist = artistName,
                     targetTitle = cleanAlbum,
                     targetArtist = cleanArtist,
+                    artistAlias = artistAlias,
                 )
             ) {
                 val artwork = normalizeItunesArtwork(obj.optString("artworkUrl100"))
@@ -1464,14 +1508,49 @@ object MetadataFetcher {
             val cleanArtist = cleanArtist(artistName)
             val cleanAlbum = albumTitle.trim()
             var effectiveCoverUrl = albumCoverUrl
+            var effectiveAlbumId = albumId
 
-            var deezerTracks = emptyList<CatalogTrackCandidate>()
-            if (albumId.isNotBlank() && albumId.all { it.isDigit() }) {
+            val artistHit = if (cleanArtist.isNotBlank()) searchDeezerArtist(cleanArtist) else null
+            val artistAlias = artistHit?.name?.takeIf { !it.equals(cleanArtist, ignoreCase = true) }
+            val preferredArtist = artistHit?.name ?: cleanArtist
+
+            if (effectiveAlbumId.isBlank() && artistHit != null && artistHit.id > 0L) {
                 try {
                     val url =
                         endpoint(
                             endpoints.deezerBaseUrl,
-                            "album/$albumId",
+                            "artist/${artistHit.id}/albums?limit=50",
+                        )
+                    val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+                    val artistAlbums = parseDeezerAlbums(data, defaultArtist = preferredArtist)
+                    val match =
+                        artistAlbums.firstOrNull { album ->
+                            isAlbumMatching(
+                                candidateTitle = album.title,
+                                candidateArtist = album.artist,
+                                targetTitle = cleanAlbum,
+                                targetArtist = cleanArtist,
+                                artistAlias = artistAlias,
+                            )
+                        }
+                    if (match != null && match.id.isNotBlank()) {
+                        effectiveAlbumId = match.id
+                        if (effectiveCoverUrl == null) {
+                            effectiveCoverUrl = match.coverUrl
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            var deezerTracks = emptyList<CatalogTrackCandidate>()
+            if (effectiveAlbumId.isNotBlank() && effectiveAlbumId.all { it.isDigit() }) {
+                try {
+                    val url =
+                        endpoint(
+                            endpoints.deezerBaseUrl,
+                            "album/$effectiveAlbumId",
                         )
                     val albumData = getJson(url, userAgent = "Mozilla/5.0")
                     if (effectiveCoverUrl == null && albumData != null) {
@@ -1480,10 +1559,10 @@ object MetadataFetcher {
                     val tracksData =
                         albumData?.optJSONObject("tracks")?.optJSONArray("data")
                             ?: getJson(
-                                endpoint(endpoints.deezerBaseUrl, "album/$albumId/tracks?limit=100"),
+                                endpoint(endpoints.deezerBaseUrl, "album/$effectiveAlbumId/tracks?limit=100"),
                                 userAgent = "Mozilla/5.0",
                             )?.optJSONArray("data")
-                    deezerTracks = parseDeezerAlbumTracks(tracksData, cleanAlbum, cleanArtist, effectiveCoverUrl)
+                    deezerTracks = parseDeezerAlbumTracks(tracksData, cleanAlbum, preferredArtist, effectiveCoverUrl)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -1491,20 +1570,20 @@ object MetadataFetcher {
 
             if (deezerTracks.isEmpty() && cleanAlbum.isNotBlank()) {
                 try {
-                    val deezerMatch = searchDeezerAlbum(cleanArtist, cleanAlbum)
+                    val deezerMatch = searchDeezerAlbum(cleanArtist, cleanAlbum, artistAlias = artistAlias)
                     if (deezerMatch != null) {
                         val deezerAlbumId = deezerMatch.first
                         if (effectiveCoverUrl == null) {
                             effectiveCoverUrl = deezerMatch.second
                         }
-                        if (deezerAlbumId != albumId) {
+                        if (deezerAlbumId != effectiveAlbumId) {
                             val url =
                                 endpoint(
                                     endpoints.deezerBaseUrl,
                                     "album/$deezerAlbumId/tracks?limit=100",
                                 )
                             val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
-                            deezerTracks = parseDeezerAlbumTracks(data, cleanAlbum, cleanArtist, effectiveCoverUrl)
+                            deezerTracks = parseDeezerAlbumTracks(data, cleanAlbum, preferredArtist, effectiveCoverUrl)
                         }
                     }
                 } catch (e: Exception) {
@@ -1525,7 +1604,7 @@ object MetadataFetcher {
                     if (effectiveCoverUrl == null && itunesCover != null) {
                         effectiveCoverUrl = itunesCover
                     }
-                    itunesTracks = parseItunesAlbumLookupTracks(results, cleanAlbum, cleanArtist, effectiveCoverUrl)
+                    itunesTracks = parseItunesAlbumLookupTracks(results, cleanAlbum, preferredArtist, effectiveCoverUrl)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -1541,7 +1620,19 @@ object MetadataFetcher {
                             "search?term=${encodeQuery(queryTerm)}&entity=album&limit=5",
                         )
                     val results = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("results")
-                    var itunesMatch = findMatchingItunesCollection(results, cleanArtist, cleanAlbum)
+                    var itunesMatch = findMatchingItunesCollection(results, cleanArtist, cleanAlbum, artistAlias = artistAlias)
+
+                    if (itunesMatch == null && !artistAlias.isNullOrBlank()) {
+                        val aliasQuery = artistAlias.trimEnd('.', ' ', '-', ':')
+                        val aliasTerm = if (aliasQuery.isNotBlank()) "$aliasQuery $cleanAlbum" else cleanAlbum
+                        val aliasUrl =
+                            endpoint(
+                                endpoints.itunesBaseUrl,
+                                "search?term=${encodeQuery(aliasTerm)}&entity=album&limit=5",
+                            )
+                        val aliasResults = getJson(aliasUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
+                        itunesMatch = findMatchingItunesCollection(aliasResults, cleanArtist, cleanAlbum, artistAlias = artistAlias)
+                    }
 
                     val transAlbum = NaturalTextOrder.transliterateToLatin(cleanAlbum)
                     if (itunesMatch == null && transAlbum.isNotBlank() && transAlbum != cleanAlbum) {
@@ -1552,7 +1643,7 @@ object MetadataFetcher {
                                 "search?term=${encodeQuery(transQuery)}&entity=album&limit=5",
                             )
                         val transResults = getJson(transUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
-                        itunesMatch = findMatchingItunesCollection(transResults, cleanArtist, cleanAlbum)
+                        itunesMatch = findMatchingItunesCollection(transResults, cleanArtist, cleanAlbum, artistAlias = artistAlias)
                     }
 
                     if (itunesMatch == null) {
@@ -1562,7 +1653,7 @@ object MetadataFetcher {
                                 "search?term=${encodeQuery(queryTerm)}&entity=album&country=JP&limit=5",
                             )
                         val jpResults = getJson(jpUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
-                        itunesMatch = findMatchingItunesCollection(jpResults, cleanArtist, cleanAlbum)
+                        itunesMatch = findMatchingItunesCollection(jpResults, cleanArtist, cleanAlbum, artistAlias = artistAlias)
                     }
 
                     if (itunesMatch != null) {
@@ -1577,7 +1668,7 @@ object MetadataFetcher {
                                     "lookup?id=$itunesCollectionId&entity=song&limit=100",
                                 )
                             val lookupResults = getJson(lookupUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
-                            itunesTracks = parseItunesAlbumLookupTracks(lookupResults, cleanAlbum, cleanArtist, effectiveCoverUrl)
+                            itunesTracks = parseItunesAlbumLookupTracks(lookupResults, cleanAlbum, preferredArtist, effectiveCoverUrl)
                         }
                     }
                 } catch (e: Exception) {

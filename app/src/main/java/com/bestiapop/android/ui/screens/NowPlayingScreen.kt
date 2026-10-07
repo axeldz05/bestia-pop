@@ -251,11 +251,12 @@ fun NowPlayingScreen(
         matchedArtist?.name ?: item.artist.takeIf { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
 
     val navigateToAlbum: (String) -> Unit = { name ->
-        val local = matchedAlbum ?: viewModel.findMatchingLocalAlbum(name, item.artist)
+        val targetArtist = effectiveArtistName ?: item.artist
+        val local = matchedAlbum ?: viewModel.findMatchingLocalAlbum(name, targetArtist)
         if (local != null) {
-            goToLibrary { viewModel.openAlbum(name, item.artist, item.artworkUri) }
+            goToLibrary { viewModel.openAlbum(name, targetArtist, item.artworkUri) }
         } else {
-            goToDiscover { viewModel.openAlbum(name, item.artist, item.artworkUri) }
+            goToDiscover { viewModel.openAlbum(name, targetArtist, item.artworkUri) }
         }
     }
 

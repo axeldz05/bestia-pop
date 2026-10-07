@@ -43,6 +43,7 @@ class CatalogInspectionCoordinator(
         selectCollectionForInspection(
             selectionKey = key,
             title = title,
+            artist = artist.takeIf { it.isNotBlank() },
             kind = CatalogCollectionKind.ALBUM,
             coverUrl = coverUrl,
         ) {
@@ -144,6 +145,7 @@ class CatalogInspectionCoordinator(
     private fun selectCollectionForInspection(
         selectionKey: String,
         title: String,
+        artist: String? = null,
         kind: CatalogCollectionKind,
         coverUrl: String?,
         fetch: suspend () -> List<CatalogTrackCandidate>,
@@ -157,6 +159,7 @@ class CatalogInspectionCoordinator(
             CatalogCollectionUiState(
                 selectionKey = requestKey,
                 title = title,
+                artist = artist,
                 kind = kind,
                 coverUrl = coverUrl,
                 parent = parent,
@@ -167,7 +170,13 @@ class CatalogInspectionCoordinator(
                 val candidates = fetch()
                 updateCatalogCollection(requestKey) { state ->
                     val resolvedCover = state.coverUrl ?: candidates.firstArtworkUri()
-                    state.copy(candidates = candidates, coverUrl = resolvedCover, isLoading = false)
+                    val resolvedArtist = candidates.firstOrNull()?.artist?.takeIf { it.isNotBlank() } ?: state.artist
+                    state.copy(
+                        candidates = candidates,
+                        coverUrl = resolvedCover,
+                        artist = resolvedArtist,
+                        isLoading = false,
+                    )
                 }
             }
     }

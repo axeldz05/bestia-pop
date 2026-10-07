@@ -65,6 +65,7 @@ enum class CatalogCollectionKind {
 data class CatalogCollectionUiState(
     val selectionKey: String? = null,
     val title: String? = null,
+    val artist: String? = null,
     val kind: CatalogCollectionKind? = null,
     val coverUrl: String? = null,
     val candidates: List<CatalogTrackCandidate> = emptyList(),

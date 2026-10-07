@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.TrackIdentity
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -142,5 +143,80 @@ class ArtistDiscographyRankingTest {
         assertTrue(appearedTitles.contains("Indie Compilation 2024"))
         assertTrue(appearedTitles.contains("The Thread"))
         assertEquals(3, appearedOn.size)
+    }
+
+    @Test
+    fun testSelectBestArtistHit_preservesArtistName() {
+        val jsonArray =
+            JSONArray(
+                """
+                [
+                    {"id": 130058152, "name": "Parannoul", "nb_fan": 3150, "nb_album": 18}
+                ]
+                """.trimIndent(),
+            )
+
+        val hit = MetadataFetcher.selectBestArtistHit(jsonArray, "파란노을")
+        assertNotNull(hit)
+        assertEquals(130058152L, hit?.id)
+        assertEquals("Parannoul", hit?.name)
+    }
+
+    @Test
+    fun testIsAlbumMatching_bilingualAliasMatches() {
+        // Without alias, "Parannoul" vs "파란노을" does not match due to slight transliteration variance
+        assertFalse(
+            MetadataFetcher.isAlbumMatching(
+                candidateTitle = "To See the Next Part of the Dream",
+                candidateArtist = "Parannoul",
+                targetTitle = "To See the Next Part of the Dream",
+                targetArtist = "파란노을",
+                artistAlias = null,
+            ),
+        )
+
+        // With alias resolved from catalog (e.g. Parannoul), it matches
+        assertTrue(
+            MetadataFetcher.isAlbumMatching(
+                candidateTitle = "To See the Next Part of the Dream",
+                candidateArtist = "Parannoul",
+                targetTitle = "To See the Next Part of the Dream",
+                targetArtist = "파란노을",
+                artistAlias = "Parannoul",
+            ),
+        )
+
+        // Symmetrically, target Parannoul with candidate 파란노을 and alias 파란노을 matches
+        assertTrue(
+            MetadataFetcher.isAlbumMatching(
+                candidateTitle = "To See the Next Part of the Dream",
+                candidateArtist = "파란노을",
+                targetTitle = "To See the Next Part of the Dream",
+                targetArtist = "Parannoul",
+                artistAlias = "파란노을",
+            ),
+        )
+    }
+
+    @Test
+    fun testIsAlbumMatching_rejectsMismatchedArtistEvenWithAlias() {
+        assertFalse(
+            MetadataFetcher.isAlbumMatching(
+                candidateTitle = "To See the Next Part of the Dream",
+                candidateArtist = "Asian Glow",
+                targetTitle = "To See the Next Part of the Dream",
+                targetArtist = "파란노을",
+                artistAlias = "Parannoul",
+            ),
+        )
+    }
+
+    @Test
+    fun testIsArtistMatching_handlesExactAndTransliteration() {
+        assertTrue(MetadataFetcher.isArtistMatching("Parannoul", "Parannoul"))
+        assertTrue(MetadataFetcher.isArtistMatching("Asian Kung-Fu Generation", "Asian Kung-Fu Generation"))
+        // Transliteration exact match (e.g. Cyrillic)
+        assertTrue(MetadataFetcher.isArtistMatching("Kino", "Кино"))
+        assertFalse(MetadataFetcher.isArtistMatching("Taylor Swift", "Kanye West"))
     }
 }

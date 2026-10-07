@@ -192,6 +192,7 @@ fun DiscoverScreen(
                             albumStatus = albumStatus,
                             currentItem = currentItem,
                             actions = collectionActions,
+                            artist = catalogCollection.artist,
                         )
                     }
                 }

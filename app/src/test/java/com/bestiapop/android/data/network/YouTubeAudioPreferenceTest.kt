@@ -247,4 +247,106 @@ class YouTubeAudioPreferenceTest {
             matchingScore > irrelevantScore + 200,
         )
     }
+
+    @Test
+    fun audioPreferenceScore_severelyPenalizesFullAlbumUploads() {
+        val targetTrack =
+            com.bestiapop.android.data.model.TrackIdentity(
+                title = "To See the Next Part of the Dream",
+                artist = "파란노을",
+                album = "To See the Next Part of the Dream",
+                durationMs = 307_000L,
+            )
+
+        val fullAlbumScoreWithExpectedDuration =
+            YouTubeExtractor.audioPreferenceScore(
+                rawTitle = "[Full Album] 파란노을 (Parannoul) - To See the Next Part of the Dream / 앨범 전곡 듣기",
+                rawAuthor = "POCLANOS",
+                candidateDurationMs = 3_699_000L,
+                expected = targetTrack,
+            )
+
+        val singleTrackScoreWithExpectedDuration =
+            YouTubeExtractor.audioPreferenceScore(
+                rawTitle = "파란노을 (Parannoul) - To See the Next Part of the Dream",
+                rawAuthor = "파란노을 (Parannoul)",
+                candidateDurationMs = 308_000L,
+                expected = targetTrack,
+            )
+
+        assertTrue(
+            "Individual track ($singleTrackScoreWithExpectedDuration) must dramatically beat full album ($fullAlbumScoreWithExpectedDuration)",
+            singleTrackScoreWithExpectedDuration > fullAlbumScoreWithExpectedDuration + 400,
+        )
+
+        // Even when expected duration is unknown (0L), full album upload should be heavily penalized
+        val fullAlbumScoreWithoutDuration =
+            YouTubeExtractor.audioPreferenceScore(
+                rawTitle = "[Full Album] 파란노을 (Parannoul) - To See the Next Part of the Dream / 앨범 전곡 듣기",
+                rawAuthor = "POCLANOS",
+                candidateDurationMs = 3_699_000L,
+                expected = targetTrack.copy(durationMs = 0L),
+            )
+
+        val singleTrackScoreWithoutDuration =
+            YouTubeExtractor.audioPreferenceScore(
+                rawTitle = "파란노을 (Parannoul) - To See the Next Part of the Dream",
+                rawAuthor = "파란노을 (Parannoul)",
+                candidateDurationMs = 308_000L,
+                expected = targetTrack.copy(durationMs = 0L),
+            )
+
+        assertTrue(
+            "Without duration, single track ($singleTrackScoreWithoutDuration) must still beat full album ($fullAlbumScoreWithoutDuration)",
+            singleTrackScoreWithoutDuration > fullAlbumScoreWithoutDuration + 400,
+        )
+    }
+
+    @Test
+    fun rankByAudioPreference_rejectsFullAlbumVideoInFavorOfIndividualTrack() {
+        data class Hit(
+            val title: String,
+            val author: String,
+            val durationMs: Long,
+        )
+
+        val candidates =
+            listOf(
+                Hit(
+                    title = "[Full Album] 파란노을 (Parannoul) - To See the Next Part of the Dream / 앨범 전곡 듣기",
+                    author = "POCLANOS",
+                    durationMs = 3_699_000L,
+                ),
+                Hit(
+                    title = "파란노을 (Parannoul) - To See the Next Part of the Dream",
+                    author = "파란노을 (Parannoul)",
+                    durationMs = 308_000L,
+                ),
+                Hit(
+                    title = "파란노을-To See the Next Part of the Dream | 앨범리뷰",
+                    author = "최데프",
+                    durationMs = 3_998_000L,
+                ),
+            )
+
+        val ranked =
+            YouTubeExtractor.rankByAudioPreference(
+                items = candidates,
+                rawTitle = { it.title },
+                rawAuthor = { it.author },
+                durationMsOf = { it.durationMs },
+                expected =
+                    com.bestiapop.android.data.model.TrackIdentity(
+                        title = "To See the Next Part of the Dream",
+                        artist = "파란노을",
+                        album = "To See the Next Part of the Dream",
+                        durationMs = 307_000L,
+                    ),
+            )
+
+        assertTrue(
+            "Individual song must be ranked first",
+            ranked.first().title.contains("Parannoul") && !ranked.first().title.contains("Full Album"),
+        )
+    }
 }

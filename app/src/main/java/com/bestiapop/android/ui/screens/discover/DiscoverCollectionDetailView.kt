@@ -62,6 +62,7 @@ fun DiscoverCollectionDetailView(
     albumStatus: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
     currentItem: PlayableItem? = null,
     actions: DiscoverCollectionActions,
+    artist: String? = null,
     modifier: Modifier = Modifier,
 ) {
     DiscoverCollectionDetailView(
@@ -81,6 +82,7 @@ fun DiscoverCollectionDetailView(
         onPlayCandidate = actions.onPlayCandidate,
         onDownloadCandidate = actions.onDownloadCandidate,
         onSelectArtist = actions.onSelectArtist,
+        artist = artist,
         modifier = modifier,
     )
 }
@@ -104,6 +106,7 @@ fun DiscoverCollectionDetailView(
     albumStatus: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
     albumDownloadProgress: ActiveAlbumDownloadProgress = ActiveAlbumDownloadProgress(),
     currentItem: PlayableItem? = null,
+    artist: String? = null,
     modifier: Modifier = Modifier,
 ) {
     if (kind == CatalogCollectionKind.ALBUM) {
@@ -145,7 +148,8 @@ fun DiscoverCollectionDetailView(
                     .firstOrNull()
                     ?.artist
                     .orEmpty()
-                    .takeIf { it.isNotBlank() },
+                    .takeIf { it.isNotBlank() }
+                    ?: artist?.takeIf { it.isNotBlank() },
             artworkUri = coverUrl,
             catalogCandidates = candidates,
             currentItem = currentItem,
@@ -178,7 +182,7 @@ fun DiscoverCollectionDetailView(
             contentPadding = PaddingValues(bottom = 96.dp),
         ) {
             item(key = "collection-hero-header") {
-                val artistName = candidates.firstOrNull()?.artist.orEmpty()
+                val artistName = candidates.firstOrNull()?.artist?.takeIf { it.isNotBlank() } ?: artist.orEmpty()
                 val fallback =
                     when (kind) {
                         CatalogCollectionKind.PLAYLIST -> Icons.AutoMirrored.Filled.QueueMusic

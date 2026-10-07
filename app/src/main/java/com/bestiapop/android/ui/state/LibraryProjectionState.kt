@@ -190,6 +190,15 @@ class LibraryProjectionState internal constructor(
             .map { it.projection.songs }
             .stateInUi(scope, emptyList())
 
+    val unfilteredSongs: StateFlow<List<Song>> =
+        combine(
+            catalogSongs,
+            sortCriteria,
+        ) { songList, sort ->
+            useCase.execute(songList, query = "", sortOption = sort.option, sortDirection = sort.direction)
+        }.flowOn(projectionDispatcher)
+            .stateInUi(scope, emptyList())
+
     val albums: StateFlow<List<Album>> =
         catalog
             .map { it.projection.albums }
@@ -258,6 +267,17 @@ class LibraryProjectionState internal constructor(
             overlayOpen,
         ) { list, stats, query, paused ->
             if (paused) null else useCase.recentSongs(list, query, stats)
+        }.filterNotNull()
+            .flowOn(projectionDispatcher)
+            .stateInUi(scope, emptyList())
+
+    val unfilteredRecentSongs: StateFlow<List<Song>> =
+        combine(
+            rawSongs,
+            playStats,
+            overlayOpen,
+        ) { list, stats, paused ->
+            if (paused) null else useCase.recentSongs(list, query = "", stats)
         }.filterNotNull()
             .flowOn(projectionDispatcher)
             .stateInUi(scope, emptyList())

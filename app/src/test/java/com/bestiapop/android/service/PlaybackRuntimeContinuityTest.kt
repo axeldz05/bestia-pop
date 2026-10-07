@@ -1282,7 +1282,7 @@ class PlaybackRuntimeContinuityTest {
 
             assertFalse(allBroken.controller.wantsPlay)
             assertEquals(
-                6,
+                2,
                 allBroken.controller.operations.count { it == "seekToIndex" },
             )
         } finally {

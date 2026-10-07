@@ -20,7 +20,25 @@ class LocalMetadataRadio(
         excludeKeys: Set<String>,
         limit: Int,
         coPlaylistSongIds: Set<Long> = emptySet(),
-    ): List<PlayableItem> {
+    ): List<PlayableItem> =
+        suggestSongs(seed, library, excludeKeys, limit, coPlaylistSongIds)
+            .map { it.toPlayableItem() }
+
+    fun suggestSongs(
+        seed: Song,
+        library: List<Song>,
+        excludeKeys: Set<String> = emptySet(),
+        limit: Int = RadioEngine.DEFAULT_LIMIT,
+        coPlaylistSongIds: Set<Long> = emptySet(),
+    ): List<Song> = suggestSongs(seed.toPlayableItem(), library, excludeKeys, limit, coPlaylistSongIds)
+
+    fun suggestSongs(
+        seed: PlayableItem,
+        library: List<Song>,
+        excludeKeys: Set<String>,
+        limit: Int,
+        coPlaylistSongIds: Set<Long> = emptySet(),
+    ): List<Song> {
         if (limit <= 0 || library.isEmpty()) return emptyList()
 
         val seedArtist = TrackMatchKeys.normalize(seed.artist)
@@ -75,7 +93,6 @@ class LocalMetadataRadio(
                         it.uriString !in excludeKeys
                 }.shuffled(random)
                 .take(limit)
-                .map { it.toPlayableItem() }
                 .toList()
         }
 
@@ -100,7 +117,7 @@ class LocalMetadataRadio(
             if (picked.size >= limit) break
         }
 
-        return picked.map { it.toPlayableItem() }
+        return picked
     }
 
     private fun meaningfulGenre(genre: String?): String? {

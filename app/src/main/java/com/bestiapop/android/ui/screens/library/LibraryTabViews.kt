@@ -45,13 +45,20 @@ fun LibraryRecentTab(
     fastScrollSettings: FastScrollSettings,
 ) {
     val recentSongs by viewModel.libraryProjection.recentSongs.collectAsStateWithLifecycle()
+    val unfilteredSongs by viewModel.libraryProjection.unfilteredSongs.collectAsStateWithLifecycle()
     val recentList by viewModel.libraryProjection.recentList.collectAsStateWithLifecycle()
     val recentEmptyFromSearch = searchQuery.isNotBlank()
     val onSongClick =
-        remember(isSelectionMode, recentSongs, onToggleSelect) {
+        remember(isSelectionMode, recentSongs, unfilteredSongs, searchQuery, onToggleSelect, viewModel) {
             { song: Song, index: Int ->
                 if (isSelectionMode) {
                     onToggleSelect(song)
+                } else if (searchQuery.isNotBlank()) {
+                    viewModel.playSearchedSong(
+                        song = song,
+                        filteredCollection = recentSongs,
+                        fullCollection = unfilteredSongs,
+                    )
                 } else {
                     viewModel.playCollection(recentSongs, index)
                 }

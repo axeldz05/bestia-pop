@@ -381,7 +381,11 @@ fun HomeScreen(
                 currentSongUri = currentItem?.mediaId,
                 songItemActions = songItemActions,
                 onPlayLocalSong = { song ->
-                    viewModel.playSong(song, playlistOrQueue = matchingLocalSongs)
+                    viewModel.playSearchedSong(
+                        song = song,
+                        filteredCollection = matchingLocalSongs,
+                        fullCollection = allSongs,
+                    )
                 },
                 onSelectLocalAlbum = { album ->
                     viewModel.openLibraryAlbum(album.name)

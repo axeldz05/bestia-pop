@@ -61,7 +61,7 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
     val submenuGestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
 
     SettingsScrollColumn(
-        intro = "Personalizá las categorías de tu biblioteca, su orden y los gestos en submenús.",
+        intro = "Personalizá las categorías de tu biblioteca, su orden, la búsqueda y los gestos en submenús.",
     ) {
         Text(
             text = "Categorías de biblioteca (Blobs)",
@@ -148,6 +148,33 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        Text(
+            text = "Búsqueda en biblioteca",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Comportamiento de la cola al reproducir resultados de búsqueda.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        val enqueueLibraryOnSearch by viewModel.enqueueLibraryOnSearch.collectAsStateWithLifecycle()
+
+        SettingsSwitchRow(
+            title = "Encolar biblioteca y similares al buscar",
+            checked = enqueueLibraryOnSearch,
+            onCheckedChange = { viewModel.setEnqueueLibraryOnSearch(it) },
+            onSubtitle =
+                "Al tocar una canción buscada, encola temas similares seguidos del resto de la biblioteca " +
+                    "(en Canciones, Recientes y Géneros)",
+            offSubtitle = "Al tocar una canción buscada, se encolan únicamente los resultados filtrados de la búsqueda",
+        )
 
         Spacer(modifier = Modifier.height(28.dp))
 

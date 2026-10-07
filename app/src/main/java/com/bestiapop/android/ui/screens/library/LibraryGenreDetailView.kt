@@ -23,11 +23,18 @@ fun LibraryGenreDetailView(
     modifier: Modifier = Modifier,
 ) {
     val allSongs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
+    val unfilteredSongs by viewModel.libraryProjection.unfilteredSongs.collectAsStateWithLifecycle()
     val currentSongId by viewModel.currentSongId.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
 
     val localSongs =
         remember(allSongs, genreName) {
             viewModel.songsForGenre(allSongs, genreName)
+        }
+
+    val unfilteredGenreSongs =
+        remember(unfilteredSongs, genreName) {
+            viewModel.songsForGenre(unfilteredSongs, genreName)
         }
 
     LibraryCollectionDetailView(
@@ -36,7 +43,17 @@ fun LibraryGenreDetailView(
         songs = localSongs,
         currentSongId = currentSongId,
         songActions = actions.songActions,
-        onPlaySong = { index -> viewModel.playCollection(localSongs, index) },
+        onPlaySong = { index ->
+            if (searchQuery.isNotBlank()) {
+                viewModel.playSearchedSong(
+                    song = localSongs[index],
+                    filteredCollection = localSongs,
+                    fullCollection = unfilteredGenreSongs,
+                )
+            } else {
+                viewModel.playCollection(localSongs, index)
+            }
+        },
         onPlayAll = { viewModel.playCollection(localSongs, 0) },
         onShuffleAll = { viewModel.shuffleCollection(localSongs) },
         heroSubtitle = "Género",

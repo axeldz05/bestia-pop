@@ -241,6 +241,15 @@ class LibraryPreferencesRepository(
         context.libraryDataStore.put(Keys.SUBMENU_SWIPE_LEFT_ACTION, action.name)
     }
 
+    val enqueueLibraryOnSearchFlow: Flow<Boolean> =
+        context.libraryDataStore.data.map { prefs ->
+            prefs[Keys.ENQUEUE_LIBRARY_ON_SEARCH] ?: true
+        }
+
+    suspend fun setEnqueueLibraryOnSearch(enabled: Boolean) {
+        context.libraryDataStore.put(Keys.ENQUEUE_LIBRARY_ON_SEARCH, enabled)
+    }
+
     private object Keys {
         val INITIAL_SCAN_COMPLETED = booleanPreferencesKey("initial_library_scan_completed")
         val LEGACY_YTM_MIGRATED = booleanPreferencesKey("legacy_ytm_album_migrated")
@@ -266,5 +275,6 @@ class LibraryPreferencesRepository(
         val FAST_SCROLL_SIDE = stringPreferencesKey("fast_scroll_side")
         val SUBMENU_SWIPE_BACK_ENABLED = booleanPreferencesKey("submenu_swipe_back_enabled")
         val SUBMENU_SWIPE_LEFT_ACTION = stringPreferencesKey("submenu_swipe_left_action")
+        val ENQUEUE_LIBRARY_ON_SEARCH = booleanPreferencesKey("enqueue_library_on_search")
     }
 }

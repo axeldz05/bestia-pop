@@ -120,6 +120,7 @@ import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
+import com.bestiapop.android.domain.usecase.BuildSearchPlaybackQueueUseCase
 import com.bestiapop.android.domain.usecase.BuildSimilarPlaylistPreviewUseCase
 import com.bestiapop.android.domain.usecase.DiscoverFeed
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
@@ -794,6 +795,12 @@ class MusicPlayerViewModel(
     val libraryBlobsSettings: StateFlow<LibraryBlobsSettings> =
         libraryPreferences.libraryBlobsSettingsFlow
             .stateInUi(viewModelScope, LibraryBlobsSettings())
+
+    val enqueueLibraryOnSearch: StateFlow<Boolean> =
+        libraryPreferences.enqueueLibraryOnSearchFlow
+            .stateInUi(viewModelScope, true)
+
+    private val buildSearchPlaybackQueueUseCase = BuildSearchPlaybackQueueUseCase()
 
     private val playbackExecutionCoordinator =
         PlaybackExecutionCoordinator(
@@ -1634,6 +1641,25 @@ class MusicPlayerViewModel(
     ) {
         commitActiveSearchToHistory()
         playbackExecutionCoordinator.playSong(song, playlistOrQueue, applyManualModes, openNowPlaying)
+    }
+
+    fun playSearchedSong(
+        song: Song,
+        filteredCollection: List<Song>,
+        fullCollection: List<Song>,
+    ) {
+        commitActiveSearchToHistory()
+        if (enqueueLibraryOnSearch.value && fullCollection.isNotEmpty()) {
+            val queue =
+                buildSearchPlaybackQueueUseCase.execute(
+                    seedSong = song,
+                    fullCollection = fullCollection,
+                )
+            playCollection(queue, startIndex = 0)
+        } else {
+            val index = filteredCollection.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+            playCollection(filteredCollection, startIndex = index)
+        }
     }
 
     fun playPlayableCollection(
@@ -2865,6 +2891,12 @@ class MusicPlayerViewModel(
             if (currentFilter !in settings.enabledFilters) {
                 setLibraryBrowseFilter(settings.primaryFilter)
             }
+        }
+    }
+
+    fun setEnqueueLibraryOnSearch(enabled: Boolean) {
+        viewModelScope.launch {
+            libraryPreferences.setEnqueueLibraryOnSearch(enabled)
         }
     }
 

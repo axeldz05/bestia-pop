@@ -144,16 +144,26 @@ fun LibraryBrowsePane(
         }
 
         activeFilter == LibraryBrowseFilter.SONGS || isPlaylistAdditionMode -> {
+            val unfilteredSongs by viewModel.libraryProjection.unfilteredSongs.collectAsStateWithLifecycle()
             val onLibrarySongsClick =
                 remember(
                     isPlaylistAdditionMode,
                     isMultiSelectMode,
                     songList,
+                    unfilteredSongs,
+                    searchQuery,
                     onToggleSelect,
+                    viewModel,
                 ) {
                     { song: Song, index: Int ->
                         if (isPlaylistAdditionMode || isMultiSelectMode) {
                             onToggleSelect(song)
+                        } else if (searchQuery.isNotBlank()) {
+                            viewModel.playSearchedSong(
+                                song = song,
+                                filteredCollection = songList.songsVisual,
+                                fullCollection = unfilteredSongs,
+                            )
                         } else {
                             viewModel.playCollection(songList.songsVisual, index)
                         }

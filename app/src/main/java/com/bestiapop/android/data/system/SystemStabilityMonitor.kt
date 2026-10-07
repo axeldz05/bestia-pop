@@ -224,17 +224,38 @@ object SystemStabilityMonitor {
         }
     }
 
-    internal fun isBenignProcessExit(exit: ApplicationExitInfo): Boolean {
+    internal fun isBenignProcessExit(
+        exit: ApplicationExitInfo,
+        metadata: Map<String, String> = emptyMap(),
+    ): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
-        return exit.importance >= ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED &&
-            (exit.reason == ApplicationExitInfo.REASON_LOW_MEMORY || exit.reason == ApplicationExitInfo.REASON_OTHER)
+        val isMemoryOrSystemKill =
+            exit.reason == ApplicationExitInfo.REASON_LOW_MEMORY ||
+                exit.reason == ApplicationExitInfo.REASON_OTHER
+        if (!isMemoryOrSystemKill) return false
+
+        // Exits in non-foreground states (PERCEPTIBLE, SERVICE, CACHED, etc.) are normal OS resource reclamation
+        if (exit.importance >= ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERCEPTIBLE) {
+            return true
+        }
+
+        // Defensive check: if the app recorded its state as in the background and not actively playing,
+        // it is not an active user foreground session kill.
+        val lastAppState = metadata["last_app_state"]
+        val lastPlayback = metadata["last_playback"]
+        val isActivelyPlaying = lastPlayback?.startsWith("PLAYING") == true
+        if (lastAppState == "BACKGROUND" && !isActivelyPlaying) {
+            return true
+        }
+
+        return false
     }
 
     internal fun createExceptionForExitReason(
         exit: ApplicationExitInfo,
         metadata: Map<String, String> = emptyMap(),
     ): SystemProcessKilledException? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || isBenignProcessExit(exit)) return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || isBenignProcessExit(exit, metadata)) return null
 
         val description = exit.description?.takeIf { it.isNotBlank() } ?: "No system description"
         val importanceLabel = formatImportance(exit.importance)
@@ -381,6 +402,8 @@ object SystemStabilityMonitor {
             ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND -> "FOREGROUND"
             ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE -> "FOREGROUND_SERVICE"
             ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE -> "VISIBLE"
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERCEPTIBLE -> "PERCEPTIBLE"
+            ActivityManager.RunningAppProcessInfo.IMPORTANCE_CANT_SAVE_STATE -> "CANT_SAVE_STATE"
             ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE -> "SERVICE"
             ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED -> "CACHED"
             ActivityManager.RunningAppProcessInfo.IMPORTANCE_GONE -> "GONE"

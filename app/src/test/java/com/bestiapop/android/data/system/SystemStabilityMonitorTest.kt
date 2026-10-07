@@ -42,6 +42,12 @@ class SystemStabilityMonitorTest {
             "FOREGROUND_SERVICE",
             SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE),
         )
+        assertEquals("VISIBLE", SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE))
+        assertEquals("PERCEPTIBLE", SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERCEPTIBLE))
+        assertEquals(
+            "CANT_SAVE_STATE",
+            SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_CANT_SAVE_STATE),
+        )
         assertEquals("SERVICE", SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE))
         assertEquals("CACHED", SystemStabilityMonitor.formatImportance(ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED))
     }
@@ -131,7 +137,7 @@ class SystemStabilityMonitorTest {
     }
 
     @Test
-    fun createExceptionForExitReason_ignoresCachedKills_reportsForegroundKills() {
+    fun createExceptionForExitReason_ignoresBenignBackgroundKills_reportsForegroundKills() {
         val cachedLmk =
             createMockExitInfo(
                 reason = ApplicationExitInfo.REASON_LOW_MEMORY,
@@ -146,6 +152,35 @@ class SystemStabilityMonitorTest {
             )
         assertNull(SystemStabilityMonitor.createExceptionForExitReason(cachedOther))
 
+        val perceptibleLmk =
+            createMockExitInfo(
+                reason = ApplicationExitInfo.REASON_LOW_MEMORY,
+                importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERCEPTIBLE,
+            )
+        assertNull(SystemStabilityMonitor.createExceptionForExitReason(perceptibleLmk))
+
+        val perceptibleOther =
+            createMockExitInfo(
+                reason = ApplicationExitInfo.REASON_OTHER,
+                importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_PERCEPTIBLE,
+            )
+        assertNull(SystemStabilityMonitor.createExceptionForExitReason(perceptibleOther))
+
+        val serviceOther =
+            createMockExitInfo(
+                reason = ApplicationExitInfo.REASON_OTHER,
+                importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE,
+            )
+        assertNull(SystemStabilityMonitor.createExceptionForExitReason(serviceOther))
+
+        val defensiveBackgroundLmk =
+            createMockExitInfo(
+                reason = ApplicationExitInfo.REASON_LOW_MEMORY,
+                importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE,
+            )
+        val backgroundMeta = mapOf("last_app_state" to "BACKGROUND", "last_playback" to "PAUSED(LOCAL)")
+        assertNull(SystemStabilityMonitor.createExceptionForExitReason(defensiveBackgroundLmk, backgroundMeta))
+
         val fgLmk =
             createMockExitInfo(
                 reason = ApplicationExitInfo.REASON_LOW_MEMORY,
@@ -154,6 +189,15 @@ class SystemStabilityMonitorTest {
         val fgException = SystemStabilityMonitor.createExceptionForExitReason(fgLmk)
         org.junit.Assert.assertNotNull(fgException)
         org.junit.Assert.assertTrue(fgException is LowMemoryKillException)
+
+        val fgsLmk =
+            createMockExitInfo(
+                reason = ApplicationExitInfo.REASON_LOW_MEMORY,
+                importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE,
+            )
+        val fgsException = SystemStabilityMonitor.createExceptionForExitReason(fgsLmk)
+        org.junit.Assert.assertNotNull(fgsException)
+        org.junit.Assert.assertTrue(fgsException is LowMemoryKillException)
     }
 
     private fun createMockExitInfo(

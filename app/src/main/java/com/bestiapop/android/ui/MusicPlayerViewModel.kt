@@ -178,6 +178,8 @@ import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.state.LibraryProjectionState
 import com.bestiapop.android.ui.state.LibraryScanCoordinator
 import com.bestiapop.android.ui.state.LibraryViewMode
+import com.bestiapop.android.ui.state.LinkImportCoordinator
+import com.bestiapop.android.ui.state.LinkImportUiState
 import com.bestiapop.android.ui.state.ListenBrainzIntegrationCoordinator
 import com.bestiapop.android.ui.state.LoadableUiState
 import com.bestiapop.android.ui.state.LyricsCoordinator
@@ -924,6 +926,31 @@ class MusicPlayerViewModel(
             },
             isOnline = { connectivityObserver.isCurrentlyOnline() },
         )
+
+    private val linkImportCoordinator =
+        LinkImportCoordinator(
+            scope = viewModelScope,
+            repository = repository,
+            enqueuePendingDownloads = { id, tracks, toastQueued ->
+                enqueuePendingDownloads(id, tracks, toastQueued)
+            },
+            downloadOnlineTrack = { track, source ->
+                downloadOnlineTrack(track, source)
+            },
+            isOnline = { connectivityObserver.isCurrentlyOnline() },
+            toast = ::toast,
+        )
+    val linkImportUiState: StateFlow<LinkImportUiState> = linkImportCoordinator.uiState
+
+    fun inspectImportLink(url: String) = linkImportCoordinator.inspectLink(url)
+
+    fun importPlaylistWithoutDownloading() = linkImportCoordinator.importPlaylist(downloadAfterImport = false)
+
+    fun importPlaylistAndDownload() = linkImportCoordinator.importPlaylist(downloadAfterImport = true)
+
+    fun downloadSingleTrackFromImportPreview(customUrl: String? = null) = linkImportCoordinator.downloadSingleTrackFromPreview(customUrl)
+
+    fun clearLinkImportState() = linkImportCoordinator.clear()
 
     private val submenuActionCoordinator =
         SubmenuActionCoordinator(

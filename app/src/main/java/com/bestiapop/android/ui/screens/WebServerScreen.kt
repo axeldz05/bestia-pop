@@ -28,6 +28,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
@@ -36,6 +38,8 @@ import androidx.compose.material.icons.filled.DriveFolderUpload
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -77,8 +82,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.data.model.ImportedPlaylistData
 import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.data.model.PlaylistImportError
+import com.bestiapop.android.data.model.PlaylistImportSummary
+import com.bestiapop.android.data.model.PlaylistPlatform
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.WifiTransferItem
 import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.model.isFailed
@@ -92,6 +102,7 @@ import com.bestiapop.android.ui.components.TrackTextColumn
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.SongActionDialogsController
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
+import com.bestiapop.android.ui.state.LinkImportUiState
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -104,6 +115,7 @@ fun WebServerScreen(
     viewModel: MusicPlayerViewModel,
     onSelectFolderClick: () -> Unit = {},
     onOpenDownloads: () -> Unit = {},
+    onOpenPlaylist: (Long) -> Unit = { viewModel.openLocalPlaylist(it) },
 ) {
     val context = LocalContext.current
     val serverAddress by WebServerService.serverState.collectAsStateWithLifecycle()
@@ -116,6 +128,7 @@ fun WebServerScreen(
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var linkUrlInput by rememberSaveable { mutableStateOf("") }
+    val linkImportUiState by viewModel.linkImportUiState.collectAsStateWithLifecycle()
 
     val linkDownloads by remember(viewModel) {
         viewModel.activeDownloads
@@ -254,7 +267,29 @@ fun WebServerScreen(
             2 -> {
                 LinkDownloaderTabContent(
                     urlInput = linkUrlInput,
-                    onUrlInputChange = { linkUrlInput = it },
+                    onUrlInputChange = {
+                        linkUrlInput = it
+                        if (linkImportUiState !is LinkImportUiState.Idle) {
+                            viewModel.clearLinkImportState()
+                        }
+                    },
+                    importState = linkImportUiState,
+                    onInspectClick = {
+                        viewModel.inspectImportLink(linkUrlInput)
+                    },
+                    onImportWithoutDownloading = {
+                        viewModel.importPlaylistWithoutDownloading()
+                    },
+                    onImportAndDownload = {
+                        viewModel.importPlaylistAndDownload()
+                    },
+                    onDownloadSingleTrack = {
+                        viewModel.downloadSingleTrackFromImportPreview(linkUrlInput)
+                    },
+                    onClearImportState = {
+                        viewModel.clearLinkImportState()
+                    },
+                    onOpenPlaylist = onOpenPlaylist,
                     linkDownloads = linkDownloads,
                     onDownloadClick = {
                         viewModel.downloadFromUrl(linkUrlInput)
@@ -696,12 +731,19 @@ fun LocalFolderTabContent(onSelectFolderClick: () -> Unit) {
 }
 
 /**
- * Level 1: Download audio track by web/YouTube URL.
+ * Level 1: Download audio track or import full playlist by web URL (YouTube, Spotify, Deezer).
  */
 @Composable
 fun LinkDownloaderTabContent(
     urlInput: String,
     onUrlInputChange: (String) -> Unit,
+    importState: LinkImportUiState,
+    onInspectClick: () -> Unit,
+    onImportWithoutDownloading: () -> Unit,
+    onImportAndDownload: () -> Unit,
+    onDownloadSingleTrack: () -> Unit,
+    onClearImportState: () -> Unit,
+    onOpenPlaylist: (Long) -> Unit,
     linkDownloads: List<ActiveDownload>,
     onDownloadClick: () -> Unit,
     onRetryDownload: (String) -> Unit,
@@ -746,7 +788,7 @@ fun LinkDownloaderTabContent(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "Descargar por Enlace Web",
+                    text = "Importar y Descargar por Enlace",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                     textAlign = TextAlign.Center,
@@ -756,8 +798,8 @@ fun LinkDownloaderTabContent(
 
                 Text(
                     text =
-                        "Pegá un enlace de YouTube (youtube.com o youtu.be) o ingresá la URL de un audio " +
-                            "para descargarlo e incorporarlo a tu biblioteca.",
+                        "Pegá un enlace de YouTube, YouTube Music, Spotify o Deezer (canción o playlist) " +
+                            "para agregarlo a tu biblioteca.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                     textAlign = TextAlign.Center,
@@ -769,7 +811,7 @@ fun LinkDownloaderTabContent(
                 OutlinedTextField(
                     value = urlInput,
                     onValueChange = onUrlInputChange,
-                    placeholder = { Text("https://youtube.com/watch?v=… o https://youtu.be/…") },
+                    placeholder = { Text("https://… (YouTube, Spotify, Deezer)") },
                     leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
                     trailingIcon = {
                         if (urlInput.isNotEmpty()) {
@@ -789,8 +831,8 @@ fun LinkDownloaderTabContent(
                         KeyboardActions(
                             onDone = {
                                 keyboardController?.hide()
-                                if (urlInput.isNotBlank() && !isDownloading) {
-                                    onDownloadClick()
+                                if (urlInput.isNotBlank()) {
+                                    onInspectClick()
                                 }
                             },
                         ),
@@ -804,19 +846,134 @@ fun LinkDownloaderTabContent(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                Button(
-                    onClick = {
-                        keyboardController?.hide()
-                        onDownloadClick()
-                    },
-                    enabled = urlInput.isNotBlank() && !isDownloading,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(DownloadMessages.downloadAndAdd, fontWeight = FontWeight.Bold)
+                when (importState) {
+                    is LinkImportUiState.Idle -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Button(
+                                onClick = {
+                                    keyboardController?.hide()
+                                    onInspectClick()
+                                },
+                                enabled = urlInput.isNotBlank() && !isDownloading,
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Icon(imageVector = Icons.Default.Search, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Inspeccionar", fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    keyboardController?.hide()
+                                    onDownloadClick()
+                                },
+                                enabled = urlInput.isNotBlank() && !isDownloading,
+                                shape = RoundedCornerShape(14.dp),
+                                colors =
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    ),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Descargar MP3", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    is LinkImportUiState.Inspecting -> {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Inspeccionando enlace y obteniendo pistas…",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
+                    }
+
+                    is LinkImportUiState.PlaylistPreview -> {
+                        PlaylistImportPreviewCard(
+                            data = importState.data,
+                            onImportWithoutDownloading = onImportWithoutDownloading,
+                            onImportAndDownload = onImportAndDownload,
+                            onCancel = onClearImportState,
+                        )
+                    }
+
+                    is LinkImportUiState.SingleTrackPreview -> {
+                        SingleTrackImportPreviewCard(
+                            track = importState.track,
+                            platform = importState.platform,
+                            onDownload = onDownloadSingleTrack,
+                            onCancel = onClearImportState,
+                        )
+                    }
+
+                    is LinkImportUiState.Importing -> {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = importState.message,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+
+                    is LinkImportUiState.Success -> {
+                        PlaylistImportSuccessCard(
+                            summary = importState.summary,
+                            onOpenPlaylist = { onOpenPlaylist(importState.summary.playlistId) },
+                            onDismiss = onClearImportState,
+                        )
+                    }
+
+                    is LinkImportUiState.Error -> {
+                        PlaylistImportErrorBanner(
+                            error = importState.error,
+                            onRetry = onInspectClick,
+                            onDismiss = onClearImportState,
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -826,6 +983,346 @@ fun LinkDownloaderTabContent(
                     onRetry = onRetryDownload,
                     onOpenDownloads = onOpenDownloads,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistImportPreviewCard(
+    data: ImportedPlaylistData,
+    onImportWithoutDownloading: () -> Unit,
+    onImportAndDownload: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header Row: Platform Badge + Track Count
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text(
+                        text = data.platform.displayName,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text(
+                        text = "${data.tracks.size} canciones",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Body: Cover + Title
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ArtworkThumbnail(
+                    artworkUri = data.coverUrl,
+                    size = 64.dp,
+                    cornerRadius = 10.dp,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = data.title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Orden de pistas original",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Actions
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onImportAndDownload,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Importar y descargar", fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                    onClick = onImportWithoutDownloading,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(imageVector = Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Importar (sin descargar)", fontWeight = FontWeight.SemiBold)
+                }
+
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                ) {
+                    Text("Cancelar", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SingleTrackImportPreviewCard(
+    track: TrackIdentity,
+    platform: PlaylistPlatform,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text(
+                        text = platform.displayName,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ArtworkThumbnail(
+                    artworkUri = track.artworkUri,
+                    size = 56.dp,
+                    cornerRadius = 10.dp,
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title.ifBlank { "Canción identificada" },
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
+                    if (track.artist.isNotBlank()) {
+                        Text(
+                            text = track.artist,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onDownload,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Descargar MP3", fontWeight = FontWeight.Bold)
+                }
+
+                TextButton(onClick = onCancel) {
+                    Text("Descartar")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistImportSuccessCard(
+    summary: PlaylistImportSummary,
+    onOpenPlaylist: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp),
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "¡Playlist importada con éxito!",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "«${summary.playlistTitle}»",
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+
+            Text(
+                text =
+                    "${summary.totalTracks} canciones (${summary.matchedLocalCount} locales vinculadas · " +
+                        "${summary.pendingStreamCount} en streaming)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+            )
+
+            if (summary.isDownloading && summary.pendingStreamCount > 0) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Descargando ${summary.pendingStreamCount} canciones en segundo plano…",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onOpenPlaylist,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                ) {
+                    Text("Abrir playlist", fontWeight = FontWeight.Bold)
+                }
+
+                TextButton(onClick = onDismiss) {
+                    Text("Listo", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistImportErrorBanner(
+    error: PlaylistImportError,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp).padding(top = 2.dp),
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text =
+                            when (error) {
+                                is PlaylistImportError.PrivateOrUnavailable -> "Playlist privada o no disponible"
+                                is PlaylistImportError.EmptyPlaylist -> "Playlist vacía"
+                                is PlaylistImportError.UnsupportedUrl -> "Enlace no reconocido"
+                                else -> "Error al importar"
+                            },
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = error.userFacingMessage(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onRetry) {
+                    Text("Reintentar", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                TextButton(onClick = onDismiss) {
+                    Text("Cerrar", color = MaterialTheme.colorScheme.onErrorContainer)
+                }
             }
         }
     }

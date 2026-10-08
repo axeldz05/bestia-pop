@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -144,6 +145,46 @@ class MainActivity : ComponentActivity() {
             "MainActivity.onDestroy (Activity destroyed, isFinishing=$isFinishing)",
         )
         super.onDestroy()
+    }
+
+    override fun onKeyDown(
+        keyCode: Int,
+        event: KeyEvent,
+    ): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                if (viewModel.handleVolumeUp()) {
+                    return true
+                }
+            }
+
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                if (viewModel.handleVolumeDown()) {
+                    return true
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(
+        keyCode: Int,
+        event: KeyEvent,
+    ): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                if (viewModel.isVolumeBoostActive()) {
+                    return true
+                }
+            }
+
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                if (viewModel.consumeVolumeDownUpAction()) {
+                    return true
+                }
+            }
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     override fun onNewIntent(intent: Intent) {

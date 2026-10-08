@@ -1164,6 +1164,12 @@ class MusicPlayerViewModel(
 
     fun isVolumeBoostActive(): Boolean = audioVolumeCoordinator.isVolumeBoostActive()
 
+    fun handleVolumeUp(): Boolean = audioVolumeCoordinator.handleVolumeUp()
+
+    fun handleVolumeDown(): Boolean = audioVolumeCoordinator.handleVolumeDown()
+
+    fun consumeVolumeDownUpAction(): Boolean = audioVolumeCoordinator.consumeVolumeDownUpAction()
+
     fun setDownloadOnMeteredNetwork(enabled: Boolean) {
         viewModelScope.launch {
             downloadPreferences.setDownloadOnMeteredNetwork(enabled)

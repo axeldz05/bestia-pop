@@ -243,6 +243,11 @@ fun MainScreen(
 
     // Root-tab exit only: nested screens / Now Playing register their own BackHandlers above this.
     BackHandler {
+        if (selectedNavIndex != NAV_HOME) {
+            viewModel.setSelectedNavIndex(NAV_HOME)
+            clearPendingExit()
+            return@BackHandler
+        }
         val now = android.os.SystemClock.elapsedRealtime()
         if (lastExitBackAtMs > 0L && now - lastExitBackAtMs <= EXIT_CONFIRM_WINDOW_MS) {
             (context as? Activity)?.finish()

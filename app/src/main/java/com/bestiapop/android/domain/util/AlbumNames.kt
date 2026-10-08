@@ -50,9 +50,22 @@ fun albumNamesMatch(
     val foldedB = TrackMatchKeys.foldRomajiVowels(transB)
     if (foldedA.isNotEmpty() && (foldedA == foldedB || foldedA == kb || foldedB == ka)) return true
     if (a.contains('(') || a.contains('[') || b.contains('(') || b.contains('[')) {
-        val candA = TrackMatchKeys.candidateMatchKeys("", a).map { it.removePrefix("|") }
-        val candB = TrackMatchKeys.candidateMatchKeys("", b).map { it.removePrefix("|") }
-        if (candA.any { it in candB }) return true
+        fun albumForms(name: String): Set<String> {
+            val forms = LinkedHashSet<String>()
+            val ident = albumIdentityKey(name)
+            if (ident.isNotEmpty()) forms.add(ident)
+            val parenRegex = Regex("""[\(\[\{]([^\)\]\}]+)[\)\]\}]""")
+            val outside = TrackMatchKeys.normalize(stripAlbumEditionDecor(parenRegex.replace(name, " ")))
+            if (outside.isNotEmpty()) forms.add(outside)
+            for (m in parenRegex.findAll(name)) {
+                val inside = TrackMatchKeys.normalize(stripAlbumEditionDecor(m.groupValues[1]))
+                if (inside.isNotEmpty()) forms.add(inside)
+            }
+            return forms
+        }
+        val formsA = albumForms(a)
+        val formsB = albumForms(b)
+        if (formsA.any { it in formsB }) return true
     }
     return false
 }

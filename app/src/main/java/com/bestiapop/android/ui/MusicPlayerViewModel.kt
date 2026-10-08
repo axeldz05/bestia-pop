@@ -747,7 +747,7 @@ class MusicPlayerViewModel(
                         lbUsername = lb.username.takeIf { lb.enabled },
                         networkAvailable = networkOnline,
                     )
-                _suggestedQueueTracks.value = result.items
+                _suggestedQueueTracks.value = result.items.distinctBy { it.mediaId }
             } catch (_: Exception) {
                 _suggestedQueueTracks.value = emptyList()
             } finally {
@@ -759,6 +759,19 @@ class MusicPlayerViewModel(
     fun addPlayableToQueue(item: PlayableItem) {
         addPlayableBatch(listOf(item))
         _suggestedQueueTracks.value = _suggestedQueueTracks.value.filter { it.mediaId != item.mediaId }
+    }
+
+    fun playSuggestedTrack(track: PlayableItem) {
+        val currentQ = displayQueue.value
+        if (currentQ.isEmpty()) {
+            playPlayableCollection(listOf(track), startIndex = 0, rotate = false)
+        } else {
+            val currentSlot = currentItem.value?.queueEntryId
+            val currentIndex = currentQ.indexOfFirst { it.queueEntryId == currentSlot }.coerceAtLeast(0)
+            playNextPlayableBatch(listOf(track))
+            skipToQueueIndex(currentIndex + 1)
+        }
+        _suggestedQueueTracks.value = _suggestedQueueTracks.value.filter { it.mediaId != track.mediaId }
     }
 
     val queueFocusEpoch = playbackRuntime.queueFocusEpoch

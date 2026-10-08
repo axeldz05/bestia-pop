@@ -2,8 +2,10 @@ package com.bestiapop.android.data.preferences
 
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.domain.util.MetadataSplitter
+import com.bestiapop.android.domain.util.NaturalTextOrder
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.albumIdentityKey
+import com.bestiapop.android.domain.util.albumNamesMatch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -422,23 +424,25 @@ fun DynamicEqualizerRule.matchesTrack(track: TrackMeta?): Boolean {
                 val primaryCompositeKey = TrackMatchKeys.composeKey(TrackMatchKeys.normalize(primaryArtist), normAlbum)
                 if (targetKey == primaryCompositeKey) return true
             }
-            // Support canonical album identity
+            // Support canonical album identity and cross-lingual/transliterated matching
             val identityAlbum = albumIdentityKey(album)
-            if (identityAlbum.isNotEmpty()) {
-                val albumOnlyKey = if (targetKey.contains('|')) targetKey.substringAfter('|') else targetKey
-                if (albumOnlyKey == normAlbum || albumOnlyKey == identityAlbum) {
-                    if (targetArtist.isBlank()) return true
-                    val rulePrimary =
-                        MetadataSplitter
-                            .splitArtists(targetArtist)
-                            .firstOrNull()
-                            ?.trim()
-                            .orEmpty()
-                    if (rulePrimary.isNotEmpty() &&
-                        (rulePrimary.equals(artist, ignoreCase = true) || rulePrimary.equals(primaryArtist, ignoreCase = true))
-                    ) {
-                        return true
-                    }
+            val albumOnlyKey = if (targetKey.contains('|')) targetKey.substringAfter('|') else targetKey
+            val isAlbumMatch =
+                (albumOnlyKey == normAlbum) ||
+                    (identityAlbum.isNotEmpty() && albumOnlyKey == identityAlbum) ||
+                    albumNamesMatch(album, targetName)
+            if (isAlbumMatch) {
+                if (targetArtist.isBlank()) return true
+                val rulePrimary =
+                    MetadataSplitter
+                        .splitArtists(targetArtist)
+                        .firstOrNull()
+                        ?.trim()
+                        .orEmpty()
+                if (rulePrimary.isNotEmpty() &&
+                    (rulePrimary.equals(artist, ignoreCase = true) || rulePrimary.equals(primaryArtist, ignoreCase = true))
+                ) {
+                    return true
                 }
             }
             false
@@ -448,7 +452,13 @@ fun DynamicEqualizerRule.matchesTrack(track: TrackMeta?): Boolean {
             if (normArtist.isEmpty()) return false
             if (targetKey == normArtist) return true
             val candidates = MetadataSplitter.splitArtists(artist)
-            candidates.any { TrackMatchKeys.normalize(it) == targetKey }
+            if (candidates.any { TrackMatchKeys.normalize(it) == targetKey }) return true
+            for (candidate in candidates) {
+                if (MetadataSplitter.artistAliases(candidate).any { TrackMatchKeys.normalize(it) == targetKey }) return true
+                val transCandidate = TrackMatchKeys.normalize(NaturalTextOrder.transliterateToLatin(candidate))
+                if (transCandidate.isNotEmpty() && transCandidate == targetKey) return true
+            }
+            false
         }
 
         EqualizerTargetType.CUSTOM_PRESET -> {

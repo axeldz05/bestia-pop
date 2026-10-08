@@ -277,4 +277,40 @@ class EqualizerSettingsTest {
         assertEquals(10, decoded[1].bandCount)
         assertEquals(2.5f, decoded[1].bandGainsDb[0], 0.01f)
     }
+
+    @Test
+    fun dynamicEqualizerRule_matchesAlbumRuleWithBilingualOrTransliteratedTitle() {
+        val trackJapanese =
+            TrackIdentity(
+                title = "Zenzenzense",
+                artist = "RADWIMPS",
+                album = "君の名は。",
+            )
+        val albumRuleBilingual =
+            DynamicEqualizerRule(
+                targetType = EqualizerTargetType.ALBUM,
+                targetKey = "radwimps|your name",
+                targetName = "君の名は。 (Your Name)",
+                targetArtist = "RADWIMPS",
+            )
+        assertTrue("Album rule with bilingual title should match track album", albumRuleBilingual.matchesTrack(trackJapanese))
+    }
+
+    @Test
+    fun dynamicEqualizerRule_matchesArtistRuleWithTransliteratedName() {
+        val trackRussian =
+            TrackIdentity(
+                title = "Gruppa Krovi",
+                artist = "КИНО",
+                album = "Gruppa Krovi",
+            )
+        val artistRuleLatin =
+            DynamicEqualizerRule(
+                targetType = EqualizerTargetType.ARTIST,
+                targetKey = "kino",
+                targetName = "Kino",
+                targetArtist = "",
+            )
+        assertTrue("Artist rule with Latin name should match Cyrillic artist track", artistRuleLatin.matchesTrack(trackRussian))
+    }
 }

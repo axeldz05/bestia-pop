@@ -555,7 +555,7 @@ fun QueueScreen(
                     } else {
                         items(
                             items = suggestedTracks,
-                            key = { "suggested_${it.mediaId}" },
+                            key = { "suggested_${it.queueEntryId}" },
                         ) { track ->
                             val duration = remember(track.durationMs) { formatDuration(track.durationMs) }
                             Surface(
@@ -597,7 +597,7 @@ fun QueueScreen(
                                     }
                                     IconButton(
                                         onClick = {
-                                            viewModel.playPlayableCollection(listOf(track), startIndex = 0, rotate = false)
+                                            viewModel.playSuggestedTrack(track)
                                         },
                                         modifier = Modifier.size(36.dp),
                                     ) {

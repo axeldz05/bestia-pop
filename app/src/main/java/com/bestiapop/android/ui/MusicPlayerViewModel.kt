@@ -62,6 +62,7 @@ import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.LyricsTranslationSource
 import com.bestiapop.android.data.network.MetadataFetcher
+import com.bestiapop.android.data.network.SpotifyPlaylistSummary
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.preferences.DEFAULT_CROSSFADE_DURATION_SECONDS
 import com.bestiapop.android.data.preferences.DEFAULT_STREAM_SKIP_GRACE_SECONDS
@@ -102,6 +103,7 @@ import com.bestiapop.android.data.preferences.PersistedIdentifyReviewQueue
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.SearchHistoryPreferencesRepository
+import com.bestiapop.android.data.preferences.SpotifyPreferencesRepository
 import com.bestiapop.android.data.preferences.SubmenuGestureSettings
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.data.preferences.TelemetryPreferencesRepository
@@ -191,6 +193,8 @@ import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.state.RadioPlaybackState
 import com.bestiapop.android.ui.state.SimilarPlaylistCoordinator
 import com.bestiapop.android.ui.state.SimilarPlaylistPreviewState
+import com.bestiapop.android.ui.state.SpotifyAccountCoordinator
+import com.bestiapop.android.ui.state.SpotifyAccountUiState
 import com.bestiapop.android.ui.state.SubmenuActionCoordinator
 import com.bestiapop.android.ui.state.UiNavigationCoordinator
 import com.bestiapop.android.ui.state.UiNavigationState
@@ -292,6 +296,7 @@ class MusicPlayerViewModel(
     private val libraryPreferences = LibraryPreferencesRepository(application)
     private val lyricsPreferences = LyricsPreferencesRepository(application)
     private val telemetryPreferences = TelemetryPreferencesRepository(application)
+    private val spotifyPreferences = SpotifyPreferencesRepository(application)
     private val identifyReviewStore = IdentifyReviewStore(application)
     private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
     private val connectivityObserver = ConnectivityObserver(application)
@@ -951,6 +956,41 @@ class MusicPlayerViewModel(
     fun downloadSingleTrackFromImportPreview(customUrl: String? = null) = linkImportCoordinator.downloadSingleTrackFromPreview(customUrl)
 
     fun clearLinkImportState() = linkImportCoordinator.clear()
+
+    private val spotifyAccountCoordinator =
+        SpotifyAccountCoordinator(
+            scope = viewModelScope,
+            repository = repository,
+            spotifyPrefs = spotifyPreferences,
+            enqueuePendingDownloads = { id, tracks, toastQueued ->
+                enqueuePendingDownloads(id, tracks, toastQueued)
+            },
+            toast = ::toast,
+        )
+    val spotifyAccountUiState: StateFlow<SpotifyAccountUiState> = spotifyAccountCoordinator.uiState
+
+    fun connectSpotify(context: Context) = spotifyAccountCoordinator.startConnect(context)
+
+    fun handleSpotifyAuthCallback(
+        code: String?,
+        state: String?,
+        error: String?,
+    ) = spotifyAccountCoordinator.handleAuthCallback(code, state, error)
+
+    fun refreshSpotifyPlaylists() = spotifyAccountCoordinator.refreshPlaylists()
+
+    fun importSpotifyPlaylist(
+        playlist: SpotifyPlaylistSummary,
+        downloadAfterImport: Boolean,
+    ) = spotifyAccountCoordinator.importPlaylist(playlist, downloadAfterImport)
+
+    fun importSpotifyLikedSongs(downloadAfterImport: Boolean) = spotifyAccountCoordinator.importLikedSongs(downloadAfterImport)
+
+    fun dismissSpotifyImportSummary() = spotifyAccountCoordinator.dismissLastSummary()
+
+    fun disconnectSpotify() = spotifyAccountCoordinator.disconnect()
+
+    fun saveSpotifyCustomClientId(clientId: String?) = spotifyAccountCoordinator.saveCustomClientId(clientId)
 
     private val submenuActionCoordinator =
         SubmenuActionCoordinator(

@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
         viewModel.warmupPlayback()
         requestRequiredPermissions()
         handleOpenTabIntent(intent)
+        handleOAuthCallbackIntent(intent)
 
         setContent {
             val currentTheme by viewModel.currentThemeState.collectAsState()
@@ -149,6 +150,18 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleOpenTabIntent(intent)
+        handleOAuthCallbackIntent(intent)
+    }
+
+    private fun handleOAuthCallbackIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "bestiapop" && uri.host == "spotify-callback") {
+            val code = uri.getQueryParameter("code")
+            val state = uri.getQueryParameter("state")
+            val error = uri.getQueryParameter("error")
+            viewModel.handleSpotifyAuthCallback(code, state, error)
+            intent.data = null
+        }
     }
 
     private fun handleOpenTabIntent(intent: Intent?) {

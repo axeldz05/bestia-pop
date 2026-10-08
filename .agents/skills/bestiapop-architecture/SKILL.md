@@ -63,7 +63,7 @@ Políticas puras de reproducción: `data/playback/PlaybackQueueOrder.kt`, `data/
 `MainScreen` bottom nav (índice persistido en `LibraryPreferencesRepository` / `selectedNavIndex`; deep-link descargas = `openDownloadsTabTransient` sin pisar snapshot; `SaveableStateHolder` / `SaveableStateProvider` preserva estado y scroll de cada tab):
 0. Inicio (`HomeScreen` que unifica música local y streaming: speed dial de 2 elementos por columna, carrusel de «Vuelve a escuchar» con `playCount` en `song_play_stats`, accesos directos a biblioteca completa vía `LibraryScreen`, recomendaciones online [ListenBrainz / Deezer] y buscador unificado con prioridad local + sugerencias streaming)
 1. Descargas (`DownloadsScreen`)
-2. WiFi Sync (`WebServerScreen`)
+2. Añadir e Importar (`WebServerScreen`: WiFi Sync, Carpeta local, Por enlace, Cuentas [Spotify OAuth PKCE])
 3. Ajustes (`SettingsScreen` / temas / ListenBrainz y recomendaciones / Reproducción / Sonido / Descargas / update GitHub)
 
 Overlay: `BottomPlayerBar` → `NowPlayingScreen` (⋮ canción/álbum; merge álbum en `MainScreen`); cola en `QueueScreen`.

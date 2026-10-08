@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.DriveFolderUpload
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
@@ -70,6 +72,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -93,6 +96,7 @@ import com.bestiapop.android.data.model.WifiTransferItem
 import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.model.isFailed
 import com.bestiapop.android.data.model.isInFlight
+import com.bestiapop.android.data.network.SpotifyPlaylistSummary
 import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
@@ -103,6 +107,7 @@ import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.SongActionDialogsController
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.state.LinkImportUiState
+import com.bestiapop.android.ui.state.SpotifyAccountUiState
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -129,6 +134,7 @@ fun WebServerScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var linkUrlInput by rememberSaveable { mutableStateOf("") }
     val linkImportUiState by viewModel.linkImportUiState.collectAsStateWithLifecycle()
+    val spotifyAccountUiState by viewModel.spotifyAccountUiState.collectAsStateWithLifecycle()
 
     val linkDownloads by remember(viewModel) {
         viewModel.activeDownloads
@@ -188,7 +194,7 @@ fun WebServerScreen(
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    text = "WiFi, carpetas locales o enlace web",
+                    text = "WiFi, carpetas locales o servicios",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                 )
@@ -224,6 +230,12 @@ fun WebServerScreen(
                 onClick = { selectedTab = 2 },
                 text = { Text("Por enlace", fontWeight = FontWeight.Bold) },
                 icon = { Icon(Icons.Default.Link, contentDescription = null) },
+            )
+            Tab(
+                selected = selectedTab == 3,
+                onClick = { selectedTab = 3 },
+                text = { Text("Cuentas", fontWeight = FontWeight.Bold) },
+                icon = { Icon(Icons.Default.Person, contentDescription = null) },
             )
         }
 
@@ -296,6 +308,30 @@ fun WebServerScreen(
                     },
                     onRetryDownload = { id -> viewModel.retryActiveDownload(id) },
                     onOpenDownloads = onOpenDownloads,
+                )
+            }
+
+            3 -> {
+                AccountsSyncTabContent(
+                    state = spotifyAccountUiState,
+                    onConnectSpotify = { viewModel.connectSpotify(context) },
+                    onRefreshPlaylists = { viewModel.refreshSpotifyPlaylists() },
+                    onImportPlaylistWithoutDownloading = { playlist ->
+                        viewModel.importSpotifyPlaylist(playlist, downloadAfterImport = false)
+                    },
+                    onImportPlaylistAndDownload = { playlist ->
+                        viewModel.importSpotifyPlaylist(playlist, downloadAfterImport = true)
+                    },
+                    onImportLikedSongsWithoutDownloading = {
+                        viewModel.importSpotifyLikedSongs(downloadAfterImport = false)
+                    },
+                    onImportLikedSongsAndDownload = {
+                        viewModel.importSpotifyLikedSongs(downloadAfterImport = true)
+                    },
+                    onDismissSummary = { viewModel.dismissSpotifyImportSummary() },
+                    onDisconnect = { viewModel.disconnectSpotify() },
+                    onSaveCustomClientId = { id -> viewModel.saveSpotifyCustomClientId(id) },
+                    onOpenPlaylist = onOpenPlaylist,
                 )
             }
         }
@@ -1484,6 +1520,630 @@ private fun WifiTransferProgressRow(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Level 1: Accounts sync controls for Spotify, Deezer, and YouTube Music.
+ */
+@Composable
+fun AccountsSyncTabContent(
+    state: SpotifyAccountUiState,
+    onConnectSpotify: () -> Unit,
+    onRefreshPlaylists: () -> Unit,
+    onImportPlaylistWithoutDownloading: (SpotifyPlaylistSummary) -> Unit,
+    onImportPlaylistAndDownload: (SpotifyPlaylistSummary) -> Unit,
+    onImportLikedSongsWithoutDownloading: () -> Unit,
+    onImportLikedSongsAndDownload: () -> Unit,
+    onDismissSummary: () -> Unit,
+    onDisconnect: () -> Unit,
+    onSaveCustomClientId: (String?) -> Unit,
+    onOpenPlaylist: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showDevSettings by rememberSaveable { mutableStateOf(false) }
+    var customClientIdInput by rememberSaveable {
+        mutableStateOf(
+            (state as? SpotifyAccountUiState.Disconnected)?.customClientId.orEmpty(),
+        )
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        when (state) {
+            is SpotifyAccountUiState.Disconnected -> {
+                SpotifyDisconnectedCard(
+                    errorMessage = state.error,
+                    showDevSettings = showDevSettings,
+                    customClientIdInput = customClientIdInput,
+                    onToggleDevSettings = { showDevSettings = !showDevSettings },
+                    onCustomClientIdChange = { customClientIdInput = it },
+                    onSaveCustomClientId = {
+                        onSaveCustomClientId(customClientIdInput.trim().ifBlank { null })
+                    },
+                    onConnect = onConnectSpotify,
+                )
+            }
+
+            is SpotifyAccountUiState.Connecting -> {
+                SpotifyConnectingCard()
+            }
+
+            is SpotifyAccountUiState.Connected -> {
+                SpotifyConnectedSection(
+                    state = state,
+                    onRefreshPlaylists = onRefreshPlaylists,
+                    onImportPlaylistWithoutDownloading = onImportPlaylistWithoutDownloading,
+                    onImportPlaylistAndDownload = onImportPlaylistAndDownload,
+                    onImportLikedSongsWithoutDownloading = onImportLikedSongsWithoutDownloading,
+                    onImportLikedSongsAndDownload = onImportLikedSongsAndDownload,
+                    onDismissSummary = onDismissSummary,
+                    onDisconnect = onDisconnect,
+                    onOpenPlaylist = onOpenPlaylist,
+                )
+            }
+        }
+
+        OtherServicesInfoCard()
+    }
+}
+
+@Composable
+private fun SpotifyDisconnectedCard(
+    errorMessage: String?,
+    showDevSettings: Boolean,
+    customClientIdInput: String,
+    onToggleDevSettings: () -> Unit,
+    onCustomClientIdChange: (String) -> Unit,
+    onSaveCustomClientId: () -> Unit,
+    onConnect: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = null,
+                    tint = Color(0xFF1DB954),
+                    modifier = Modifier.size(32.dp),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Spotify",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    )
+                    Text(
+                        text = "Sincronizá tus playlists y canciones favoritas",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text =
+                    "Iniciá sesión en tu cuenta de Spotify para acceder a todas tus playlists (tanto públicas como privadas) " +
+                        "e importar sin el límite de 100 canciones de enlaces públicos.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+            )
+
+            if (!errorMessage.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Card(
+                    shape = RoundedCornerShape(10.dp),
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                        ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onConnect,
+                shape = RoundedCornerShape(12.dp),
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1DB954),
+                        contentColor = Color.White,
+                    ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = "Conectar con Spotify",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            TextButton(
+                onClick = onToggleDevSettings,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text(
+                    text = if (showDevSettings) "Ocultar ajustes avanzados" else "Ajustes avanzados (Client ID)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            if (showDevSettings) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = customClientIdInput,
+                    onValueChange = onCustomClientIdChange,
+                    label = { Text("Client ID personalizado") },
+                    placeholder = { Text("Dejar vacío para usar el predeterminado") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    OutlinedButton(
+                        onClick = onSaveCustomClientId,
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("Guardar Client ID")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpotifyConnectingCard() {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp).fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator(
+                color = Color(0xFF1DB954),
+                modifier = Modifier.size(36.dp),
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = "Conectando con Spotify…",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Completá el inicio de sesión en tu navegador.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpotifyConnectedSection(
+    state: SpotifyAccountUiState.Connected,
+    onRefreshPlaylists: () -> Unit,
+    onImportPlaylistWithoutDownloading: (SpotifyPlaylistSummary) -> Unit,
+    onImportPlaylistAndDownload: (SpotifyPlaylistSummary) -> Unit,
+    onImportLikedSongsWithoutDownloading: () -> Unit,
+    onImportLikedSongsAndDownload: () -> Unit,
+    onDismissSummary: () -> Unit,
+    onDisconnect: () -> Unit,
+    onOpenPlaylist: (Long) -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (!state.profile.avatarUrl.isNullOrBlank()) {
+                    ArtworkThumbnail(
+                        artworkUri = state.profile.avatarUrl,
+                        size = 50.dp,
+                        cornerRadius = 25.dp,
+                    )
+                } else {
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(50.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1DB954)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = state.profile.displayName ?: state.profile.id,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    )
+                    Text(
+                        text = "Spotify · Conectado",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF1DB954),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                IconButton(onClick = onRefreshPlaylists) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Actualizar playlists",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onDisconnect) {
+                    Text(
+                        text = "Cerrar sesión",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+        }
+    }
+
+    state.importProgress?.let { progress ->
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Importando: ${progress.playlistName}",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = progress.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+
+    state.lastImportSummary?.let { summary ->
+        PlaylistImportSuccessCard(
+            summary = summary,
+            onOpenPlaylist = { onOpenPlaylist(summary.playlistId) },
+            onDismiss = onDismissSummary,
+        )
+    }
+
+    if (!state.error.isNullOrBlank()) {
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = state.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+        }
+    }
+
+    SpotifyLikedSongsCard(
+        isImporting = state.importProgress != null,
+        onImportWithoutDownloading = onImportLikedSongsWithoutDownloading,
+        onImportAndDownload = onImportLikedSongsAndDownload,
+    )
+
+    Text(
+        text = "Tus playlists (${state.playlists.size})",
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+
+    if (state.isLoadingPlaylists) {
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(32.dp),
+            )
+        }
+    } else if (state.playlists.isEmpty()) {
+        Text(
+            text = "No se encontraron playlists en tu biblioteca de Spotify.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+        )
+    } else {
+        state.playlists.forEach { playlist ->
+            SpotifyPlaylistItemCard(
+                playlist = playlist,
+                isImporting = state.importProgress != null,
+                onImportWithoutDownloading = { onImportPlaylistWithoutDownloading(playlist) },
+                onImportAndDownload = { onImportPlaylistAndDownload(playlist) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpotifyLikedSongsCard(
+    isImporting: Boolean,
+    onImportWithoutDownloading: () -> Unit,
+    onImportAndDownload: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Tus me gusta",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    )
+                    Text(
+                        text = "Canciones guardadas en tu biblioteca",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onImportWithoutDownloading,
+                    enabled = !isImporting,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = "Importar",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+
+                Button(
+                    onClick = onImportAndDownload,
+                    enabled = !isImporting,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = "Importar y bajar",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpotifyPlaylistItemCard(
+    playlist: SpotifyPlaylistSummary,
+    isImporting: Boolean,
+    onImportWithoutDownloading: () -> Unit,
+    onImportAndDownload: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ArtworkThumbnail(
+                    artworkUri = playlist.coverUrl,
+                    size = 48.dp,
+                    cornerRadius = 8.dp,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = playlist.name,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                    )
+                    val privacyLabel = if (playlist.isPublic) "" else " · Privada"
+                    Text(
+                        text = "${playlist.trackCount} canciones$privacyLabel",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onImportWithoutDownloading,
+                    enabled = !isImporting,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = "Importar",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+
+                Button(
+                    onClick = onImportAndDownload,
+                    enabled = !isImporting,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = "Importar y bajar",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OtherServicesInfoCard() {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Deezer y YouTube Music",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text =
+                    "• Deezer: no requiere cuenta. Podés pegar el enlace de cualquier playlist pública en la pestaña " +
+                        "«Por enlace» para importar hasta 500 canciones con paginación automática.\n" +
+                        "• YouTube Music: importá playlists públicas pegando el enlace en «Por enlace».",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                lineHeight = 18.sp,
+            )
         }
     }
 }

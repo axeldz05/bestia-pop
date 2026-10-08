@@ -15,6 +15,7 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.SongPathRef
+import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.util.TagSyncSummary
 import kotlinx.coroutines.flow.Flow
@@ -58,6 +59,8 @@ interface IMusicRepository {
 
     /** Full Room row including `lyrics`. The [allSongsFlow] list is identity-slim. */
     suspend fun getSongById(id: Long): Song?
+
+    suspend fun findSong(meta: TrackMeta): Song? = findSongByArtistTitle(meta.artist, meta.title)
 
     suspend fun findSongByArtistTitle(
         artist: String,

@@ -100,6 +100,14 @@ class GetLibrarySongsUseCase {
     @Volatile
     private var lastCachedGenres: CachedGenres? = null
 
+    fun clearCache() {
+        lastCachedProjection = null
+        lastCachedGrouped = null
+        lastCachedHaystack = null
+        lastCachedArtists = null
+        lastCachedGenres = null
+    }
+
     fun getOrBuildHaystack(songs: List<Song>): Map<Long, String> {
         val cached = lastCachedHaystack
         if (cached != null && cached.songsRef === songs && cached.songsSize == songs.size) {
@@ -406,12 +414,15 @@ class GetLibrarySongsUseCase {
         val yearPart = if (song.year > 0) " ${song.year}" else ""
         val genreAliases = GenreTaxonomy.expandAliases(song.genre).joinToString(" ")
         val genrePart = if (genreAliases.isNotEmpty()) " $genreAliases" else ""
-        val raw = "${song.title} ${song.artist} ${song.album} ${song.genre}$yearPart$genrePart"
+        MetadataSplitter.extractAndRegisterAliases(song.artist)
+        val artistAliases = MetadataSplitter.artistAliases(song.artist).joinToString(" ")
+        val artistPart = if (artistAliases.isNotEmpty()) " $artistAliases" else ""
+        val raw = "${song.title} ${song.artist}$artistPart ${song.album} ${song.genre}$yearPart$genrePart"
         val base = TrackMatchKeys.normalize(IdentifyQueryVariants.searchTokens(raw))
         // Expand with transliterated Latin for non-Latin artist/title/album names
         val transliterated =
             NaturalTextOrder.transliterateToLatin(
-                "${song.title} ${song.artist} ${song.album}",
+                "${song.title} ${song.artist}$artistPart ${song.album}",
             )
         val transNorm = TrackMatchKeys.normalize(transliterated)
         return if (transNorm != base && transNorm.isNotBlank()) "$base $transNorm" else base

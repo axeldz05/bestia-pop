@@ -484,8 +484,16 @@ internal class PlaybackQueueCoordinator(
     }
 
     fun skipToPrevious(onSkipToIndex: (Int) -> Unit) {
-        applySkipModes()
         val player = getController()
+        if (player != null && player.currentPosition > 3000L) {
+            player.seekTo(0L)
+            return
+        }
+        if (player == null && getPlaybackPositionMs() > 3000L) {
+            onSkipToIndex(getLastMediaItemIndex().coerceAtLeast(0))
+            return
+        }
+        applySkipModes()
         if (player != null) {
             if (player.repeatMode == Player.REPEAT_MODE_ONE) {
                 val prevIndex =
@@ -548,7 +556,7 @@ internal class PlaybackQueueCoordinator(
     ): Boolean =
         isShuffle() &&
             getRepeatMode() == RepeatMode.ALL &&
-            reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
+            (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) &&
             lastIndex == queueSize - 1 &&
             newIndex == 0 &&
             queueSize > 1

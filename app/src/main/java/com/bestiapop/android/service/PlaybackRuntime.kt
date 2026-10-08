@@ -1292,7 +1292,7 @@ class PlaybackRuntime internal constructor(
 
         if (wrappedShuffleCycle) {
             val previous = _currentItem.value
-            creditItemPlayback(previous, completed = true)
+            creditItemPlayback(previous, completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
             (previous as? PlayableItem.Remote)?.let { outgoing ->
                 maybeSaveWhileListening(
                     outgoing,

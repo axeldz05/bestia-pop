@@ -57,6 +57,16 @@ internal class OnlineTrackDownloadOperator(
         withContext(Dispatchers.IO) {
             onProgress?.invoke(DownloadPhase.Searching)
 
+            // Avoid unnecessary network calls if track is already present in local library
+            if (conflictPolicy == null) {
+                val preExisting =
+                    identityCache.findSong(track.identity)
+                        ?: identityCache.findSongByArtistTitle(track.artist, track.title)
+                if (preExisting != null && !preExisting.isRemote) {
+                    throw DuplicateSongException(preExisting, track)
+                }
+            }
+
             val ytStream =
                 resolveTrackStreamForDownload(track, forceRefresh = true).getOrElse { e ->
                     throw IOException(e.message ?: "No se pudo resolver el stream de YouTube")
@@ -90,7 +100,9 @@ internal class OnlineTrackDownloadOperator(
                 }
 
                 null -> {
-                    val existing = identityCache.findSongByArtistTitle(identity.artist, identity.title)
+                    val existing =
+                        identityCache.findSong(identity)
+                            ?: identityCache.findSongByArtistTitle(identity.artist, identity.title)
                     if (existing != null) {
                         if (!existing.isRemote) {
                             throw DuplicateSongException(existing, track.copy(identity = identity))

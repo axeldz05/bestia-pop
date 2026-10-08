@@ -1772,6 +1772,33 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
+    fun skipToPrevious_whenPositionAbove3000ms_rewindsToZeroWithoutSkippingTrack() {
+        val fixture = fixture()
+        try {
+            val album = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
+            fixture.runtime.playPlayableCollection(album, startIndex = 1, rotate = false)
+            fixture.runtime.seekTo(5000L)
+            assertEquals(
+                "Song 2",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
+
+            fixture.runtime.skipToPrevious()
+
+            assertEquals(
+                "Song 2 must remain current when rewinding from >3000ms",
+                "Song 2",
+                fixture.runtime.currentItem.value
+                    ?.title,
+            )
+            assertEquals(0L, fixture.runtime.playbackPositionMs.value)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun shuffleCollection_withRepeatModeOneAndClearRepeatOneOnManualPlay_clearsRepeatOneAndStartsShuffled() {
         val settings =
             MutableStateFlow(

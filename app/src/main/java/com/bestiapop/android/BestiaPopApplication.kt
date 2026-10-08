@@ -198,7 +198,7 @@ class BestiaPopApplication :
 
         return ImageLoader
             .Builder(this)
-            .okHttpClient { com.bestiapop.android.data.network.HttpClients.transfer }
+            .okHttpClient { com.bestiapop.android.data.network.HttpClients.api }
             .memoryCache {
                 MemoryCache
                     .Builder(this)

@@ -25,6 +25,7 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.SongPathRef
+import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.data.model.toPlayableItems
@@ -427,6 +428,11 @@ class MusicRepository private constructor(
             ids.chunked(IDENTITY_SONG_ID_CHUNK).flatMap { chunk ->
                 musicDao.getIdentitySongsByIds(chunk)
             }
+        }
+
+    override suspend fun findSong(meta: TrackMeta): Song? =
+        withContext(Dispatchers.IO) {
+            identityCache.findSong(meta)
         }
 
     override suspend fun findSongByArtistTitle(

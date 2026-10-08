@@ -8,6 +8,7 @@ import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.util.albumTrackDisplayNumber
 import java.text.Normalizer
+import kotlin.math.abs
 
 /**
  * Shared artist+title matching keys used by radio, downloads, imports, and library lookups.
@@ -139,16 +140,52 @@ object TrackMatchKeys {
                     val expanded = normalizedHaystack.replace(normalize(matchingAlias), normAlias)
                     if (expanded.contains(normalizedQuery) || foldRomajiVowels(expanded).contains(foldedQuery)) return true
                 }
+            } else {
+                val queryAlias = aliases.firstOrNull { normalizedQuery.contains(normalize(it)) }
+                if (queryAlias != null) {
+                    for (alias in aliases) {
+                        val normAlias = normalize(alias)
+                        if (normAlias == normalize(queryAlias)) continue
+                        val expandedQuery = normalizedQuery.replace(normalize(queryAlias), normAlias)
+                        if (normalizedHaystack.contains(expandedQuery) ||
+                            foldedHaystack.contains(foldRomajiVowels(expandedQuery))
+                        ) {
+                            return true
+                        }
+                    }
+                }
             }
         }
 
-        // 3. Transliteration for non-Latin scripts if present
+        // 3. Transliteration for non-Latin scripts in haystack
         if (hasNonAscii(haystack)) {
             val transliterated = normalize(NaturalTextOrder.transliterateToLatin(haystack))
             if (transliterated.isNotEmpty() && transliterated != normalizedHaystack) {
                 if (transliterated.contains(normalizedQuery) || transliterated.contains(foldedQuery)) return true
                 val foldedTrans = foldRomajiVowels(transliterated)
                 if (foldedTrans.contains(normalizedQuery) || foldedTrans.contains(foldedQuery)) return true
+                val tTokens = if (queryTokens.isNotEmpty()) queryTokens else normalizedQuery.split(' ').filter { it.isNotEmpty() }
+                if (tTokens.size > 1 &&
+                    tTokens.all { token -> transliterated.contains(token) || foldedTrans.contains(foldRomajiVowels(token)) }
+                ) {
+                    return true
+                }
+            }
+        }
+
+        // 4. Transliteration for non-Latin scripts in query (e.g. searching Cyrillic/Greek/Japanese against Latin library)
+        if (hasNonAscii(normalizedQuery)) {
+            val transQuery = normalize(NaturalTextOrder.transliterateToLatin(normalizedQuery))
+            if (transQuery.isNotEmpty() && transQuery != normalizedQuery) {
+                if (normalizedHaystack.contains(transQuery)) return true
+                val foldedTransQuery = foldRomajiVowels(transQuery)
+                if (foldedHaystack.contains(foldedTransQuery) || normalizedHaystack.contains(foldedTransQuery)) return true
+                val qTokens = transQuery.split(' ').filter { it.isNotEmpty() }
+                if (qTokens.size > 1 &&
+                    qTokens.all { token -> normalizedHaystack.contains(token) || foldedHaystack.contains(foldRomajiVowels(token)) }
+                ) {
+                    return true
+                }
             }
         }
 
@@ -368,11 +405,18 @@ object TrackMatchKeys {
             }
 
             for (rawTitle in titlesToProcess) {
-                val variants = phoneticTextVariants(rawTitle)
+                val variants = phoneticTextVariants(rawTitle).toMutableSet()
+                val folded = foldRomajiVowels(normalize(rawTitle))
+                if (folded.isNotEmpty()) variants.add(folded)
                 for (v in variants) {
+                    val foldedV = foldRomajiVowels(normalize(v))
                     for (art in artistVariants) {
                         val key = matchKey(art, v)
                         if (key.isNotEmpty()) out.add(key)
+                        if (foldedV.isNotEmpty() && foldedV != normalize(v)) {
+                            val fKey = matchKey(art, foldedV)
+                            if (fKey.isNotEmpty()) out.add(fKey)
+                        }
                         emitRlVariants(art, v)
                     }
                 }
@@ -511,6 +555,52 @@ object TrackMatchKeys {
             if (!found.isRemote) return found
             if (remoteFallback == null) remoteFallback = found
         }
+        if (remoteFallback != null && !remoteFallback.isRemote) return remoteFallback
+
+        // Secondary cross-script / translated title match:
+        // When the title is translated into another language (e.g. English vs Japanese/Russian)
+        // or transliterated differently, but artist matches and either duration or album+trackNumber matches:
+        if (meta.artist.isNotBlank()) {
+            val normArtist = normalize(meta.artist)
+            val transArtist = normalize(NaturalTextOrder.transliterateToLatin(meta.artist))
+            val aliases = MetadataSplitter.artistAliases(meta.artist).map { normalize(it) }
+
+            fun artistMatches(song: Song): Boolean {
+                val sNorm = normalize(song.artist)
+                if (sNorm == normArtist || (transArtist.isNotEmpty() && sNorm == transArtist)) return true
+                val sTrans = normalize(NaturalTextOrder.transliterateToLatin(song.artist))
+                if (sTrans.isNotEmpty() && (sTrans == normArtist || sTrans == transArtist)) return true
+                if (aliases.any { it == sNorm || it == sTrans }) return true
+                return false
+            }
+
+            for (song in index.values) {
+                if (song.isRemote) continue
+                if (!artistMatches(song)) continue
+
+                // Match 1: Same album and same track number (for releases with translated titles like English vs Japanese)
+                if (meta.trackNumber > 0 && song.trackNumber > 0 &&
+                    meta.trackNumber == song.trackNumber &&
+                    meta.album.isNotBlank() && song.album.isNotBlank() &&
+                    normalize(meta.album) == normalize(song.album) &&
+                    (meta.durationMs <= 0L || song.durationMs <= 0L || abs(meta.durationMs - song.durationMs) <= 4000L)
+                ) {
+                    return song
+                }
+
+                // Match 2: Transliterated non-Latin title match with compatible duration (±3.0s)
+                val transMeta = normalize(NaturalTextOrder.transliterateToLatin(meta.title))
+                val transSong = normalize(NaturalTextOrder.transliterateToLatin(song.title))
+                if (transMeta.isNotEmpty() &&
+                    (transMeta == transSong || transMeta == normalize(song.title) || transSong == normalize(meta.title))
+                ) {
+                    if (meta.durationMs <= 0L || song.durationMs <= 0L || abs(meta.durationMs - song.durationMs) <= 3000L) {
+                        return song
+                    }
+                }
+            }
+        }
+
         return remoteFallback
     }
 

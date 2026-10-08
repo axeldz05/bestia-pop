@@ -151,7 +151,10 @@ class MetadataSplitterTest {
     }
 
     @Test
-    fun artistIdentityKey_unifiesKnownCrossScriptAliases() {
+    fun artistIdentityKey_unifiesDynamicallyRegisteredCrossScriptAliases() {
+        MetadataSplitter.clearDynamicArtistAliases()
+        MetadataSplitter.registerArtistAlias("Kinokoteikoku", "きのこ帝国")
+        MetadataSplitter.registerArtistAlias("Kinokoteikoku", "Kinoko Teikoku")
         assertEquals(
             MetadataSplitter.artistIdentityKey("きのこ帝国"),
             MetadataSplitter.artistIdentityKey("Kinokoteikoku"),
@@ -159,6 +162,33 @@ class MetadataSplitterTest {
         assertEquals(
             MetadataSplitter.artistIdentityKey("きのこ帝国"),
             MetadataSplitter.artistIdentityKey("Kinoko Teikoku"),
+        )
+    }
+
+    @Test
+    fun artistIdentityKey_unifiesCyrillicAlgorithmicallyWithoutHardcoding() {
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("Кино"),
+            MetadataSplitter.artistIdentityKey("Kino"),
+        )
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("Молчат Дома"),
+            MetadataSplitter.artistIdentityKey("Molchat Doma"),
+        )
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("Тату"),
+            MetadataSplitter.artistIdentityKey("Tatu"),
+        )
+    }
+
+    @Test
+    fun extractAndRegisterAliases_autoDiscoversParenthesizedAliases() {
+        MetadataSplitter.clearDynamicArtistAliases()
+        val pair = MetadataSplitter.extractAndRegisterAliases("RADWIMPS (ラッドウィンプス)")
+        assertEquals("RADWIMPS" to "ラッドウィンプス", pair)
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("ラッドウィンプス"),
+            MetadataSplitter.artistIdentityKey("RADWIMPS"),
         )
     }
 

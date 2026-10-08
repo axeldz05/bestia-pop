@@ -177,13 +177,43 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    private var bufferingWatchdogJob: Job? = null
     private var lastRecoveryAttemptElapsedRealtime = 0L
     private var consecutiveRecoveryAttempts = 0
 
     private fun isAudioSinkOrHardwareError(error: PlaybackException): Boolean =
         error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED ||
             error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED ||
-            error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+            error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+            error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT
+
+    private fun recoverStuckBufferingPlayer() {
+        val p = player ?: return
+        PlaybackDiagnostics.warn(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "recoverStuckBufferingPlayer: attempting retry for stuck buffering item=${p.currentMediaItem?.mediaId}",
+        )
+        val currentIndex = p.currentMediaItemIndex
+        val currentPosition = p.currentPosition.coerceAtLeast(0L)
+        try {
+            p.seekTo(currentIndex, currentPosition)
+            p.prepare()
+            p.play()
+        } catch (e: Exception) {
+            PlaybackDiagnostics.error(
+                PlaybackDiagnostics.TAG_SERVICE,
+                "recoverStuckBufferingPlayer: failed to recover: ${e.message}",
+                e,
+            )
+            recoverPlayerAfterError(
+                PlaybackException(
+                    "Buffering watchdog timeout recovery",
+                    null,
+                    PlaybackException.ERROR_CODE_TIMEOUT,
+                ),
+            )
+        }
+    }
 
     private fun recoverPlayerAfterError(error: PlaybackException) {
         if (!isAudioSinkOrHardwareError(error)) return
@@ -348,16 +378,43 @@ class MusicService : MediaLibraryService() {
                 updateWakeMode()
                 updateCrossfadeLoop()
                 if (playbackState == Player.STATE_BUFFERING) {
-                    acquireTransientWakeLock(10_000L)
+                    if (p.playWhenReady) {
+                        acquireTransientWakeLock(BUFFERING_WAKE_LOCK_TIMEOUT_MS)
+                        bufferingWatchdogJob?.cancel()
+                        bufferingWatchdogJob =
+                            serviceScope.launch {
+                                delay(BUFFERING_WATCHDOG_TIMEOUT_MS)
+                                val activePlayer = player ?: return@launch
+                                if (activePlayer.playbackState == Player.STATE_BUFFERING && activePlayer.playWhenReady) {
+                                    PlaybackDiagnostics.warn(
+                                        PlaybackDiagnostics.TAG_SERVICE,
+                                        "MusicService: Buffering watchdog timeout (>25s) in STATE_BUFFERING on item=${activePlayer.currentMediaItem?.mediaId}. Recovering player.",
+                                    )
+                                    recoverStuckBufferingPlayer()
+                                }
+                            }
+                    }
                 } else if (playbackState == Player.STATE_READY) {
+                    bufferingWatchdogJob?.cancel()
+                    bufferingWatchdogJob = null
                     if (p.isPlaying) {
                         releaseTransientWakeLock()
                     }
                     if (latestPlaybackSettings.volumeBoostEnabled && latestPlaybackSettings.volumeBoostAmount > 0f) {
                         applyBoost(latestPlaybackSettings)
                     }
-                } else if (playbackState == Player.STATE_ENDED && p.playWhenReady && p.mediaItemCount > 0) {
-                    acquireTransientWakeLock(10_000L)
+                } else if (playbackState == Player.STATE_IDLE) {
+                    bufferingWatchdogJob?.cancel()
+                    bufferingWatchdogJob = null
+                    releaseTransientWakeLock()
+                } else if (playbackState == Player.STATE_ENDED) {
+                    bufferingWatchdogJob?.cancel()
+                    bufferingWatchdogJob = null
+                    if (p.playWhenReady && p.mediaItemCount > 0) {
+                        acquireTransientWakeLock(15_000L)
+                    } else {
+                        releaseTransientWakeLock()
+                    }
                 }
             }
 
@@ -410,6 +467,8 @@ class MusicService : MediaLibraryService() {
                     lastPausedAtElapsedRealtime = 0L
                     (application as? BestiaPopApplication)?.playbackRuntime?.onPlaybackStartedFromService()
                 } else {
+                    bufferingWatchdogJob?.cancel()
+                    bufferingWatchdogJob = null
                     releaseTransientWakeLock()
                     if (p.mediaItemCount > 0 && p.playbackState != Player.STATE_ENDED) {
                         lastPausedAtElapsedRealtime = SystemClock.elapsedRealtime()
@@ -479,7 +538,7 @@ class MusicService : MediaLibraryService() {
                 updateCrossfadeLoop(restart = true)
                 if (p.playWhenReady) {
                     if (!p.isPlaying || p.playbackState != Player.STATE_READY) {
-                        acquireTransientWakeLock(10_000L)
+                        acquireTransientWakeLock(BUFFERING_WAKE_LOCK_TIMEOUT_MS)
                     } else {
                         releaseTransientWakeLock()
                     }
@@ -830,7 +889,7 @@ class MusicService : MediaLibraryService() {
         p.setWakeMode(playbackWakeMode(currentIsRemote = currentIsRemote, nextIsRemote = nextIsRemote))
     }
 
-    private fun acquireTransientWakeLock(timeoutMs: Long = 10_000L) {
+    private fun acquireTransientWakeLock(timeoutMs: Long = BUFFERING_WAKE_LOCK_TIMEOUT_MS) {
         val powerManager = getSystemService(PowerManager::class.java) ?: return
         try {
             val lock =
@@ -1110,6 +1169,8 @@ class MusicService : MediaLibraryService() {
         const val ACTION_SET_SHUFFLE_ORDER = "com.bestiapop.android.SET_SHUFFLE_ORDER"
         const val EXTRA_SHUFFLE_ORDER = "shuffle_order"
         const val PAUSE_GRACE_PERIOD_MS = 10 * 60 * 1000L
+        const val BUFFERING_WAKE_LOCK_TIMEOUT_MS = 30_000L
+        const val BUFFERING_WATCHDOG_TIMEOUT_MS = 25_000L
 
         /** Head start buffered for upcoming queue items (10s). */
         private const val PRELOAD_TARGET_DURATION_US = 10_000_000L

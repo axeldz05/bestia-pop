@@ -443,21 +443,24 @@ internal class RepositoryIdentityCache(
         }
     }
 
-    suspend fun findSongByArtistTitle(
-        artist: String,
-        title: String,
-    ): com.bestiapop.android.data.model.Song? {
-        if (artist.isBlank() || title.isBlank()) return null
+    suspend fun findSong(meta: com.bestiapop.android.data.model.TrackMeta): com.bestiapop.android.data.model.Song? {
+        if (meta.artist.isBlank() && meta.title.isBlank()) return null
         val songs = getSongs()
         val index =
             com.bestiapop.android.domain.util.TrackMatchKeys
                 .buildLibraryIndex(songs)
-        val candidateIdentity =
-            com.bestiapop.android.data.model
-                .TrackIdentity(title = title, artist = artist)
         return com.bestiapop.android.domain.util.TrackMatchKeys
-            .lookupLocalSong(index, candidateIdentity)
+            .lookupLocalSong(index, meta)
     }
+
+    suspend fun findSongByArtistTitle(
+        artist: String,
+        title: String,
+    ): com.bestiapop.android.data.model.Song? =
+        findSong(
+            com.bestiapop.android.data.model
+                .TrackIdentity(title = title, artist = artist),
+        )
 }
 
 internal suspend fun syncSongsRelations(

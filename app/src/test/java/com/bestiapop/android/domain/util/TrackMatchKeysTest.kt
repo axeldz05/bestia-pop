@@ -407,10 +407,84 @@ class TrackMatchKeysTest {
 
     @Test
     fun matchesQuery_supportsKnownCrossScriptAliases() {
+        MetadataSplitter.registerArtistAlias("Kinokoteikoku", "きのこ帝国")
         // "kinokotekoku" query matches Kanji artist "きのこ帝国"
         assertTrue(TrackMatchKeys.matchesQuery("きのこ帝国", "kinokotekoku"))
         assertTrue(TrackMatchKeys.matchesQuery("きのこ帝国", "kinokoteikoku"))
         // Combined song haystack matches
         assertTrue(TrackMatchKeys.matchesQuery("Whirlpool きのこ帝国 eureka", "kinokotekoku"))
+    }
+
+    @Test
+    fun matchesQuery_supportsNonLatinQueriesAgainstLatinHaystack() {
+        // Cyrillic query matches Latin song
+        assertTrue(TrackMatchKeys.matchesQuery("Kino Gruppa Krovi Blood Type", "Группа крови"))
+        assertTrue(TrackMatchKeys.matchesQuery("Kino Gruppa Krovi", "Кино"))
+        // Katakana query matches Latin artist with known alias
+        assertTrue(TrackMatchKeys.matchesQuery("RADWIMPS Sparkle Your Name", "ラッドウィンプス"))
+        // Cyrillic query matches Tatu
+        assertTrue(TrackMatchKeys.matchesQuery("Tatu All The Things She Said", "Тату"))
+    }
+
+    @Test
+    fun lookupLocalSong_matchesCrossScriptTransliteratedTitlesWithDuration() {
+        val library =
+            listOf(
+                Song(
+                    id = 42L,
+                    uriString = "file:///kino.mp3",
+                    title = "Gruppa Krovi",
+                    artist = "Kino",
+                    album = "Gruppa Krovi",
+                    durationMs = 238_000L,
+                    trackNumber = 1,
+                ),
+            )
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+
+        // Querying with Cyrillic title and alias artist:
+        val match =
+            TrackMatchKeys.lookupLocalSong(
+                index,
+                TrackIdentity(
+                    title = "Группа крови",
+                    artist = "Кино",
+                    album = "Группа крови",
+                    durationMs = 238_500L,
+                    trackNumber = 1,
+                ),
+            )
+        assertEquals(42L, match?.id)
+    }
+
+    @Test
+    fun lookupLocalSong_matchesTranslatedTitleOnSameAlbumByTrackNumber() {
+        val library =
+            listOf(
+                Song(
+                    id = 100L,
+                    uriString = "file:///sparkle.mp3",
+                    title = "Sparkle",
+                    artist = "RADWIMPS",
+                    album = "Your Name",
+                    durationMs = 410_000L,
+                    trackNumber = 3,
+                ),
+            )
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+
+        // Querying with Japanese title on the same album and track number:
+        val match =
+            TrackMatchKeys.lookupLocalSong(
+                index,
+                TrackIdentity(
+                    title = "スパークル",
+                    artist = "RADWIMPS",
+                    album = "Your Name",
+                    durationMs = 410_200L,
+                    trackNumber = 3,
+                ),
+            )
+        assertEquals(100L, match?.id)
     }
 }

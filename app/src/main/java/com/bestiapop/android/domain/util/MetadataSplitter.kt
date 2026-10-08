@@ -2,6 +2,8 @@ package com.bestiapop.android.domain.util
 
 import com.bestiapop.android.data.model.Artist
 import java.text.Normalizer
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
 
 /**
  * Splits composite artist and genre strings into distinct individual entities
@@ -74,55 +76,166 @@ object MetadataSplitter {
         return IdentifyQueryVariants.latinLetters(text)
     }
 
-    private val KNOWN_ARTIST_ALIAS_GROUPS: List<Pair<String, Set<String>>> =
-        listOf(
-            "kinokoteikoku" to setOf("きのこ帝国", "Kinokoteikoku", "Kinoko Teikoku"),
+    private val dynamicCanonicalKeys = ConcurrentHashMap<String, String>()
+    private val dynamicArtistAliases = ConcurrentHashMap<String, CopyOnWriteArraySet<String>>()
+
+    private val PARENTHESIS_ALIAS_REGEX =
+        Regex("""^([^\(\[\{]+?)\s*[\(\[\{]([^\)\]\}]+)[\)\]\}]$""")
+
+    private val NON_ALIAS_KEYWORDS =
+        setOf(
+            "live",
+            "remix",
+            "deluxe",
+            "remaster",
+            "remastered",
+            "acoustic",
+            "official",
+            "prod",
+            "version",
+            "instrumental",
+            "edit",
         )
 
-    private val CANONICAL_ARTIST_KEYS: Map<String, String> =
-        run {
-            val map = mutableMapOf<String, String>()
-            for ((canonical, variants) in KNOWN_ARTIST_ALIAS_GROUPS) {
-                map[canonical] = canonical
-                for (variant in variants) {
-                    map[variant.lowercase().replace(" ", "")] = canonical
-                    map[variant.lowercase()] = canonical
-                    map[variant] = canonical
-                }
-            }
-            map
+    /**
+     * Registers an alias association between [canonical] and [alias] dynamically at runtime.
+     * Both names will share the same [artistIdentityKey] and be returned in [artistAliases].
+     */
+    fun registerArtistAlias(
+        canonical: String,
+        alias: String,
+    ) {
+        val cleanCanonical = canonical.trim()
+        val cleanAlias = alias.trim()
+        if (cleanCanonical.isBlank() || cleanAlias.isBlank() ||
+            cleanCanonical.equals(cleanAlias, ignoreCase = true)
+        ) {
+            return
         }
 
-    private val ARTIST_ALIASES_MAP: Map<String, Set<String>> =
-        run {
-            val map = mutableMapOf<String, Set<String>>()
-            for ((canonical, variants) in KNOWN_ARTIST_ALIAS_GROUPS) {
-                val allForms = variants + canonical
-                for (item in allForms) {
-                    map[item.lowercase().replace(" ", "")] = allForms
-                    map[item.lowercase()] = allForms
-                    map[item] = allForms
-                }
-            }
-            map
-        }
+        val key = artistIdentityKey(cleanCanonical)
+
+        val cNorm = cleanCanonical.lowercase()
+        val cCompact = cNorm.replace(" ", "")
+        val aNorm = cleanAlias.lowercase()
+        val aCompact = aNorm.replace(" ", "")
+
+        dynamicCanonicalKeys[cNorm] = key
+        dynamicCanonicalKeys[cCompact] = key
+        dynamicCanonicalKeys[aNorm] = key
+        dynamicCanonicalKeys[aCompact] = key
+
+        dynamicArtistAliases.computeIfAbsent(cNorm) { CopyOnWriteArraySet() }.add(cleanAlias)
+        dynamicArtistAliases.computeIfAbsent(cCompact) { CopyOnWriteArraySet() }.add(cleanAlias)
+        dynamicArtistAliases.computeIfAbsent(aNorm) { CopyOnWriteArraySet() }.add(cleanCanonical)
+        dynamicArtistAliases.computeIfAbsent(aCompact) { CopyOnWriteArraySet() }.add(cleanCanonical)
+    }
 
     /**
-     * Returns known alias representations for an artist, or an empty set if unaliased.
+     * Registers a batch of aliases associated with a canonical artist name.
+     */
+    fun registerArtistAliases(
+        canonical: String,
+        aliases: Collection<String>,
+    ) {
+        for (alias in aliases) {
+            registerArtistAlias(canonical, alias)
+        }
+    }
+
+    /**
+     * Clears all dynamically registered artist aliases.
+     */
+    fun clearDynamicArtistAliases() {
+        dynamicCanonicalKeys.clear()
+        dynamicArtistAliases.clear()
+    }
+
+    /**
+     * Automatically extracts parenthesized or bracketed alias pairs from an artist name
+     * (e.g. `"RADWIMPS (ラッドウィンプス)"` or `"宇多田ヒカル (Hikaru Utada)"`) and registers them dynamically.
+     * Returns the `(primary, alias)` pair if detected, or `null`.
+     */
+    fun extractAndRegisterAliases(raw: String): Pair<String, String>? {
+        if (COLLAB_REGEX.containsMatchIn(raw)) return null
+        val match = PARENTHESIS_ALIAS_REGEX.find(raw.trim()) ?: return null
+        val primary = match.groupValues[1].trim()
+        val secondary = match.groupValues[2].trim()
+        if (primary.isEmpty() || secondary.isEmpty()) return null
+        if (secondary.lowercase() in NON_ALIAS_KEYWORDS) return null
+        registerArtistAlias(primary, secondary)
+        return primary to secondary
+    }
+
+    /**
+     * Returns dynamically discovered alias representations for an artist, or an empty set if unaliased.
      */
     fun artistAliases(name: String): Set<String> {
         val trimmed = name.trim()
         val compact = trimmed.lowercase().replace(" ", "")
-        return ARTIST_ALIASES_MAP[compact]
-            ?: ARTIST_ALIASES_MAP[trimmed.lowercase()]
-            ?: ARTIST_ALIASES_MAP[trimmed]
+        return dynamicArtistAliases[compact]
+            ?: dynamicArtistAliases[trimmed.lowercase()]
+            ?: dynamicArtistAliases[trimmed]
             ?: emptySet()
     }
 
     /**
-     * All known alias entries for search haystack expansion.
+     * All dynamically known alias entries for search haystack expansion.
      */
-    fun allKnownArtistAliases(): List<Pair<String, Set<String>>> = KNOWN_ARTIST_ALIAS_GROUPS
+    fun allKnownArtistAliases(): List<Pair<String, Set<String>>> {
+        val visited = HashSet<String>()
+        val result = mutableListOf<Pair<String, Set<String>>>()
+        for ((key, aliases) in dynamicArtistAliases) {
+            if (visited.add(key)) {
+                val allGroup = aliases + key
+                visited.addAll(allGroup.map { it.lowercase() })
+                result.add(key to allGroup)
+            }
+        }
+        return result
+    }
+
+    private val CYRILLIC_PHONETIC_PAIRS =
+        listOf(
+            "щ" to "shch",
+            "Щ" to "Shch",
+            "ч" to "ch",
+            "Ч" to "Ch",
+            "ш" to "sh",
+            "Ш" to "Sh",
+            "ж" to "zh",
+            "Ж" to "Zh",
+            "х" to "kh",
+            "Х" to "Kh",
+            "ц" to "ts",
+            "Ц" to "Ts",
+            "ю" to "yu",
+            "Ю" to "Yu",
+            "я" to "ya",
+            "Я" to "Ya",
+        )
+
+    private fun transliterateCyrillicPhonetic(text: String): String {
+        var result = text
+        for ((cyr, lat) in CYRILLIC_PHONETIC_PAIRS) {
+            result = result.replace(cyr, lat)
+        }
+        return result
+    }
+
+    private fun isTransliteratableScript(text: String): Boolean =
+        text.any { ch ->
+            if (!ch.isLetter()) return@any false
+            when (Character.UnicodeScript.of(ch.code)) {
+                Character.UnicodeScript.CYRILLIC,
+                Character.UnicodeScript.GREEK,
+                Character.UnicodeScript.ARMENIAN,
+                Character.UnicodeScript.GEORGIAN,
+                -> true
+
+                else -> false
+            }
+        }
 
     // --- Public identity-key API ----------------------------------------------
 
@@ -136,15 +249,16 @@ object MetadataSplitter {
      * becomes the canonical key so that `"Elephant Gym 大象體操"` and
      * `"Elephant Gym"` share the same key — without hardcoded alias tables.
      *
-     * Known cross-script aliases (e.g. `きのこ帝国` ↔ `Kinokoteikoku`) map to a shared canonical key.
-     * Arbitrary unaliased pure non-Latin names keep their original-script key.
+     * Dynamically registered cross-script aliases map to a shared canonical key.
+     * Pure alphabetic non-Latin scripts (Cyrillic, Greek) are transliterated algorithmically to Latin.
+     * Arbitrary unaliased pure ideographic names (CJK) keep their original-script key.
      */
     fun artistIdentityKey(name: String): String {
         val trimmed = name.trim()
         val compactKey = trimmed.lowercase().replace(" ", "")
-        CANONICAL_ARTIST_KEYS[compactKey]?.let { return it }
-        CANONICAL_ARTIST_KEYS[trimmed.lowercase()]?.let { return it }
-        CANONICAL_ARTIST_KEYS[trimmed]?.let { return it }
+        dynamicCanonicalKeys[compactKey]?.let { return it }
+        dynamicCanonicalKeys[trimmed.lowercase()]?.let { return it }
+        dynamicCanonicalKeys[trimmed]?.let { return it }
 
         val folded =
             foldDiacritics(name)
@@ -158,6 +272,22 @@ object MetadataSplitter {
         if (latinContent.length >= 3 && latinContent != folded) {
             return latinContent
         }
+
+        // For phonetic alphabetic scripts (Cyrillic, Greek), transliterate to Latin
+        if (isTransliteratableScript(folded)) {
+            val phonetic = transliterateCyrillicPhonetic(folded)
+            val transliterated =
+                foldDiacritics(NaturalTextOrder.transliterateToLatin(phonetic))
+                    .lowercase()
+                    .replace(CONNECTORS, " ")
+                    .replace(HYPHENS_DASHES, " ")
+                    .replace(WHITESPACE, " ")
+                    .trim()
+            if (transliterated.isNotBlank() && transliterated != folded) {
+                return transliterated
+            }
+        }
+
         return folded
     }
 
@@ -513,7 +643,14 @@ object MetadataSplitter {
             }
         }
 
-        // 4. Dynamic detection against known library artists for "&" or ","
+        // 4. Auto-discover parenthesized or bracketed aliases (e.g. "RADWIMPS (ラッドウィンプス)")
+        val aliasPair = extractAndRegisterAliases(raw)
+        if (aliasPair != null) {
+            val preferred = preferredArtistDisplayName(listOf(aliasPair.first, aliasPair.second))
+            return listOf(preferred)
+        }
+
+        // 5. Dynamic detection against known library artists for "&" or ","
         if (knownArtists.isNotEmpty()) {
             val dynamicSplit = trySplitUsingKnownArtists(raw, knownArtists)
             if (dynamicSplit != null && dynamicSplit.size > 1) {

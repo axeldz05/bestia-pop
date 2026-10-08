@@ -487,4 +487,94 @@ class TrackMatchKeysTest {
             )
         assertEquals(100L, match?.id)
     }
+
+    @Test
+    fun lookupLocalSong_matchesTranslatedTitleWithCrossLingualAlbumName() {
+        val library =
+            listOf(
+                Song(
+                    id = 101L,
+                    uriString = "file:///zenzenzense.mp3",
+                    title = "Zenzenzense",
+                    artist = "RADWIMPS",
+                    album = "Your Name",
+                    durationMs = 285_000L,
+                    trackNumber = 1,
+                ),
+            )
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+
+        val match =
+            TrackMatchKeys.lookupLocalSong(
+                index,
+                TrackIdentity(
+                    title = "前前前世",
+                    artist = "RADWIMPS",
+                    album = "Your Name (君の名は。)",
+                    durationMs = 285_500L,
+                    trackNumber = 1,
+                ),
+            )
+        assertEquals(101L, match?.id)
+    }
+
+    @Test
+    fun lookupLocalSong_doesNotMatchWhenTrackNumbersConflict() {
+        val library =
+            listOf(
+                Song(
+                    id = 102L,
+                    uriString = "file:///track1.mp3",
+                    title = "Song One",
+                    artist = "Artist",
+                    album = "Album",
+                    durationMs = 200_000L,
+                    trackNumber = 1,
+                ),
+            )
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+
+        val match =
+            TrackMatchKeys.lookupLocalSong(
+                index,
+                TrackIdentity(
+                    title = "Song Two",
+                    artist = "Artist",
+                    album = "Album",
+                    durationMs = 200_000L,
+                    trackNumber = 2,
+                ),
+            )
+        assertNull(match)
+    }
+
+    @Test
+    fun filterNotMatchingAlbums_deduplicatesCrossLingualAlbum() {
+        val localAlbums =
+            listOf(
+                Album(
+                    name = "Your Name",
+                    artist = "RADWIMPS",
+                    songCount = 10,
+                ),
+            )
+        val catalogAlbums =
+            listOf(
+                CatalogAlbum(
+                    id = "c1",
+                    title = "君の名は。 (Your Name)",
+                    artist = "RADWIMPS",
+                    coverUrl = null,
+                ),
+                CatalogAlbum(
+                    id = "c2",
+                    title = "Different Album",
+                    artist = "RADWIMPS",
+                    coverUrl = null,
+                ),
+            )
+        val filtered = catalogAlbums.filterNotMatchingAlbums(localAlbums)
+        assertEquals(1, filtered.size)
+        assertEquals("Different Album", filtered.first().title)
+    }
 }

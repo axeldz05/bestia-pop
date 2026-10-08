@@ -41,7 +41,20 @@ fun albumNamesMatch(
 ): Boolean {
     val ka = albumIdentityKey(a)
     val kb = albumIdentityKey(b)
-    return ka.isNotEmpty() && ka == kb
+    if (ka.isNotEmpty() && ka == kb) return true
+    if (ka.isEmpty() || kb.isEmpty()) return false
+    val transA = TrackMatchKeys.normalize(NaturalTextOrder.transliterateToLatin(a))
+    val transB = TrackMatchKeys.normalize(NaturalTextOrder.transliterateToLatin(b))
+    if (transA.isNotEmpty() && (transA == transB || transA == kb || transB == ka)) return true
+    val foldedA = TrackMatchKeys.foldRomajiVowels(transA)
+    val foldedB = TrackMatchKeys.foldRomajiVowels(transB)
+    if (foldedA.isNotEmpty() && (foldedA == foldedB || foldedA == kb || foldedB == ka)) return true
+    if (a.contains('(') || a.contains('[') || b.contains('(') || b.contains('[')) {
+        val candA = TrackMatchKeys.candidateMatchKeys("", a).map { it.removePrefix("|") }
+        val candB = TrackMatchKeys.candidateMatchKeys("", b).map { it.removePrefix("|") }
+        if (candA.any { it in candB }) return true
+    }
+    return false
 }
 
 /**
@@ -358,3 +371,10 @@ private val SESSION_PHRASES =
         "like a version",
         "colors show",
     )
+
+fun clearAlbumNameCaches() {
+    normalizeCache.clear()
+    stripDecorCache.clear()
+    liveSessionCache.clear()
+    identityKeyCache.clear()
+}

@@ -599,6 +599,16 @@ class MusicPlayerViewModel(
         sortDirection: SortDirection = this.sortDirection.value,
     ): List<LibraryListItem> = libraryProjection.buildListItems(songs, viewMode, sortOption, sortDirection)
 
+    fun filterLocalSongs(
+        songs: List<Song>,
+        query: String,
+    ): List<Song> =
+        if (query.isBlank()) {
+            emptyList()
+        } else {
+            getLibrarySongsUseCase.execute(songs, query, SortOption.TITLE, SortDirection.ASC)
+        }
+
     fun sortSongsWithinAlbum(songs: List<Song>): List<Song> = getLibrarySongsUseCase.sortSongsWithinAlbum(songs)
 
     fun songsForAlbum(

@@ -242,6 +242,10 @@ class BestiaPopApplication :
         } catch (_: Exception) {
         }
         DynamicThemeEngine.clearCache()
+        com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase
+            .clearSharedCaches()
+        com.bestiapop.android.domain.util
+            .clearAlbumNameCaches()
         com.bestiapop.android.data.network.HttpClients
             .evictIdleConnections()
     }

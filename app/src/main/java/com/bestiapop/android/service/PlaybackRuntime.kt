@@ -605,6 +605,7 @@ class PlaybackRuntime internal constructor(
                 _isBuffering.value =
                     playbackState == Player.STATE_BUFFERING && (playWhenReadyIntent || _isPlaying.value)
                 if (playbackState != Player.STATE_ENDED) return
+                creditItemPlayback(_currentItem.value, completed = true)
                 (_currentItem.value as? PlayableItem.Remote)?.let {
                     maybeSaveWhileListening(
                         remote = it,
@@ -1360,7 +1361,9 @@ class PlaybackRuntime internal constructor(
             if (!metadataOnly) {
                 creditItemPlayback(
                     previous,
-                    completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
+                    completed =
+                        reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                            reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT,
                 )
                 (previous as? PlayableItem.Remote)?.let { outgoing ->
                     val event =

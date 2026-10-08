@@ -578,25 +578,43 @@ object TrackMatchKeys {
                 if (song.isRemote) continue
                 if (!artistMatches(song)) continue
 
-                // Match 1: Same album and same track number (for releases with translated titles like English vs Japanese)
-                if (meta.trackNumber > 0 && song.trackNumber > 0 &&
-                    meta.trackNumber == song.trackNumber &&
+                val hasTrackNumbers = meta.trackNumber > 0 && song.trackNumber > 0
+                val trackNumbersConflict = hasTrackNumbers && meta.trackNumber != song.trackNumber
+                if (trackNumbersConflict) continue
+
+                val hasDuration = meta.durationMs > 0L && song.durationMs > 0L
+                val durationDiff = if (hasDuration) abs(meta.durationMs - song.durationMs) else Long.MAX_VALUE
+
+                val albumsMatch =
                     meta.album.isNotBlank() && song.album.isNotBlank() &&
-                    normalize(meta.album) == normalize(song.album) &&
-                    (meta.durationMs <= 0L || song.durationMs <= 0L || abs(meta.durationMs - song.durationMs) <= 4000L)
+                        albumNamesMatch(meta.album, song.album)
+
+                // Match 1: Same album and same track number (for releases with translated titles like English vs Japanese)
+                if (hasTrackNumbers && meta.trackNumber == song.trackNumber && albumsMatch &&
+                    (!hasDuration || durationDiff <= 4000L)
                 ) {
                     return song
                 }
 
-                // Match 2: Transliterated non-Latin title match with compatible duration (±3.0s)
+                // Match 2: Transliterated non-Latin title match with compatible duration (±3.5s)
                 val transMeta = normalize(NaturalTextOrder.transliterateToLatin(meta.title))
                 val transSong = normalize(NaturalTextOrder.transliterateToLatin(song.title))
+                val foldedMeta = foldRomajiVowels(transMeta).replace(" ", "")
+                val foldedSong = foldRomajiVowels(transSong).replace(" ", "")
                 if (transMeta.isNotEmpty() &&
-                    (transMeta == transSong || transMeta == normalize(song.title) || transSong == normalize(meta.title))
+                    (
+                        transMeta == transSong || transMeta == normalize(song.title) || transSong == normalize(meta.title) ||
+                            (foldedMeta.isNotEmpty() && foldedMeta == foldedSong)
+                    )
                 ) {
-                    if (meta.durationMs <= 0L || song.durationMs <= 0L || abs(meta.durationMs - song.durationMs) <= 3000L) {
+                    if (!hasDuration || durationDiff <= 3500L) {
                         return song
                     }
+                }
+
+                // Match 3: Cross-script / translated title match where track numbers match and duration is very close (±2.5s)
+                if (hasTrackNumbers && meta.trackNumber == song.trackNumber && hasDuration && durationDiff <= 2500L) {
+                    return song
                 }
             }
         }
@@ -698,7 +716,14 @@ fun List<CatalogAlbum>.filterNotMatchingAlbums(localAlbums: Collection<Album>): 
     }
     return filter { catAlb ->
         val candidates = TrackMatchKeys.candidateMatchKeys(catAlb.artist, catAlb.title)
-        candidates.none { it in keys }
+        candidates.none { it in keys } &&
+            localAlbums.none { localAlb ->
+                TrackMatchKeys.normalize(localAlb.artist) == TrackMatchKeys.normalize(catAlb.artist) &&
+                    (
+                        albumNamesMatch(localAlb.name, catAlb.title) ||
+                            (localAlb.displayName.isNotBlank() && albumNamesMatch(localAlb.displayName, catAlb.title))
+                    )
+            }
     }
 }
 

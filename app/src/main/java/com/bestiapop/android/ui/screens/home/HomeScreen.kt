@@ -49,6 +49,7 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.preferences.DiscoverSourcePreference
 import com.bestiapop.android.domain.util.MetadataSplitter
 import com.bestiapop.android.domain.util.TrackMatchKeys
@@ -171,19 +172,25 @@ fun HomeScreen(
     val normalizedSearchQuery = remember(cleanSearchQuery) { TrackMatchKeys.normalize(cleanSearchQuery) }
     val searchTokens = remember(normalizedSearchQuery) { normalizedSearchQuery.split(' ').filter { it.isNotEmpty() } }
 
-    // Filter local songs matching query
+    // Filter local songs matching query (using comprehensive taxonomy, lyrics, phonetics, and catalog matching)
     val matchingLocalSongs =
-        remember(normalizedSearchQuery, allSongs) {
-            if (normalizedSearchQuery.isEmpty()) {
+        remember(cleanSearchQuery, allSongs, catalogSearch.tracks) {
+            if (cleanSearchQuery.isEmpty()) {
                 emptyList()
             } else {
-                allSongs.filter { song ->
-                    TrackMatchKeys.matchesQuery(
-                        "${song.title} ${song.artist} ${song.album}",
-                        normalizedSearchQuery,
-                        searchTokens,
-                    )
+                val direct = viewModel.filterLocalSongs(allSongs, cleanSearchQuery)
+                val directIds = direct.mapTo(HashSet()) { it.id }
+                val fromCatalog = mutableListOf<Song>()
+                if (catalogSearch.tracks.isNotEmpty()) {
+                    val index = TrackMatchKeys.buildLibraryIndex(allSongs)
+                    for (remote in catalogSearch.tracks) {
+                        val matched = TrackMatchKeys.lookupLocalSong(index, remote.identity)
+                        if (matched != null && !matched.isRemote && directIds.add(matched.id)) {
+                            fromCatalog.add(matched)
+                        }
+                    }
                 }
+                if (fromCatalog.isEmpty()) direct else direct + fromCatalog
             }
         }
 
@@ -374,6 +381,8 @@ fun HomeScreen(
                 localSongs = matchingLocalSongs,
                 localAlbums = matchingLocalAlbums,
                 localPlaylists = matchingLocalPlaylists,
+                allLocalSongs = allSongs,
+                allLocalAlbums = albums,
                 catalogTracks = catalogSearch.tracks,
                 catalogAlbums = catalogSearch.albums,
                 catalogPlaylists = catalogSearch.playlists,

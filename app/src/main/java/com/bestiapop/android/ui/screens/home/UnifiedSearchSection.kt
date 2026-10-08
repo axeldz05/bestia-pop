@@ -86,6 +86,8 @@ fun UnifiedSearchSection(
     localPlaylists: List<Playlist> = emptyList(),
     artists: List<Artist> = emptyList(),
     catalogPlaylists: List<CatalogPlaylist> = emptyList(),
+    allLocalSongs: List<Song> = localSongs,
+    allLocalAlbums: List<Album> = localAlbums,
     onSelectLocalAlbum: (Album) -> Unit = {},
     onSelectLocalPlaylist: (Playlist) -> Unit = {},
     onSelectArtist: (Artist) -> Unit = {},
@@ -94,13 +96,13 @@ fun UnifiedSearchSection(
     lazyListState: LazyListState = rememberLazyListState(),
 ) {
     val deduplicatedCatalogTracks =
-        remember(catalogTracks, localSongs) {
-            catalogTracks.filterNotMatchingSongs(localSongs)
+        remember(catalogTracks, allLocalSongs) {
+            catalogTracks.filterNotMatchingSongs(allLocalSongs)
         }
 
     val deduplicatedCatalogAlbums =
-        remember(catalogAlbums, localAlbums) {
-            catalogAlbums.filterNotMatchingAlbums(localAlbums)
+        remember(catalogAlbums, allLocalAlbums) {
+            catalogAlbums.filterNotMatchingAlbums(allLocalAlbums)
         }
 
     var isArtistsExpanded by rememberSaveable { mutableStateOf(true) }

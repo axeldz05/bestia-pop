@@ -33,6 +33,12 @@ import com.bestiapop.android.ui.state.LibraryViewMode
 import java.util.TreeMap
 
 class GetLibrarySongsUseCase {
+    init {
+        synchronized(activeInstances) {
+            activeInstances.add(this)
+        }
+    }
+
     data class CatalogProjection(
         val songs: List<Song>,
         val albums: List<Album>,
@@ -964,6 +970,19 @@ class GetLibrarySongsUseCase {
     }
 
     companion object {
+        private val activeInstances =
+            java.util.Collections.newSetFromMap(
+                java.util.WeakHashMap<GetLibrarySongsUseCase, Boolean>(),
+            )
+
+        fun clearSharedCaches() {
+            synchronized(activeInstances) {
+                for (instance in activeInstances) {
+                    instance.clearCache()
+                }
+            }
+        }
+
         fun genreKey(song: Song): String = song.genre.trim().ifBlank { Song.UNKNOWN_GENRE }
     }
 }

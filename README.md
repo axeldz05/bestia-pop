@@ -1,12 +1,19 @@
 # BestiaPop
 
 Reproductor de música para Android con biblioteca local, streaming, descargas, letras interactivas, radio inteligente, ListenBrainz y sincronización por WiFi.
+  <p align="center">
+    <img width="180" src="https://github.com/user-attachments/assets/decb6010-9c6b-4748-a80a-1130c70e3619" />
+    <img width="180" src="https://github.com/user-attachments/assets/155e2862-bd2d-45c3-8379-a30cd6e7e2cf" />
+    <img width="180" src="https://github.com/user-attachments/assets/2dfa9ec8-a7af-4a2c-86c1-7520a899b29a" />
+    <img width="180" src="https://github.com/user-attachments/assets/d07651b2-1ed9-4b06-b2a3-8b1e74612cae" />
+  </p>
 
 **Estado:** beta · **Requisito:** Android 8.0 (API 26) o superior · **Versión:** [`version.properties`](version.properties)
 
 [Descargar la última versión](https://github.com/axeldz05/bestia-pop/releases/latest)
 
 Sin anuncios ni Analytics comercial; los builds release incluyen telemetría técnica anónima opcional contra cierres inesperados.
+> **Aviso:** proyecto personal y sin afiliación con YouTube, Google, Deezer ni Apple. Leé el [aviso legal](#aviso-legal) antes de usarlo.
 
 ## Instalar
 
@@ -244,7 +251,13 @@ Tecnologías principales: Kotlin, Jetpack Compose, Material 3, AndroidX Media3 E
 
 La resolución de flujos de YouTube es una implementación nativa en Kotlin inspirada en los extractores mantenidos por la comunidad de [yt-dlp](https://github.com/yt-dlp/yt-dlp). BestiaPop no ejecuta binarios externos de yt-dlp.
 
-La información de catálogo musical se obtiene de iTunes y Deezer; el historial de reproducciones y sugerencias se integran con ListenBrainz.
+La información de catálogo musical se obtiene de APIs publicas de iTunes y Deezer; el historial de reproducciones y sugerencias se integran con ListenBrainz.
+
+## Aviso legal
+
+BestiaPop es un proyecto personal de código abierto, sin fines comerciales y sin afiliación, patrocinio ni respaldo de YouTube, Google, Deezer, Apple ni ListenBrainz. Todos los nombres y marcas pertenecen a sus respectivos dueños.
+
+Usala solo con contenido sobre el que tengas derechos o permiso de descarga. El uso es bajo tu propia responsabilidad: el autor no se hace responsable del contenido que descargues ni de las consecuencias que eso tenga.
 
 ## Licencia
 

@@ -36,7 +36,7 @@ La barra inferior reúne **Biblioteca**, **Descubrir**, **Descargas**, **Añadir
 ### Diagrama de arquitectura
 
 ```mermaid
-graph TD
+flowchart TD
     subgraph UI ["Capa UI (Jetpack Compose + Material 3)"]
         Screens["Pantallas (Library, Discover, Downloads, Add/Sync, Settings)"]
         VM["MusicPlayerViewModel (Fachada UI) + StateFlows"]
